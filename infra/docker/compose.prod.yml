@@ -1,0 +1,61 @@
+# Production stack for the VPS. Postgres + Auth live in Supabase; this host runs the engine,
+# the worker, the web app and Caddy for TLS. Deploy: see docs/RUNBOOK.md.
+name: delicate
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      SITE_HOST: ${SITE_HOST:?set SITE_HOST}
+      API_HOST: ${API_HOST:?set API_HOST}
+    depends_on: [api, web]
+
+  api:
+    image: ${IMAGE_API:-ghcr.io/delicate-courier/engine-api:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_PORT: 8080
+      RUN_MIGRATIONS: "1"
+    expose: ["8080"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  worker:
+    image: ${IMAGE_API:-ghcr.io/delicate-courier/engine-api:latest}
+    command: ["node", "--enable-source-maps", "dist/worker.js"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "0"
+    depends_on:
+      api: { condition: service_healthy }
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  web:
+    image: ${IMAGE_WEB:-ghcr.io/delicate-courier/engine-web:latest}
+    restart: unless-stopped
+    expose: ["3000"]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+volumes:
+  caddy_data:
+  caddy_config:

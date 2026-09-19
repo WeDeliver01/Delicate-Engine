@@ -1,0 +1,6 @@
+_archive
+_reference
+node_modules
+dist
+.next
+pnpm-lock.yaml

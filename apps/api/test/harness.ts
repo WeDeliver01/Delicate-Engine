@@ -1,0 +1,63 @@
+import type { NestExpressApplication } from "@nestjs/platform-express";
+import { sql } from "drizzle-orm";
+import request from "supertest";
+import { runMigrations } from "@delicate/db";
+import { createHttpApp } from "../src/bootstrap.js";
+import { TokenVerifier } from "../src/auth/token-verifier.js";
+import { DbService } from "../src/infra/db.module.js";
+import { OutboxDispatcher } from "../src/worker/outbox-dispatcher.js";
+
+export interface Harness {
+  app: NestExpressApplication;
+  db: DbService;
+  dispatcher: OutboxDispatcher;
+  http: () => request.Agent;
+  tokenFor: (user: { id: string; email: string }) => Promise<string>;
+  reset: () => Promise<void>;
+  close: () => Promise<void>;
+}
+
+const TRUNCATE = [
+  "memberships",
+  "accounts",
+  "organizations",
+  "users",
+  "outbox_messages",
+  "inbox_messages",
+  "audit_log",
+  "idempotency_keys",
+];
+
+/** Boots the real app (guards, filters, middleware) against the test database. */
+export async function createHarness(): Promise<Harness> {
+  const url = process.env["DATABASE_URL"]!;
+  await runMigrations(url);
+
+  const app = await createHttpApp();
+  await app.init();
+
+  const db = app.get(DbService);
+  const verifier = app.get(TokenVerifier);
+  const dispatcher = app.get(OutboxDispatcher);
+
+  return {
+    app,
+    db,
+    dispatcher,
+    http: () => request.agent(app.getHttpServer()),
+    tokenFor: (user) => verifier.signDevToken({ userId: user.id, email: user.email }),
+    reset: async () => {
+      await db.db.execute(
+        sql.raw(`truncate table ${TRUNCATE.join(", ")} restart identity cascade`),
+      );
+    },
+    close: () => app.close(),
+  };
+}
+
+export const USERS = {
+  admin: { id: "10000000-0000-4000-8000-000000000001", email: "admin@test.local" },
+  alice: { id: "10000000-0000-4000-8000-000000000010", email: "alice@test.local" },
+  bob: { id: "10000000-0000-4000-8000-000000000011", email: "bob@test.local" },
+  carol: { id: "10000000-0000-4000-8000-000000000012", email: "carol@test.local" },
+};

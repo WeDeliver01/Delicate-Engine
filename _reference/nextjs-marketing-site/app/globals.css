@@ -1,0 +1,139 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Material+Symbols+Outlined&display=swap');
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ─── Brand design tokens (premium white · black/white · pink/purple/yellow) ─── */
+@theme {
+  --color-ink: #0A0A0A;
+  --color-brand-pink: #E84A8A;
+  --color-brand-pink-soft: #F7A8CE;
+  --color-brand-purple: #7C5CFF;
+  --color-brand-yellow: #F4C430;
+  --color-surface: #F8F6F3;
+  --color-line: #ECEAE6;
+  --color-muted: #86817A;
+  --font-sans: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
+}
+
+/* ─── Scroll offset for fixed header ───────────────────────────── */
+html {
+  scroll-padding-top: 80px;
+}
+
+/* ─── Premium white base ───────────────────────────────────────── */
+body {
+  background: #ffffff;
+  color: #0A0A0A;
+  font-family: 'Be Vietnam Pro', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ─── Display typography (Manrope for all headings) ────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.018em;
+}
+
+/* ─── Tabular figures for data (prices, quoted amounts, codes) ──── */
+/* Family is owned by Tailwind's font-mono utility (--font-mono token). */
+.font-mono {
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ─── Material Symbols (outlined icons) ────────────────────────── */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+/* ─── Subtle alternating section tint (whisper, not plum) ──────── */
+section:nth-child(even) {
+  background-color: #FAFAF9;
+}
+
+/* ─── Hero section ──────────────────────────────────────────────── */
+.hero-section {
+  background: #ffffff;
+}
+
+/* ─── Premium card lift on hover (neutral shadow, no plum glow) ── */
+.card {
+  background: #ffffff;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 30px -18px rgba(20, 16, 12, 0.18);
+}
+
+/* ─── Scroll Animations ─────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes fadeInRight {
+  from { opacity: 0; transform: translateX(28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-on-scroll { opacity: 1; }
+.animate-on-scroll.will-animate { opacity: 0; }
+.animate-on-scroll.is-visible {
+  opacity: 1;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  animation-duration: 0.5s;
+}
+.anim-fade-up.is-visible    { animation-name: fadeInUp; }
+.anim-fade-left.is-visible  { animation-name: fadeInLeft; }
+.anim-fade-right.is-visible { animation-name: fadeInRight; }
+.anim-scale.is-visible      { animation-name: scaleIn; }
+
+.anim-delay-1 { animation-delay: 0.05s; }
+.anim-delay-2 { animation-delay: 0.12s; }
+.anim-delay-3 { animation-delay: 0.19s; }
+.anim-delay-4 { animation-delay: 0.26s; }
+.anim-delay-5 { animation-delay: 0.33s; }
+.anim-delay-6 { animation-delay: 0.40s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-on-scroll,
+  .animate-on-scroll.is-visible {
+    opacity: 1 !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ─── Marquee scroll animation ──────────────────────────────────── */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 20s linear infinite;
+  will-change: transform;
+}
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-marquee {
+    animation: none;
+  }
+}

@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div class="p-6">
+  <!-- Header -->
+  <div class="flex justify-between items-end mb-8">
+    <div>
+      <h2 class="text-2xl font-semibold text-gray-800">Operations Dashboard</h2>
+      <p class="text-gray-500">Monitor real-time fleet logistics and commercial performance.</p>
+    </div>
+    <a href="/quote" target="_blank" rel="noopener noreferrer"
+   class="bg-ink text-white px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-[#E84A8A] transition">
+  + New Quote
+    </a>
+  </div>
+
+  <!-- Metrics Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div class="bg-[#FFFFFF] p-6 rounded-xl shadow-sm border">
+      <div class="flex justify-between items-start mb-4">
+        <div class="p-2 bg-purple-100 rounded-lg"><span class="material-symbols-outlined text-purple-600">description</span></div>
+        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Month to Date</span>
+      </div>
+      <p class="text-xs text-gray-500 uppercase">Total Quotes</p>
+      <h3 class="text-3xl font-bold text-gray-800">{{ quote_count|default:"0" }}</h3>
+      <div class="mt-4 text-xs text-[#00000] italic">All‑time submissions</div>
+    </div>
+    <div class="bg-[#FFFFFF] p-6 rounded-xl shadow-sm border">
+      <div class="flex justify-between items-start mb-4">
+        <div class="p-2 bg-purple-100 rounded-lg"><span class="material-symbols-outlined text-purple-600">payments</span></div>
+        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Estimated</span>
+      </div>
+      <p class="text-xs text-gray-500 uppercase">Total Revenue</p>
+      <h3 class="text-3xl font-bold text-gray-800">R {{ total_revenue|floatformat:0|default:"0" }}</h3>
+      <div class="mt-4 text-xs text-[#00000] italic">Gross across all quotes</div>
+    </div>
+    <div class="bg-[#FFFFFF] p-6 rounded-xl shadow-sm border">
+      <div class="flex justify-between items-start mb-4">
+        <div class="p-2 bg-purple-100 rounded-lg"><span class="material-symbols-outlined text-purple-600">route</span></div>
+        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Current Fleet</span>
+      </div>
+      <p class="text-xs text-gray-500 uppercase">Km Logged</p>
+      <h3 class="text-3xl font-bold text-gray-800">{{ total_distance|floatformat:0|default:"0" }} <span class="text-sm font-normal">km</span></h3>
+      <div class="mt-4 text-xs text-[#00000] italic">Combined route distance</div>
+    </div>
+    <div class="bg-[#FFFFFF] p-6 rounded-xl shadow-sm border">
+      <div class="flex justify-between items-start mb-4">
+        <div class="p-2 bg-purple-100 rounded-lg"><span class="material-symbols-outlined text-purple-600">groups</span></div>
+        <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">Lifetime</span>
+      </div>
+      <p class="text-xs text-gray-500 uppercase">Customers</p>
+      <h3 class="text-3xl font-bold text-gray-800">{{ customer_count|default:"0" }}</h3>
+      <div class="mt-4 text-xs text-[#00000] italic">Total delivery destinations</div>
+    </div>
+  </div>
+
+  <!-- Recent Quotes Table -->
+  <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div class="p-6 border-b flex justify-between items-center">
+      <h2 class="text-lg font-semibold">Recent Quotes</h2>
+      <a href="{% url 'admin:quotes_quote_changelist' %}" class="text-purple-600 text-sm font-medium hover:underline">View all →</a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+          <tr><th class="px-6 py-4">Quote ID</th><th class="px-6 py-4">Customer</th><th class="px-6 py-4 text-right">Amount</th><th class="px-6 py-4">Status</th><th class="px-6 py-4 text-right">Created</th></tr>
+        </thead>
+        <tbody class="divide-y">
+          {% for q in recent_quotes %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-4 font-mono text-purple-600"><a href="{% url 'admin:quotes_quote_change' q.pk %}">{{ q.quote_number|default:"—" }}</a></td>
+            <td class="px-6 py-4">{{ q.customer_name|default:"—" }}</td>
+            <td class="px-6 py-4 text-right font-semibold">R {{ q.revenue|floatformat:"2"|default:"0.00" }}</td>
+            <td class="px-6 py-4"><span class="px-2 py-1 text-xs rounded-full {% if q.status == 'accepted' %}bg-green-100 text-green-700{% elif q.status == 'pending' %}bg-amber-100 text-amber-700{% else %}bg-gray-100 text-gray-700{% endif %}">{{ q.get_status_display|default:"Draft" }}</span></td>
+            <td class="px-6 py-4 text-right text-gray-500">{{ q.created_at|date:"M d, Y" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="px-6 py-12 text-center text-gray-400">No quotes yet. <a href="{% url 'admin:quotes_quote_add' %}" class="text-purple-600">Create one</a>.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Chart and Fleet Health (placeholder) -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white rounded-xl shadow-sm border p-6">
+      <h4 class="text-lg font-semibold mb-6">Fleet Health</h4>
+      <div class="space-y-6">
+        <div><div class="flex justify-between mb-2"><span>Active</span><span class="font-bold">6</span></div><div class="w-full bg-gray-200 h-2 rounded"><div class="bg-green-500 h-2 rounded" style="width:66%"></div></div></div>
+        <div><div class="flex justify-between mb-2"><span>Maintenance</span><span class="font-bold">1</span></div><div class="w-full bg-gray-200 h-2 rounded"><div class="bg-yellow-500 h-2 rounded" style="width:11%"></div></div></div>
+        <div><div class="flex justify-between mb-2"><span>Inactive</span><span class="font-bold">2</span></div><div class="w-full bg-gray-200 h-2 rounded"><div class="bg-red-500 h-2 rounded" style="width:22%"></div></div></div>
+        <div class="pt-4 border-t flex justify-between"><span class="font-semibold">Total Fleet</span><span class="text-2xl font-bold">9</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,61 @@
+uploads = []
+
+[[generated]]
+id = "037pqX49UHefqweSDWipq"
+uri = "file://client/src/assets/jacaranda-bg.png"
+type = "image"
+title = "jacaranda trees background"
+
+[[generated]]
+id = "4KVuG08o8Cw6MF0oXXkQA"
+uri = "file://client/src/assets/jacaranda-portrait.png"
+type = "image"
+title = "jacaranda portrait"
+
+[[outputs]]
+id = "UHVwMura90JiGoJ8t3uup"
+uri = "file://Delicate_Courier_Route_Optimizer_Documentation.pdf"
+type = "pdf"
+title = "Delicate Courier Route Optimizer — Full Documentation"
+
+[[outputs]]
+id = "ydHQuKMVz0kXbvVaI7bfz"
+uri = "file://Delicate_Courier_Full_Source_Code.txt"
+type = "text"
+title = "Delicate Courier — Full Source Code"
+
+[[outputs]]
+id = "iN9uVVWt80tNSzRO7AeRP"
+uri = "file://client/public/pwa-512x512.png"
+type = "image"
+title = "Updated PWA icon (full logo, no cutoff)"
+
+[[outputs]]
+id = "ViwdGHB-qs9HxmwcWyOjo"
+uri = "file://client/public/favicon.png"
+type = "image"
+title = "Updated favicon (full logo, no cutoff)"
+
+[[outputs]]
+id = "ctZWhc1HzLiP4uiIK0mN3"
+uri = "file://exports/delicate-courier-source.tar.gz"
+type = "unspecified"
+title = "Delicate Courier — full source (tar.gz, 22MB)"
+
+[[outputs]]
+id = "8Ly9lfFhTG1Gh9SudpCn5"
+uri = "file://dist/codebase.tar.gz"
+type = "unspecified"
+title = "Delicate Courier — Full Codebase (tar.gz)"
+
+[[outputs]]
+id = "0466aF_oOfiyDDaUjNAI3"
+uri = "file://dist/codebase.txt"
+type = "text"
+title = "Delicate Courier — Full Codebase (single .txt)"
+
+[[outputs]]
+id = "Gc0IQHv3d4UYgYukbn3pC"
+uri = "file://exports/DelicateCourier-RouteOptimizer-Overview.pdf"
+type = "pdf"
+title = "Delicate Courier — Route Optimizer: Build Overview"

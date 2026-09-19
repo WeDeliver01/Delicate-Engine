@@ -1,0 +1,260 @@
+# Delicate Engine — Architecture & Build Plan
+
+Status: **SIGNED OFF** by Ashley, 2026-09-19. Phase 0 delivered the same day (see README phase table).
+
+This is a fresh build. Everything under `_reference/` and `_archive/` is prior-attempt context
+only; nothing from it is carried over as tested functionality. Where a reference contains a
+design worth keeping (integer-cents ledgers, transactional outbox, treasury allocation
+algorithm, slot capacity gating) it is re-implemented here, not copied.
+
+---
+
+## 1. What the engine is
+
+One system where **every transaction begins and is accounted for**:
+
+```
+Marketing site ──► Portal (account · wallet · book) ──► ENGINE
+                                                          │
+        ┌─────────────────────────────────────────────────┼──────────────────────────────┐
+        │ price it       gate it            confirm it    │ assign it        settle it   │
+        │ (rate cards)   (wallet/credit +   (waybill,      │ (driver on shift, (actual km, │
+        │                 slot capacity)     events)       │  capacity, proximity) earnings,│
+        │                                                  │                     fuel, margin)│
+        └──────────────────────────────────────────────────┴──────────────────────────────┘
+                                                          │
+                                              TREASURY: allocate margin, fund obligations,
+                                              propose fuel-card loads & payouts → human executes
+```
+
+Decisions taken with Ashley (2026-09-19):
+
+| Topic          | Decision                                                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fulfilment     | **Own drivers only.** No ShipLogic. We own waybills, tracking, POD, billing.                                                                                     |
+| Customers      | Businesses **and** individuals. A business can own **several accounts** and users toggle between them freely.                                                    |
+| Payments       | **Prepaid wallet + postpaid monthly account** (credit limit + statement). Providers: **PayFast, Yoco, BobPay, manual EFT** behind one adapter.                   |
+| Pricing        | **Admin-configurable rate-card engine**: zone tables and/or per-km rates, package types, service levels, surcharges, minimums.                                   |
+| Scheduling     | **Service levels + daily slots with capacity** derived from drivers on shift; cut-offs; blackouts.                                                               |
+| Assignment     | **Auto-assign on confirmation, dispatcher can override.**                                                                                                        |
+| Driver pay     | **Per-delivery earning**; **fuel loaded to the driver's fuel card via PayCentral** (paycentral.co.za). Treasury computes delivery cost + earning per assignment. |
+| Money controls | **Always propose, human executes.** The engine never moves real money on its own.                                                                                |
+| Driver app     | **Native iOS/Android** (Expo / React Native).                                                                                                                    |
+| Identity & DB  | **Supabase Auth + Supabase Postgres.**                                                                                                                           |
+| Hosting        | **Own VPS, Docker Compose.** No Replit anywhere.                                                                                                                 |
+| Portal apps    | Tracking + POD · Statements/invoices/wallet history · Address book + bulk CSV · Loyalty/cashback.                                                                |
+| Language       | **TypeScript everywhere.**                                                                                                                                       |
+
+---
+
+## 2. Stack
+
+| Layer                  | Choice                                                                                                               | Why                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Monorepo               | pnpm workspaces + Turborepo                                                                                          | One repo, shared packages, cached builds.                                                                 |
+| API (the engine)       | **NestJS** (TypeScript) on Node 24                                                                                   | Modules + DI + validation + OpenAPI out of the box; the domain is large enough to need structure.         |
+| Data                   | **Drizzle ORM** + SQL migrations on Supabase Postgres                                                                | Explicit schema and migrations — non-negotiable for a ledger.                                             |
+| Validation / contracts | **Zod** schemas shared between API, web and mobile via `packages/contracts`                                          | One definition of every event and DTO.                                                                    |
+| Jobs & outbox          | Postgres transactional outbox drained by the worker (`FOR UPDATE SKIP LOCKED`, backoff, dead-letter)                 | Durable retries without Redis/Kafka; ADR 0002. A job queue (pg-boss) is added when scheduled jobs arrive. |
+| Web                    | **Next.js 15** (App Router) — route groups `(marketing)`, `(portal)`, `(admin)`                                      | One deployable; marketing, customer portal and ops/finance console share auth and UI kit.                 |
+| Driver app             | **Expo (React Native)**, EAS builds                                                                                  | Native iOS/Android in TypeScript; background location, push, camera for POD.                              |
+| Auth                   | Supabase Auth (email/password, OAuth, magic link). API verifies Supabase JWTs; roles/memberships live in our tables. | Already chosen; works for web and native.                                                                 |
+| Maps                   | Google Routes/Places for distance & autocomplete, OSRM fallback (cost control)                                       | Same pattern the old optimizer proved.                                                                    |
+| Payments               | Adapter interface → PayFast, Yoco, BobPay, ManualEFT                                                                 | Wallet is credited only on a verified server-to-server webhook.                                           |
+| Fuel cards             | PayCentral adapter (load proposals → execute on approval)                                                            | Real money; proposal-only by design.                                                                      |
+| Notifications          | Email (Resend/SMTP), SMS/WhatsApp (provider TBD)                                                                     | Tracking + status comms.                                                                                  |
+| Infra                  | Docker Compose on VPS: `api`, `worker`, `web`, `caddy` (TLS). Supabase external.                                     | Same compose for dev and prod. GitHub Actions → build images → deploy.                                    |
+| Observability          | pino structured logs, OpenTelemetry traces, health endpoints, Sentry                                                 | Enterprise-grade means we can see what happened.                                                          |
+
+Repo layout:
+
+```
+apps/
+  api/        NestJS engine: HTTP API (dist/main.js) and worker entrypoint (dist/worker.js)
+              running the outbox dispatcher and, later, scheduled jobs
+  web/        Next.js: marketing + portal + admin
+  driver/     Expo native app (Phase 2)
+packages/
+  db/         Drizzle schema, migrations, seed
+  contracts/  Zod schemas: DTOs, domain events, enums (shared by all apps)
+  config/     eslint/tsconfig/prettier presets
+infra/
+  docker/     Dockerfiles, compose.prod.yml, Caddyfile
+.github/workflows/  CI (typecheck, tests, builds, images)
+docs/         this file, ADRs, runbooks
+_reference/   prior attempts (read-only context)
+_archive/     original zips
+```
+
+---
+
+## 3. Domain modules (bounded contexts in `apps/api/src/modules`)
+
+### 3.1 Identity & Accounts
+
+- `users` (mirror of Supabase user: id, email, profile), `organizations`, `accounts`
+  (a billing account: belongs to an org or an individual; has **one wallet**, credit terms,
+  billing details, VAT number), `memberships` (user ↔ account, role), `roles`:
+  `customer_owner`, `customer_staff`, `driver`, `dispatcher`, `finance`, `super_admin`.
+- Account switcher: a user's JWT identifies them; the active account is a header/claim
+  validated against memberships on every request.
+
+### 3.2 Catalog & Pricing
+
+- `zones` (polygons or suburb/postcode lists), `package_types` (dimensions/weight classes),
+  `service_levels` (same-day, next-day, express… with cut-offs and promised windows),
+  `rate_cards` and `rate_rules` (zone→zone table, per-km with base, surcharges, minimums,
+  account-specific overrides), effective-dated.
+- `quote(request) → Quote` is a **pure function** over the rules; quotes are persisted with the
+  rule snapshot that produced them so a charged booking can always explain its price.
+
+### 3.3 Scheduling
+
+- `slot_policies` (operating days, windows, default capacity, cut-off minutes),
+  `delivery_slots` (date × window; capacity, booked_count, status), `blackout_dates`.
+- Capacity can be **derived from drivers on shift** (sum of per-driver stop capacity) or set
+  manually. Slot rows are locked in the booking transaction; two clients cannot both take the
+  last space.
+
+### 3.4 Bookings & Shipments
+
+- `bookings` (quote → gates → confirmed/rejected with reason), `shipments` (waybill, collection
+  & delivery addresses, parcels, recipient, service level, slot), `shipment_events`
+  (immutable status history), `proof_of_delivery` (photo, signature, name, geo, time).
+- Waybill format: `DC-YYMMDD-XXXXX`, unique, printable label + public tracking page.
+- Lifecycle: `booked → assigned → collected → in_transit → delivered | failed | cancelled`.
+
+### 3.5 Dispatch
+
+- `drivers` (linked to a user, vehicle, fuel card ref, status), `vehicles`, `shifts`
+  (start/end with odometer + fuel readings), `assignments` (shipment ↔ driver, sequence,
+  planned km), `driver_locations` (latest + history, sampled).
+- **Auto-assign** on booking confirmation: candidates = drivers on shift (or scheduled) for the
+  slot with remaining capacity; score = proximity to collection + current load + zone
+  familiarity; best wins; emits `ShipmentAssigned`. Dispatcher override re-emits
+  `DriverReassigned`. Stop ordering: nearest-neighbour + time windows now; full optimizer later.
+- Driver app API: today's stops, start/end shift, arrive/collect/deliver/fail with evidence,
+  log fuel, location pings.
+
+### 3.6 Wallet & Billing
+
+- Per account: `wallets` (balance cached, **derived from** `wallet_entries` append-only,
+  integer cents), `holds` (funds reserved at booking, converted to charge at settlement or
+  released on cancel), `top_ups` (provider, reference, status; credited only on verified
+  webhook), `credit_terms` (limit, statement day, due days) for postpaid accounts.
+- Gate at booking: `available = balance + credit_limit − holds ≥ price`.
+- `invoices` (per shipment or per statement), `statements` (monthly, postpaid), VAT at 15%
+  captured per line, PDF generation.
+
+### 3.7 Settlement & Ledger (double-entry)
+
+- `journals` + `journal_lines` — every economic event posts a balanced journal
+  (lines sum to zero) with an idempotency key. Accounts: `CUSTOMER_RECEIVABLE`,
+  `CUSTOMER_PREPAID_LIABILITY`, `REVENUE`, `FUEL_EXPENSE`, `DRIVER_EARNINGS_EXPENSE`,
+  `DRIVER_EARNINGS_PAYABLE`, `FUEL_CARD_PAYABLE`, `VAT_OUTPUT`, `CASH_*`.
+- `DeliveryCompleted` (with **actual km**) → settlement journal: revenue, fuel cost
+  (km × rate), driver earning (per-delivery rule), margin. Forecast at assignment
+  (planned km) lives in `settlement_forecasts`, never touches the ledger; variance reported.
+- Balances are always derived; periodic checkpoints bound query cost.
+
+### 3.8 Treasury
+
+- `allocation_wallets` (cost / operating_expense / reserve / capital), `expense_obligations`
+  (vendor, monthly amount, due day, priority), `funding_targets`, `allocation_rules`,
+  `allocation_transactions` (append-only, idempotent, reversible).
+- On each settlement: contribution margin = revenue − fuel − driver earning; fund obligations by
+  need × due-date urgency (water-fill), cascade surplus to reserves by priority, remainder to
+  retained earnings. Sum of allocations equals margin exactly.
+- **Proposals**: `money_movements` (kind: `fuel_card_load` via PayCentral, `driver_payout`,
+  `obligation_payment`; amount, target, evidence, status `proposed → approved → executed |
+rejected | failed`). The engine only ever creates proposals; a `finance` user approves; the
+  executor (PayCentral adapter, or a manual "mark paid with bank ref") runs and reconciles.
+- Dashboard: health score, obligations coverage, at-risk debit orders, reserves, forecast.
+
+### 3.9 Loyalty
+
+- Tiers by monthly volume, milestones by lifetime volume, cashback % credited to the wallet as a
+  `loyalty_cashback` entry keyed to the settled shipment (idempotent).
+
+### 3.10 Notifications & Tracking
+
+- Templates + channels (email, SMS/WhatsApp), outbound via worker with retries.
+- Public tracking page by waybill; status + ETA + POD once delivered.
+
+### 3.11 Platform
+
+- **Transactional outbox**: every state change and its domain event are written in one DB
+  transaction; the worker publishes/handles with retries and dead-lettering.
+- **Domain events** (Zod-typed, versioned): `TopUpConfirmed`, `BookingConfirmed`,
+  `BookingRejected`, `ShipmentAssigned`, `DriverReassigned`, `ShiftStarted`, `ShiftEnded`,
+  `CollectionCompleted`, `DeliveryCompleted`, `DeliveryFailed`, `ShipmentCancelled`,
+  `FuelLogged`, `SettlementPosted`, `TreasuryAllocated`, `MovementProposed/Approved/Executed`.
+- `audit_log` for every admin/finance action (who, what, before/after).
+- Idempotency keys on every write endpoint that can be retried.
+
+---
+
+## 4. Invariants (never violated)
+
+1. Money is **integer cents**; rates in cents/km; shares in basis points. No floats.
+2. Ledgers are **append-only**. Corrections are reversing entries, never edits.
+3. Every journal **balances to zero** before commit.
+4. A booking is confirmed only inside **one transaction** that locks the wallet and the slot.
+5. Wallets are credited **only** from a verified provider webhook, never from a redirect.
+6. Every external effect goes through the **outbox**; every inbound webhook through an
+   **inbox** with dedupe.
+7. The engine **proposes** money movements; a human **executes**.
+8. Settlement uses **actual** distance from the driver app; forecasts are separate.
+9. Every write that can be retried carries an **idempotency key**.
+10. Everything an admin does is in the **audit log**.
+
+---
+
+## 5. End-to-end: one booking
+
+1. Customer (active account: "Honey Bee Bakers – Menlyn") opens New Booking in the portal.
+2. Enters collection/delivery (address book or autocomplete), package type, service level,
+   picks a slot (only bookable slots shown). Engine returns a quote with breakdown.
+3. Confirm → `POST /bookings` (idempotency key). In one transaction: lock wallet + slot; check
+   `available ≥ price` and `remaining > 0`; create hold; increment slot; create shipment +
+   waybill; write `BookingConfirmed` to outbox. Else reject with reason (402 / 409).
+4. Worker: `BookingConfirmed` → auto-assign → `ShipmentAssigned` (forecast settlement at planned
+   km; fuel reserve estimate) → notify driver (push) and customer (email/WhatsApp).
+5. Driver app: start shift (odometer/fuel), navigate stops, collect → deliver with POD.
+   Actual km from odometer/GPS track.
+6. `DeliveryCompleted` → settlement journal (revenue, fuel, earning, margin), hold → charge
+   (wallet entry or receivable for postpaid), loyalty cashback, `SettlementPosted`.
+7. Treasury: allocate margin to obligations/reserves; accrue driver earning payable and
+   fuel-card payable; create **proposals** (fuel load via PayCentral per driver per day; payouts
+   per cycle).
+8. Finance approves proposals in the admin console → adapter executes → reconciliation marks
+   them executed with the provider reference. Statement/invoice generated at period end.
+
+---
+
+## 6. Phased delivery
+
+| Phase                     | Outcome (demoable)                                                                  | Contents                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **0 Foundation**          | Repo boots locally and on the VPS; you can log in.                                  | Monorepo, Docker Compose, CI, Supabase auth wiring, DB + migrations, outbox/worker skeleton, audit log, admin shell, marketing site scaffold.          |
+| **1 Book & pay**          | A customer tops up, gets a quote, books into a slot, sees a waybill; admin sees it. | Accounts/orgs/switcher, wallet + top-up (manual EFT + one provider), rate cards + quote engine, slots, bookings/shipments, tracking page (basic).      |
+| **2 Deliver & settle**    | A driver on the native app completes it; the ledger shows the money.                | Drivers/vehicles/shifts, auto-assign + dispatcher override, Expo driver app (stops, POD, fuel log, location), settlement journals, forecast vs actual. |
+| **3 Treasury & billing**  | Finance sees allocations and approves fuel loads/payouts; statements go out.        | Allocation engine, proposals + approvals, PayCentral adapter, driver payouts, invoices/statements/VAT, remaining payment providers, postpaid credit.   |
+| **4 Portal apps & comms** | The portal feels complete.                                                          | Notifications (email/SMS/WhatsApp), address book + bulk CSV, loyalty, dashboards/analytics, exports.                                                   |
+| **5 Hardening**           | Production-grade.                                                                   | Route optimisation, reconciliation reports, load/security testing, backups, runbooks, app-store releases.                                              |
+
+Each phase ends with: tests green, a short demo, and a sign-off before the next.
+
+---
+
+## 7. Open items to confirm
+
+- **PayCentral**: do we have API documentation / sandbox credentials? (Needed for Phase 3.)
+- **Supabase**: existing project to reuse, or create a fresh one for this build?
+- **VPS**: OS/size, domain names (site, portal, api), who holds DNS.
+- **Google Maps** API key (Places + Routes) — needed from Phase 1 for quotes.
+- **VAT**: company VAT-registered? (Affects invoice layout and the `VAT_OUTPUT` account.)
+- **WhatsApp/SMS** provider preference (Twilio, Clickatell, WhatsApp Cloud API).
+- **Service levels & zones** for the initial rate card (I can seed from the copy deck / old
+  quote stepper, but you should confirm the numbers).
+- **Fuel rate** (cents/km) and **driver earning rule** initial values.

@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quote {{ quote.quote_number|default:quote.id }}</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Helvetica, Arial, sans-serif;
+    font-size: 11px;
+    color: #212529;
+    line-height: 1.5;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid #E84A8A;
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+  }
+  .brand-name {
+    font-size: 22px;
+    font-weight: 800;
+    color: #E84A8A;
+    letter-spacing: -0.5px;
+  }
+  .brand-sub {
+    font-size: 10px;
+    color: #868e96;
+    margin-top: 2px;
+  }
+  .quote-id-block {
+    text-align: right;
+  }
+  .quote-id-block .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #868e96;
+  }
+  .quote-id-block .value {
+    font-size: 18px;
+    font-weight: 800;
+    color: #191c1d;
+  }
+
+  /* Section title */
+  .section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #E84A8A;
+    border-bottom: 1px solid #e9ecef;
+    padding-bottom: 4px;
+    margin-bottom: 10px;
+    margin-top: 16px;
+  }
+
+  /* Two-column grid */
+  .two-col {
+    display: flex;
+    gap: 32px;
+    margin-bottom: 10px;
+  }
+  .two-col > div { flex: 1; }
+
+  /* Info rows */
+  .info-row {
+    display: flex;
+    margin-bottom: 5px;
+  }
+  .info-label {
+    width: 110px;
+    flex-shrink: 0;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding-top: 1px;
+  }
+  .info-value {
+    flex: 1;
+    font-size: 11px;
+    color: #212529;
+  }
+
+  /* Table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.5px;
+    margin-top: 6px;
+  }
+  thead th {
+    background: #f8f9fa;
+    padding: 7px 8px;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 700;
+    color: #495057;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #dee2e6;
+  }
+  tbody td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #f1f3f5;
+    color: #212529;
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .totals-row td {
+    background: #f8f9fa;
+    font-weight: 700;
+    border-top: 2px solid #FFFFFF;
+  }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+
+  /* Status pill */
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .pill-accepted { background: #dcf4e8; color: #1a7a49; }
+  .pill-pending  { background: #fff4e0; color: #9a5a00; }
+  .pill-draft    { background: #edeeef; color: #4e444c; }
+
+  /* Badges row */
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .badge {
+    padding: 3px 9px;
+    border-radius: 5px;
+    font-size: 9.5px;
+    font-weight: 600;
+  }
+  .badge-on  { background: #dcf4e8; color: #1a7a49; }
+  .badge-off { background: #f3f4f5; color: #868e96; }
+
+  /* Financial metrics */
+  .fin-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .fin-box {
+    flex: 1;
+    text-align: center;
+    padding: 10px 8px;
+    background: #faf8fa;
+    border: 1px solid #ede8ed;
+    border-radius: 8px;
+  }
+  .fin-amount {
+    font-size: 15px;
+    font-weight: 800;
+    color: #E84A8A;
+  }
+  .fin-label {
+    font-size: 8.5px;
+    color: #80747d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 3px;
+  }
+
+  /* Tracking barcode */
+  .barcode-box {
+    text-align: right;
+    margin-top: 12px;
+  }
+  .barcode-text {
+    font-family: monospace;
+    font-size: 15px;
+    letter-spacing: 3px;
+    background: #fff;
+    padding: 5px 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .barcode-label {
+    font-size: 9px;
+    color: #6c757d;
+    text-transform: uppercase;
+    margin-right: 8px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 24px;
+    border-top: 1px solid #e9ecef;
+    padding-top: 10px;
+    text-align: center;
+    font-size: 9px;
+    color: #adb5bd;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<div class="header">
+  <div>
+    <div class="brand-name">Delicate Courier</div>
+    <div class="brand-sub">Cold-Chain Logistics (Pty) Ltd</div>
+    <div style="font-size:10px; color:#868e96; margin-top:6px;">
+      14 Camellia Ave, Office 8 @ Circa, Lynnwood Ridge, 0081<br>
+      +27 78 574 6727 &nbsp;|&nbsp; support@delicatecourier.co.za<br>
+      Reg: 2025/056408/07
+    </div>
+  </div>
+  <div class="quote-id-block">
+    <div class="label">Delivery Quote</div>
+    <div class="value">{{ quote.quote_number|default:quote.id }}</div>
+    <div style="margin-top:6px;">
+      {% if quote.status == "accepted" %}
+        <span class="status-pill pill-accepted">Accepted</span>
+      {% elif quote.status == "pending" %}
+        <span class="status-pill pill-pending">Pending</span>
+      {% else %}
+        <span class="status-pill pill-draft">{{ quote.get_status_display }}</span>
+      {% endif %}
+    </div>
+    <div style="font-size:10px; color:#868e96; margin-top:8px;">
+      Issued: {{ quote.created_at|date:"d F Y" }}<br>
+      Expires: {{ quote.quote_expiry_date|date:"d F Y"|default:"—" }}
+    </div>
+    <div class="barcode-box">
+      <span class="barcode-label">Tracking</span>
+      <span class="barcode-text">{{ quote.tracking_number|default:"N/A" }}</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== BANK DETAILS ===== -->
+<div class="section-title">Payment Details</div>
+<div class="two-col">
+  <div>
+    <div class="info-row"><div class="info-label">Account</div><div class="info-value">Admin (ADM001)</div></div>
+    <div class="info-row"><div class="info-label">Reference</div><div class="info-value">ADM001/{{ quote.quote_number|default:"—" }}</div></div>
+  </div>
+  <div>
+    <div class="info-row"><div class="info-label">Bank</div><div class="info-value">First National Bank</div></div>
+    <div class="info-row"><div class="info-label">Account type</div><div class="info-value">Cheque</div></div>
+    <div class="info-row"><div class="info-label">Branch code</div><div class="info-value">230145</div></div>
+    <div class="info-row"><div class="info-label">Account no.</div><div class="info-value">63136576676</div></div>
+  </div>
+</div>
+
+<!-- ===== CONTACT ===== -->
+<div class="section-title">Contact Information</div>
+<div class="two-col">
+  <div>
+    <div style="font-size:9.5px; font-weight:700; color:#495057; margin-bottom:5px;">SENDER</div>
+    <div class="info-row"><div class="info-label">Name</div><div class="info-value">{{ quote.sender_name|default:"—" }}</div></div>
+    <div class="info-row"><div class="info-label">Email</div><div class="info-value">{{ quote.sender_email|default:"—" }}</div></div>
+    <div class="info-row"><div class="info-label">Phone</div><div class="info-value">{{ quote.sender_phone|default:"—" }}</div></div>
+  </div>
+  <div>
+    <div style="font-size:9.5px; font-weight:700; color:#495057; margin-bottom:5px;">RECIPIENT</div>
+    <div class="info-row"><div class="info-label">Name</div><div class="info-value">{{ quote.recipient_name|default:"—" }}</div></div>
+    <div class="info-row"><div class="info-label">Email</div><div class="info-value">{{ quote.recipient_email|default:"—" }}</div></div>
+    <div class="info-row"><div class="info-label">Phone</div><div class="info-value">{{ quote.recipient_phone|default:"—" }}</div></div>
+  </div>
+</div>
+
+<!-- ===== ROUTE ===== -->
+<div class="section-title">Route Summary</div>
+<div class="two-col">
+  <div>
+    <div class="info-row"><div class="info-label">Collection</div><div class="info-value">{{ quote.bakery_address|default:"—" }}</div></div>
+    <div class="info-row"><div class="info-label">Depot</div><div class="info-value">{{ quote.depot_address|default:"—" }}</div></div>
+  </div>
+  <div>
+    <div class="info-row">
+      <div class="info-label">Deliveries</div>
+      <div class="info-value">
+        {% for c in quote.customers.all %}
+          {{ forloop.counter }}. {{ c.address }}{% if not forloop.last %}<br>{% endif %}
+        {% empty %}—{% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SPECIAL REQUESTS ===== -->
+<div class="section-title">Special Requests</div>
+<div class="badges">
+  <span class="badge {% if quote.liability_cover %}badge-on{% else %}badge-off{% endif %}">
+    {% if quote.liability_cover %}✓{% else %}✗{% endif %} Liability Cover
+  </span>
+  <span class="badge {% if quote.early_collection %}badge-on{% else %}badge-off{% endif %}">
+    {% if quote.early_collection %}✓{% else %}✗{% endif %} Early Collection
+  </span>
+  <span class="badge {% if quote.signature_on_delivery %}badge-on{% else %}badge-off{% endif %}">
+    {% if quote.signature_on_delivery %}✓{% else %}✗{% endif %} Signature on Delivery
+  </span>
+  <span class="badge {% if quote.wedding_venue %}badge-on{% else %}badge-off{% endif %}">
+    {% if quote.wedding_venue %}✓{% else %}✗{% endif %} Wedding Venue
+  </span>
+</div>
+{% if quote.special_instructions %}
+<div class="info-row" style="margin-top:4px;">
+  <div class="info-label">Instructions</div>
+  <div class="info-value">{{ quote.special_instructions }}</div>
+</div>
+{% endif %}
+{% if quote.delivery_directions %}
+<div class="info-row">
+  <div class="info-label">Directions</div>
+  <div class="info-value">{{ quote.delivery_directions }}</div>
+</div>
+{% endif %}
+
+<!-- ===== PARCEL TABLE ===== -->
+<div class="section-title">Parcel Details</div>
+<table>
+  <thead>
+    <tr>
+      <th>Parcel</th>
+      <th>Dimensions (cm)</th>
+      <th>Weight</th>
+      <th>Service Level</th>
+      <th class="text-right">Subtotal</th>
+      <th class="text-center">VAT</th>
+      <th class="text-right">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if quote.parcels %}
+      {% for p in quote.parcels %}
+      <tr>
+        <td>Parcel {{ forloop.counter }}</td>
+        <td>{{ p.length|default:"?" }} × {{ p.width|default:"?" }} × {{ p.height|default:"?" }}</td>
+        <td>{{ p.weight|default:"0" }} kg</td>
+        <td>Standard</td>
+        <td class="text-right">R {{ quote.revenue|floatformat:2 }}</td>
+        <td class="text-center">—</td>
+        <td class="text-right">R {{ quote.revenue|floatformat:2 }}</td>
+      </tr>
+      {% endfor %}
+    {% else %}
+      <tr><td colspan="7" class="text-center" style="color:#6c757d; padding:14px;">No parcels recorded</td></tr>
+    {% endif %}
+    <tr class="totals-row">
+      <td colspan="4">TOTALS</td>
+      <td class="text-right">R {{ quote.revenue|floatformat:2 }}</td>
+      <td class="text-center">—</td>
+      <td class="text-right">R {{ quote.revenue|floatformat:2 }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ===== FINANCIAL BREAKDOWN ===== -->
+<div class="section-title">Financial Breakdown</div>
+<div class="fin-row">
+  <div class="fin-box">
+    <div class="fin-amount">R {{ quote.revenue|floatformat:2 }}</div>
+    <div class="fin-label">Revenue</div>
+  </div>
+  <div class="fin-box">
+    <div class="fin-amount">R {{ quote.cogs|floatformat:2 }}</div>
+    <div class="fin-label">COGS</div>
+  </div>
+  <div class="fin-box">
+    <div class="fin-amount">{{ quote.margin_percent|floatformat:0 }}%</div>
+    <div class="fin-label">Margin</div>
+  </div>
+  <div class="fin-box">
+    <div class="fin-amount">{{ quote.total_distance_km|floatformat:1 }} km</div>
+    <div class="fin-label">Total Distance</div>
+  </div>
+  <div class="fin-box">
+    <div class="fin-amount">{{ quote.total_weight_kg|floatformat:1 }} kg</div>
+    <div class="fin-label">Total Weight</div>
+  </div>
+</div>
+
+<!-- ===== FOOTER ===== -->
+<div class="footer">
+  Collection cut-off: 13:00 &nbsp;|&nbsp; Quote valid for 7 days &nbsp;|&nbsp; Reg: 2025/056408/07<br>
+  +27 78 574 6727 &nbsp;|&nbsp; support@delicatecourier.co.za<br>
+  Thank you for choosing Delicate Courier
+</div>
+
+</body>
+</html>

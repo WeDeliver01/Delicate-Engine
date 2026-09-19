@@ -1,0 +1,262 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d1c2cd;
+    border-radius: 10px;
+  }
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-container-padding">
+  <!-- Page Header -->
+  <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+    <div>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface">System Users</h1>
+      <p class="font-body-md text-body-md text-secondary">Manage access, roles, and activity logs</p>
+    </div>
+    <button class="flex items-center gap-2 bg-primary text-on-primary px-6 py-2.5 rounded-lg font-label-md text-label-md shadow-md hover:opacity-90 active:scale-95 transition-all">
+      <span class="material-symbols-outlined text-lg">person_add</span>
+      + Invite User
+    </button>
+  </div>
+
+  <!-- Metric Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-card-gap mb-8">
+    <div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0px_4px_25px_rgba(232,74,138,0.1)] transition-shadow">
+      <p class="text-label-md font-label-md text-secondary uppercase tracking-wider mb-2">Total Users</p>
+      <div class="flex items-baseline gap-2">
+        <span class="font-metric-lg text-metric-lg text-on-surface">{{ total_users|default:"0" }}</span>
+        <span class="text-[12px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">+{{ users_this_quarter|default:"0" }} this quarter</span>
+      </div>
+    </div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0px_4px_25px_rgba(232,74,138,0.1)] transition-shadow">
+      <p class="text-label-md font-label-md text-secondary uppercase tracking-wider mb-2">Active Now</p>
+      <div class="flex items-baseline gap-2">
+        <span class="font-metric-lg text-metric-lg text-on-surface">{{ active_now|default:"0" }}</span>
+        <span class="text-[12px] font-medium text-secondary italic opacity-60">peak usage</span>
+      </div>
+    </div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0px_4px_25px_rgba(232,74,138,0.1)] transition-shadow">
+      <p class="text-label-md font-label-md text-secondary uppercase tracking-wider mb-2">Roles</p>
+      <div class="flex items-baseline gap-2">
+        <span class="font-metric-lg text-metric-lg text-on-surface">{{ total_roles|default:"0" }}</span>
+        <span class="text-[12px] font-medium text-primary opacity-80">Admin, Dispatcher, Finance, Viewer</span>
+      </div>
+    </div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] hover:shadow-[0px_4px_25px_rgba(232,74,138,0.1)] transition-shadow">
+      <p class="text-label-md font-label-md text-secondary uppercase tracking-wider mb-2">Pending Invites</p>
+      <div class="flex items-baseline gap-2">
+        <span class="font-metric-lg text-metric-lg text-on-surface">{{ pending_invites|default:"0" }}</span>
+        <span class="text-[12px] font-medium text-error opacity-80">{{ expired_invites|default:"0" }} expired</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Management Section -->
+  <div class="bg-surface-container-lowest rounded-2xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)] overflow-hidden">
+    <!-- Filter Bar -->
+    <form method="get" class="px-6 py-4 border-b border-outline-variant/20 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3 flex-1 min-w-[280px]">
+        <div class="relative w-full max-w-md">
+          <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-lg">search</span>
+          <input type="text" name="q" value="{{ search_query|default:'' }}" class="w-full pl-10 pr-4 py-2 bg-surface-container-low border-none focus:ring-2 focus:ring-primary/20 rounded-lg text-body-md transition-all" placeholder="Search by name or email...">
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <select name="role" class="bg-surface-container-low border-none rounded-lg text-body-md font-medium text-on-surface px-4 py-2 focus:ring-2 focus:ring-primary/20">
+          <option value="">All Roles</option>
+          {% for value, label in role_choices %}
+          <option value="{{ value }}" {% if selected_role == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <select name="status" class="bg-surface-container-low border-none rounded-lg text-body-md font-medium text-on-surface px-4 py-2 focus:ring-2 focus:ring-primary/20">
+          <option value="">All Status</option>
+          {% for value, label in status_choices %}
+          <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="p-2 text-primary hover:bg-surface-container-low rounded-lg transition-colors">
+          <span class="material-symbols-outlined">filter_list</span>
+        </button>
+        {% if request.GET %}
+        <a href="?" class="text-secondary text-sm underline ml-2">Clear</a>
+        {% endif %}
+      </div>
+    </form>
+
+    <!-- Data Table -->
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-surface-container-low/50">
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">User ID</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">Full Name</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">Role</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">Last Active</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">Status</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest">Joined</th>
+            <th class="px-6 py-4 font-label-md text-label-md text-secondary uppercase tracking-widest text-right">Actions</th>
+          </tr>
+        </thead>
+<tbody class="divide-y divide-outline-variant/10">
+           {% for user in users %}
+           <tr class="hover:bg-surface-container-low/30 transition-colors">
+             <td class="px-6 py-5 text-label-md text-secondary font-mono">{{ user.id }}</td>
+             <td class="px-6 py-5">
+               <div class="flex items-center gap-3">
+                 <div class="w-9 h-9 rounded-full bg-surface-container-high flex items-center justify-center text-secondary font-bold text-xs border-2 border-outline-variant/30">
+                   {{ user.username|first|upper }}
+                 </div>
+                 <div>
+                   <p class="font-headline-sm text-headline-sm text-on-surface">{{ user.get_full_name|default:user.username }}</p>
+                   <p class="text-body-md text-secondary">{{ user.email|default:"—" }}</p>
+                 </div>
+               </div>
+             </td>
+             <td class="px-6 py-5">
+               <span class="px-3 py-1 bg-surface-container-high/50 text-on-surface-variant rounded-full text-label-md font-medium">—</span>
+             </td>
+             <td class="px-6 py-5 text-body-md text-on-surface-variant">{% if user.last_login %}{{ user.last_login|timesince }} ago{% else %}Never{% endif %}</td>
+             <td class="px-6 py-5">
+               {% if user.is_active %}
+               <span class="flex items-center gap-1.5 text-emerald-600 font-medium text-label-md">
+                 <span class="w-2 h-2 rounded-full bg-emerald-600"></span> Active
+               </span>
+               {% else %}
+               <span class="flex items-center gap-1.5 text-secondary font-medium text-label-md opacity-60">
+                 <span class="w-2 h-2 rounded-full bg-secondary"></span> Inactive
+               </span>
+               {% endif %}
+             </td>
+             <td class="px-6 py-5 text-body-md text-on-surface-variant">{{ user.date_joined|date:"M d, Y" }}</td>
+             <td class="px-6 py-5 text-right">
+               <div class="flex items-center justify-end gap-1">
+                 <button class="p-2 text-secondary hover:text-primary transition-colors" title="Edit User">
+                   <span class="material-symbols-outlined text-lg">edit</span>
+                 </button>
+                 <button class="p-2 text-secondary hover:text-error transition-colors" title="Disable User">
+                   <span class="material-symbols-outlined text-lg">block</span>
+                 </button>
+                 <button class="p-2 text-secondary hover:text-primary transition-colors" title="Reset Password">
+                   <span class="material-symbols-outlined text-lg">lock_reset</span>
+                 </button>
+               </div>
+             </td>
+           </tr>
+{% empty %}
+            <tr>
+              <td colspan="7" class="px-6 py-12 text-center text-on-surface-variant">
+                No users found. <a href="{% url 'admin:auth_user_add' %}" class="text-primary underline">Add one</a>.
+              </td>
+            </tr>
+            {% endfor %}
+         </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="px-6 py-4 flex items-center justify-between border-t border-outline-variant/20 bg-surface-container-low/20">
+      <p class="text-body-md text-secondary">
+        Showing <span class="font-bold text-on-surface">{{ page_obj.start_index }}</span> to <span class="font-bold text-on-surface">{{ page_obj.end_index }}</span> of <span class="font-bold text-on-surface">{{ paginator.count }}</span> users
+      </p>
+      <div class="flex items-center gap-2">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="p-2 border border-outline-variant/30 rounded-lg text-secondary hover:bg-surface-container-low">
+          <span class="material-symbols-outlined">chevron_left</span>
+        </a>
+        {% else %}
+        <button class="p-2 border border-outline-variant/30 rounded-lg text-secondary disabled:opacity-30" disabled>
+          <span class="material-symbols-outlined">chevron_left</span>
+        </button>
+        {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+          {% if page_obj.number == num %}
+          <span class="w-8 h-8 flex items-center justify-center bg-primary text-on-primary rounded-lg text-label-md font-bold">{{ num }}</span>
+          {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+          <a href="?page={{ num }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="w-8 h-8 flex items-center justify-center hover:bg-surface-container-low rounded-lg text-label-md">{{ num }}</a>
+          {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="p-2 border border-outline-variant/30 rounded-lg text-secondary hover:bg-surface-container-low">
+          <span class="material-symbols-outlined">chevron_right</span>
+        </a>
+        {% else %}
+        <button class="p-2 border border-outline-variant/30 rounded-lg text-secondary disabled:opacity-30" disabled>
+          <span class="material-symbols-outlined">chevron_right</span>
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Activity Logs & Security Panel -->
+  <div class="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div class="lg:col-span-2 bg-surface-container-lowest p-6 rounded-2xl shadow-[0px_4px_20px_rgba(0,0,0,0.04)]">
+      <div class="flex items-center justify-between mb-6">
+        <h3 class="font-headline-md text-headline-md text-on-surface">Recent Security Events</h3>
+        <a href="#" class="text-primary font-label-md text-label-md hover:underline">View full logs</a>
+      </div>
+      <div class="space-y-4">
+        {% for event in security_events %}
+        <div class="flex items-start gap-4 p-3 rounded-xl hover:bg-surface-container-low transition-colors group">
+          <div class="p-2 {% if event.type == 'login' %}bg-emerald-50 text-emerald-600{% elif event.type == 'password' %}bg-orange-50 text-orange-600{% else %}bg-primary/10 text-primary{% endif %} rounded-lg">
+            <span class="material-symbols-outlined">{{ event.icon|default:"info" }}</span>
+          </div>
+          <div class="flex-1">
+            <p class="text-body-md text-on-surface">{{ event.message|safe }}</p>
+            <p class="text-label-md text-secondary">{{ event.time_ago }} • IP: {{ event.ip|default:"—" }}</p>
+          </div>
+        </div>
+        {% empty %}
+        <p class="text-secondary text-center py-4">No recent events</p>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-primary text-on-primary p-6 rounded-2xl shadow-lg flex flex-col justify-between overflow-hidden relative group">
+      <div class="relative z-10">
+        <span class="material-symbols-outlined text-4xl mb-4 opacity-50">security</span>
+        <h3 class="font-headline-md text-headline-md mb-2">Security Audit Required</h3>
+        <p class="text-body-md opacity-80 mb-6">{{ security_audit_message|default:"4 user accounts haven't changed their passwords in over 180 days. A bulk reset or reminder is recommended." }}</p>
+        <button class="w-full bg-on-primary text-primary py-3 rounded-xl font-bold text-label-md shadow-xl active:scale-95 transition-all">
+          Run Security Audit
+        </button>
+      </div>
+      <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Micro-interaction for table rows
+  document.querySelectorAll('tbody tr').forEach(row => {
+    row.addEventListener('mouseenter', () => { row.style.transform = 'translateX(4px)'; });
+    row.addEventListener('mouseleave', () => { row.style.transform = 'translateX(0)'; });
+  });
+</script>
+{% endblock %}

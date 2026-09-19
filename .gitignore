@@ -1,0 +1,30 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
+# prior attempts are context, not part of the build
+_archive/
+_reference/*/node_modules/
+# reference code is committed for context, but not its images / lockfiles / binaries
+_reference/**/*.png
+_reference/**/*.jpg
+_reference/**/*.jpeg
+_reference/**/*.webp
+_reference/**/*.mp4
+_reference/**/*.ico
+_reference/**/package-lock.json
+_reference/**/pnpm-lock.yaml
+_reference/**/uv.lock
+_reference/**/db.sqlite3
+# local runtime artefacts
+.api.log
+.web.log
+.worker.log
+.tokens

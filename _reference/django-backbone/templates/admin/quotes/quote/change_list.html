@@ -1,0 +1,339 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    vertical-align: middle;
+  }
+  .soft-shadow { box-shadow: 0 4px 20px rgba(0,0,0,0.04); }
+  body { background: #f8f9fa; font-family: 'Inter', sans-serif; }
+
+  .metric-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+  .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(232,74,138,0.10);
+  }
+
+  .quote-row { transition: background 0.12s; }
+  .quote-row:hover { background: #f3f4f5; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 9999px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .pill-accepted { background: #dcf4e8; color: #1a7a49; border: 1px solid #b2e5cc; }
+  .pill-accepted .pill-dot { background: #22c55e; }
+  .pill-pending  { background: #fff4e0; color: #9a5a00; border: 1px solid #fcd98a; }
+  .pill-pending  .pill-dot { background: #f59e0b; }
+  .pill-expired  { background: #fde8e8; color: #9b1c1c; border: 1px solid #f5bfbf; }
+  .pill-expired  .pill-dot { background: #ef4444; }
+  .pill-default  { background: #edeeef; color: #4e444c; border: 1px solid #d1c2cd; }
+  .pill-default  .pill-dot { background: #9e9e9e; }
+
+  input[type="text"]:focus { outline: none; box-shadow: 0 0 0 3px rgba(232,74,138,0.15); }
+  #changelist-filter { display: none; }
+
+  .page-btn {
+    width: 32px; height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 13px; font-weight: 500;
+    transition: background 0.15s; color: #4e444c;
+  }
+  .page-btn:hover { background: #edeeef; }
+  .page-btn.active { background: #E84A8A; color: #fff; }
+  .page-btn:disabled { opacity: 0.3; cursor: default; }
+
+  .avatar-chip {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: #FCE7F0; color: #404754;
+    font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .action-link {
+    font-size: 12px; font-weight: 600; color: #E84A8A;
+    padding: 4px 12px; border-radius: 6px;
+    border: 1px solid transparent; transition: all 0.15s; white-space: nowrap;
+  }
+  .action-link:hover {
+    background: rgba(232,74,138,0.08);
+    border-color: rgba(232,74,138,0.25);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="padding: 32px;">
+
+  {# ── Page Header ── #}
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:32px;">
+    <div>
+      <h2 style="font-size:24px; font-weight:600; color:#191c1d; margin:0 0 4px 0;">Service Quotes</h2>
+      <p style="font-size:14px; color:#4e444c; margin:0;">
+        Manage and review all customer logistics requests.
+        {% if cl.paginator.count %}
+          <span style="margin-left:8px; padding:2px 8px; background:#f3e8f3; color:#643368; border-radius:9999px; font-size:12px; font-weight:500;">
+            {{ cl.paginator.count }} total
+          </span>
+        {% endif %}
+      </p>
+    </div>
+    {% if has_add_permission %}
+    <a href="/quote/" target="_blank" rel="noopener noreferrer"
+       style="display:inline-flex; align-items:center; gap:8px; background:#E84A8A; color:white; padding:10px 24px; border-radius:8px; font-size:14px; font-weight:600; text-decoration:none;">
+      <span class="material-symbols-outlined" style="font-size:20px;">add</span>
+      Create New Quote
+    </a>
+    {% endif %}
+  </div>
+
+  {# ── Metric Cards ── #}
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:24px; margin-bottom:32px;">
+
+    {# Pending Quotes #}
+    <div class="metric-card" style="background:white; padding:24px; border-radius:12px; border:1px solid #f0edf0; box-shadow:0 2px 12px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div style="padding:8px; background:#fffbeb; border-radius:8px;">
+          <span class="material-symbols-outlined" style="color:#f59e0b;">inbox</span>
+        </div>
+        <span style="font-size:11px; color:#4e444c; background:#edeeef; padding:3px 8px; border-radius:4px;">Live</span>
+      </div>
+      <div>
+        <p style="font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 4px 0;">Pending Quotes</p>
+        <h3 style="font-size:32px; font-weight:700; color:#191c1d; margin:0;">{{ pending_count|default:"0" }}</h3>
+      </div>
+      <div style="margin-top:16px; font-size:13px; color:#80747d;">
+        <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">trending_up</span>
+        {{ pending_trend|default:"No data yet" }}
+      </div>
+    </div>
+
+    {# Avg Response Time #}
+    <div class="metric-card" style="background:white; padding:24px; border-radius:12px; border:1px solid #f0edf0; box-shadow:0 2px 12px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div style="padding:8px; background:#f3e8f3; border-radius:8px;">
+          <span class="material-symbols-outlined" style="color:#E84A8A;">schedule</span>
+        </div>
+        <span style="font-size:11px; color:#4e444c; background:#edeeef; padding:3px 8px; border-radius:4px;">Rolling</span>
+      </div>
+      <div>
+        <p style="font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 4px 0;">Avg. Response Time</p>
+        <h3 style="font-size:32px; font-weight:700; color:#191c1d; margin:0;">{{ avg_response_time|default:"—" }}</h3>
+      </div>
+      <div style="margin-top:16px; font-size:13px; color:#80747d;">
+        <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">schedule</span>
+        Not yet tracked
+      </div>
+    </div>
+
+    {# Conversion Rate #}
+    <div class="metric-card" style="background:white; padding:24px; border-radius:12px; border:1px solid #f0edf0; box-shadow:0 2px 12px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div style="padding:8px; background:#FCE7F0; border-radius:8px;">
+          <span class="material-symbols-outlined" style="color:#585f6c;">check_circle</span>
+        </div>
+        <span style="font-size:11px; color:#4e444c; background:#edeeef; padding:3px 8px; border-radius:4px;">Month</span>
+      </div>
+      <div>
+        <p style="font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 4px 0;">Conversion Rate</p>
+        <h3 style="font-size:32px; font-weight:700; color:#191c1d; margin:0;">{{ conversion_rate|default:"0" }}%</h3>
+      </div>
+      <div style="margin-top:16px; font-size:13px; color:#80747d;">
+        <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">flag</span>
+        Target: 70%
+      </div>
+    </div>
+
+    {# Revenue Potential #}
+    <div class="metric-card" style="background:white; padding:24px; border-radius:12px; border:1px solid #f0edf0; box-shadow:0 2px 12px rgba(0,0,0,0.04); display:flex; flex-direction:column; justify-content:space-between;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+        <div style="padding:8px; background:#e9def5; border-radius:8px;">
+          <span class="material-symbols-outlined" style="color:#635b6e;">bar_chart</span>
+        </div>
+        <span style="font-size:11px; color:#4e444c; background:#edeeef; padding:3px 8px; border-radius:4px;">Estimated</span>
+      </div>
+      <div>
+        <p style="font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; margin:0 0 4px 0;">Revenue Potential</p>
+        <h3 style="font-size:32px; font-weight:700; color:#191c1d; margin:0;">R {{ revenue_potential|floatformat:0|default:"0" }}</h3>
+      </div>
+      <div style="margin-top:16px; font-size:13px; color:#80747d;">
+        <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">calendar_month</span>
+        {{ today|date:"F Y"|default:"Current month" }}
+      </div>
+    </div>
+
+  </div>{# /metric cards grid #}
+
+  {# ── Search Bar ── #}
+  <div style="margin-bottom:24px; display:flex; gap:12px;">
+    <div style="position:relative; flex:1;">
+      <span class="material-symbols-outlined" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#80747d; font-size:20px;">search</span>
+      <input type="text"
+             id="live-search"
+             placeholder="Search by quote #, customer, tracking…"
+             style="width:100%; padding:10px 16px 10px 40px; background:white; border:1px solid #d1c2cd; border-radius:8px; font-size:14px; box-sizing:border-box;"/>
+    </div>
+  </div>
+
+  {# ── Quotes Table ── #}
+  <div style="background:white; border-radius:12px; border:1px solid #f0edf0; box-shadow:0 2px 12px rgba(0,0,0,0.04); overflow:hidden;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%; text-align:left; border-collapse:collapse; min-width:900px;">
+        <thead>
+          <tr style="background:#f8f9fa; border-bottom:1px solid #f0edf0;">
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Quote ID</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Customer</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Route</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Distance</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; text-align:right;">Price</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Status</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em;">Created</th>
+            <th style="padding:12px 24px; font-size:11px; font-weight:700; color:#80747d; text-transform:uppercase; letter-spacing:0.05em; text-align:center;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="quotes-tbody" style="border-collapse:collapse;">
+          {% for quote in cl.result_list %}
+          <tr class="quote-row searchable-row" style="border-bottom:1px solid #f8f9fa;">
+
+            <td style="padding:16px 24px;">
+              <span style="font-family:monospace; font-weight:600; color:#E84A8A; font-size:14px;">
+                {{ quote.quote_number|default:"—" }}
+              </span>
+            </td>
+
+            <td style="padding:16px 24px;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div class="avatar-chip">{{ quote.customer_name|default:"—"|slice:":2" }}</div>
+                <p style="font-size:14px; font-weight:600; color:#191c1d; margin:0;">{{ quote.customer_name|default:"—" }}</p>
+              </div>
+            </td>
+
+            <td style="padding:16px 24px; color:#80747d;">—</td>
+
+            <td style="padding:16px 24px; font-size:14px; color:#80747d;">
+              {{ quote.total_distance_km|floatformat:"1"|default:"0" }} km
+            </td>
+
+            <td style="padding:16px 24px; text-align:right; font-size:14px; font-weight:600; color:#191c1d;">
+              R {{ quote.revenue|floatformat:"2"|default:"0.00" }}
+            </td>
+
+            <td style="padding:16px 24px;">
+              {% if quote.status == "accepted" %}
+                <span class="pill pill-accepted"><span class="pill-dot"></span>{{ quote.get_status_display }}</span>
+              {% elif quote.status == "pending" %}
+                <span class="pill pill-pending"><span class="pill-dot"></span>{{ quote.get_status_display }}</span>
+              {% elif quote.status == "expired" %}
+                <span class="pill pill-expired"><span class="pill-dot"></span>{{ quote.get_status_display }}</span>
+              {% else %}
+                <span class="pill pill-default"><span class="pill-dot"></span>{{ quote.get_status_display|default:"Draft" }}</span>
+              {% endif %}
+            </td>
+
+            <td style="padding:16px 24px; font-size:14px; color:#80747d;">
+              {{ quote.created_at|date:"M d, Y" }}
+            </td>
+
+            <td style="padding:16px 24px; text-align:center;">
+              <a href="{% url 'admin:quotes_quote_change' quote.pk %}" class="action-link">
+                View Details
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr id="no-quotes-row">
+            <td colspan="8" style="padding:64px; text-align:center;">
+              <span class="material-symbols-outlined" style="font-size:48px; color:#d1c2cd; display:block; margin-bottom:12px; opacity:0.4;">add_notes</span>
+              <p style="color:#80747d; font-size:14px; margin:0 0 16px 0;">No quotes yet.</p>
+              {% if has_add_permission %}
+              <a href="{{ cl.add_url }}" style="color:#E84A8A; font-weight:600;">Create the first one →</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {# No results for live search #}
+      <div id="no-results" class="hidden" style="padding:64px; text-align:center;">
+        <span class="material-symbols-outlined" style="font-size:48px; color:#d1c2cd; display:block; margin-bottom:12px; opacity:0.4;">search_off</span>
+        <p style="color:#80747d; font-size:14px; margin:0;">No quotes match your search.</p>
+      </div>
+
+    </div>
+
+    {# ── Pagination ── #}
+    {% if cl.paginator.num_pages > 1 %}
+    <div style="padding:16px 24px; background:#f8f9fa; border-top:1px solid #f0edf0; display:flex; justify-content:space-between; align-items:center;">
+      <p style="font-size:14px; color:#80747d; margin:0;">
+        Showing
+        <b style="color:#191c1d;">{{ cl.result_list|length }}</b>
+        of
+        <b style="color:#191c1d;">{{ cl.paginator.count }}</b>
+        quote{{ cl.paginator.count|pluralize }}
+      </p>
+      <div style="display:flex; align-items:center; gap:4px;">
+
+        {% if cl.page_obj.has_previous %}
+          <a href="?p={{ cl.page_obj.previous_page_number }}{% for key,value in cl.params.items %}{% if key != 'p' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="page-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">chevron_left</span>
+          </a>
+        {% else %}
+          <button disabled class="page-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">chevron_left</span>
+          </button>
+        {% endif %}
+
+        {% for page_num in cl.paginator.page_range %}
+          {% if page_num == cl.page_obj.number %}
+            <span class="page-btn active">{{ page_num }}</span>
+          {% elif page_num > cl.page_obj.number|add:"-3" and page_num < cl.page_obj.number|add:"3" %}
+            <a href="?p={{ page_num }}{% for key,value in cl.params.items %}{% if key != 'p' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="page-btn">{{ page_num }}</a>
+          {% endif %}
+        {% endfor %}
+
+        {% if cl.page_obj.has_next %}
+          <a href="?p={{ cl.page_obj.next_page_number }}{% for key,value in cl.params.items %}{% if key != 'p' %}&{{ key }}={{ value }}{% endif %}{% endfor %}" class="page-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">chevron_right</span>
+          </a>
+        {% else %}
+          <button disabled class="page-btn">
+            <span class="material-symbols-outlined" style="font-size:18px;">chevron_right</span>
+          </button>
+        {% endif %}
+
+      </div>
+    </div>
+    {% endif %}
+
+  </div>{# /table card #}
+
+  <script>
+    document.getElementById('live-search').addEventListener('input', function () {
+      const query = this.value.toLowerCase().trim();
+      const rows = document.querySelectorAll('.searchable-row');
+      const noResults = document.getElementById('no-results');
+      let visibleCount = 0;
+
+      rows.forEach(function (row) {
+        const text = row.innerText.toLowerCase();
+        if (text.includes(query)) {
+          row.style.display = '';
+          visibleCount++;
+        } else {
+          row.style.display = 'none';
+        }
+      });
+
+      noResults.classList.toggle('hidden', visibleCount > 0 || query === '');
+    });
+  </script>
+
+</div>{# /container #}
+{% endblock %}

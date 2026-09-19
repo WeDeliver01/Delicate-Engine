@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: delicate
+          POSTGRES_PASSWORD: delicate
+          POSTGRES_DB: delicate_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U delicate -d delicate_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://delicate:delicate@localhost:5433/delicate_test
+      TEST_DATABASE_URL: postgres://delicate:delicate@localhost:5433/delicate_test
+      AUTH_DEV_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
+      - run: pnpm --filter @delicate/contracts --filter @delicate/db run build
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      - run: pnpm --filter @delicate/api run build
+      - run: pnpm --filter @delicate/web run build
+
+  images:
+    name: build images
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/api.Dockerfile
+          push: true
+          build-args: APP_VERSION=${{ github.sha }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/engine-api:latest
+            ghcr.io/${{ github.repository_owner }}/engine-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/web.Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/engine-web:latest
+            ghcr.io/${{ github.repository_owner }}/engine-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

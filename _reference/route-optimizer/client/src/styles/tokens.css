@@ -1,0 +1,95 @@
+/* v7 Design Tokens — jacaranda-tinted dark-first system */
+
+:root {
+  /* Surfaces (dark-default) */
+  --v7-surface-base: 258 24% 6%;
+  --v7-surface-raised: 258 22% 9%;
+  --v7-surface-overlay: 258 20% 12%;
+  --v7-surface-inset: 258 28% 4%;
+
+  /* Borders / hairlines */
+  --v7-border-hairline: 258 18% 16%;
+  --v7-border-soft: 258 16% 22%;
+  --v7-border-strong: 258 14% 32%;
+
+  /* Text */
+  --v7-text-primary: 40 28% 94%;
+  --v7-text-secondary: 40 14% 78%;
+  --v7-text-tertiary: 258 10% 60%;
+  --v7-text-quiet: 258 10% 44%;
+
+  /* Jacaranda brand scale */
+  --v7-jacaranda-50: 268 80% 96%;
+  --v7-jacaranda-100: 268 76% 90%;
+  --v7-jacaranda-200: 268 72% 80%;
+  --v7-jacaranda-300: 268 68% 70%;
+  --v7-jacaranda-400: 268 62% 62%;
+  --v7-jacaranda-500: 268 58% 54%;
+  --v7-jacaranda-600: 268 54% 46%;
+  --v7-jacaranda-700: 268 52% 38%;
+  --v7-jacaranda-800: 268 50% 28%;
+  --v7-jacaranda-900: 268 48% 18%;
+  --v7-jacaranda-gradient: linear-gradient(135deg, hsl(268 62% 62%) 0%, hsl(288 56% 52%) 100%);
+
+  /* Semantic */
+  --v7-success: 152 56% 50%;
+  --v7-warning: 38 92% 58%;
+  --v7-danger: 0 72% 58%;
+  --v7-info: 208 84% 62%;
+
+  /* Fleet driver colours */
+  --v7-driver-vinny: 199 89% 60%;
+  --v7-driver-ashley: 326 78% 64%;
+  --v7-driver-refiloe: 152 56% 52%;
+  --v7-driver-clifford: 38 92% 58%;
+
+  /* Radii */
+  --v7-radius-sm: 6px;
+  --v7-radius-md: 10px;
+  --v7-radius-lg: 14px;
+  --v7-radius-xl: 22px;
+  --v7-radius-pill: 999px;
+
+  /* Spacing scale */
+  --v7-space-1: 4px;
+  --v7-space-2: 8px;
+  --v7-space-3: 12px;
+  --v7-space-4: 16px;
+  --v7-space-5: 24px;
+  --v7-space-6: 32px;
+  --v7-space-7: 48px;
+  --v7-space-8: 64px;
+
+  /* Shadows */
+  --v7-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.45);
+  --v7-shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.55), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --v7-shadow-lg: 0 24px 60px -20px rgba(0, 0, 0, 0.7), 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+
+  /* Motion */
+  --v7-ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --v7-ease-emphasized: cubic-bezier(0.2, 0.8, 0, 1);
+  --v7-duration-fast: 120ms;
+  --v7-duration-base: 200ms;
+  --v7-duration-slow: 320ms;
+}
+
+/* Light overrides */
+.light, :root.light {
+  --v7-surface-base: 40 30% 98%;
+  --v7-surface-raised: 0 0% 100%;
+  --v7-surface-overlay: 40 20% 96%;
+  --v7-surface-inset: 40 22% 94%;
+
+  --v7-border-hairline: 258 14% 88%;
+  --v7-border-soft: 258 12% 80%;
+  --v7-border-strong: 258 12% 64%;
+
+  --v7-text-primary: 258 28% 12%;
+  --v7-text-secondary: 258 18% 28%;
+  --v7-text-tertiary: 258 10% 44%;
+  --v7-text-quiet: 258 8% 58%;
+
+  --v7-shadow-sm: 0 1px 2px 0 rgba(20, 14, 36, 0.06);
+  --v7-shadow-md: 0 6px 14px -4px rgba(20, 14, 36, 0.1), 0 2px 4px -2px rgba(20, 14, 36, 0.06);
+  --v7-shadow-lg: 0 20px 48px -16px rgba(20, 14, 36, 0.18), 0 8px 16px -8px rgba(20, 14, 36, 0.1);
+}

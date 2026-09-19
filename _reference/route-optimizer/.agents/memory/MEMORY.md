@@ -1,0 +1,7 @@
+- [Inspector store + context providers](inspector-context-providers.md) — nodes captured by the zustand inspector store must render inside the React context providers they consume.
+- [Lazy chunk stale-deploy recovery](lazy-chunk-retry.md) — hash-named route chunks 404 for open tabs after a deploy; lazyWithRetry reloads once to recover.
+- [Driver shift-start auto-close](driver-shift-start.md) — a stale active driver_trip used to block shift-start; start now auto-closes all active trips instead of erroring.
+- [Delivery-only routing](delivery-only-routing.md) — already-collected/out-for-delivery shipments must route with no collection leg; interleaveSequence forced a collection batch (→(0,0) when GPS missing) so they got no ETA.
+- [Operational constraints lockstep](operational-constraints-lockstep.md) — fleet vehicle/cap rules are duplicated in routing.ts optimizer AND the server reassignment-suggestions pre-filter; change both together.
+- [Live-ETA cost guardrail](live-eta-cost-guardrail.md) — first-leg Google cache key must be driver+stop only (no live coords) or a moving driver churns the 45s cache and blows the call budget.
+- [Assignments CAS](project-assignments-cas.md) — system-initiated writes to projects.assignments must use updatedAt optimistic-concurrency or they clobber concurrent manual dispatcher edits.

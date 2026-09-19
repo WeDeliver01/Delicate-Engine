@@ -1,0 +1,30 @@
+{
+  "name": "Delicate Driver",
+  "short_name": "Driver",
+  "description": "Courier companion app for Delicate Courier drivers",
+  "theme_color": "#1a1a2e",
+  "background_color": "#1a1a2e",
+  "display": "standalone",
+  "start_url": "/driver/dashboard",
+  "scope": "/driver/",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/driver-icon-192x192.png?v=3",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/driver-icon-512x512.png?v=3",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/driver-apple-touch-icon.png?v=3",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

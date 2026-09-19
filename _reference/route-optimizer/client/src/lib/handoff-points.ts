@@ -1,0 +1,28 @@
+import type { HandoffPoint } from "@shared/schema";
+
+export const DEFAULT_HANDOFF_POINTS: HandoffPoint[] = [
+  { id: "hp_1", name: "Engen 1-Stop Centurion", address: "N1 & John Vorster Dr, Centurion", lat: -25.8603, lng: 28.1894, active: true },
+  { id: "hp_2", name: "Shell Midrand", address: "N1 & New Rd, Midrand", lat: -25.9870, lng: 28.1270, active: true },
+  { id: "hp_3", name: "BP Hatfield", address: "Burnett St & Hilda St, Hatfield", lat: -25.7475, lng: 28.2360, active: true },
+  { id: "hp_4", name: "Sasol Menlyn", address: "Atterbury Rd & Garsfontein Rd, Menlyn", lat: -25.7830, lng: 28.2780, active: true },
+  { id: "hp_5", name: "Engen Garsfontein", address: "Garsfontein Rd & De Villebois Mareuil Dr", lat: -25.8050, lng: 28.3020, active: true },
+  { id: "hp_6", name: "Caltex Montana", address: "Zambezi Dr & Brits Rd, Montana", lat: -25.6890, lng: 28.2100, active: true },
+  { id: "hp_7", name: "Shell Silverton", address: "Pretoria Rd & C.R. Swart Dr, Silverton", lat: -25.7370, lng: 28.3020, active: true },
+  { id: "hp_8", name: "BP Irene", address: "N1 & Nellmapius Dr, Irene", lat: -25.8720, lng: 28.2200, active: true },
+  { id: "hp_9", name: "Engen Lynnwood", address: "Lynnwood Rd & Daventry St, Lynnwood", lat: -25.7700, lng: 28.2800, active: true },
+  { id: "hp_10", name: "Shell Waterkloof", address: "Waterkloof Rd & Club Ave, Waterkloof", lat: -25.7900, lng: 28.2500, active: true },
+  { id: "hp_11", name: "Total Soshanguve", address: "Aubrey Matlhako Rd, Soshanguve Block H", lat: -25.5230, lng: 28.1110, active: true },
+  { id: "hp_12", name: "Engen Ga-Rankuwa", address: "Molefe Makinta Dr, Ga-Rankuwa", lat: -25.6120, lng: 28.0890, active: true },
+  { id: "hp_13", name: "Sasol Rosslyn", address: "N4 & Rosslyn Rd, Rosslyn", lat: -25.6730, lng: 28.0750, active: true },
+  { id: "hp_14", name: "BP Wonderboom", address: "Lavender Rd & Rachel De Beer St, Wonderboom", lat: -25.6950, lng: 28.2100, active: true },
+  { id: "hp_15", name: "Shell Pretoria North", address: "Rachel De Beer St & Bremer St, Pretoria North", lat: -25.7100, lng: 28.1880, active: true },
+  { id: "hp_16", name: "Engen Pretoria East", address: "Hans Strijdom Dr & Simon Vermooten Rd", lat: -25.7650, lng: 28.3100, active: true },
+  { id: "hp_17", name: "Caltex Pretoria West", address: "Mitchell St & Church St W, Pretoria West", lat: -25.7450, lng: 28.1500, active: true },
+  { id: "hp_18", name: "Shell N1 Zambezi", address: "N1 & Zambezi Dr Off-ramp", lat: -25.6800, lng: 28.1950, active: true },
+  { id: "hp_19", name: "BP N4 Brits Rd", address: "N4 & Brits Rd, Pretoria North", lat: -25.6700, lng: 28.1200, active: true },
+  { id: "hp_20", name: "Engen R21 Irene", address: "R21 & Nellmapius Dr, Irene", lat: -25.8680, lng: 28.2450, active: true },
+  { id: "hp_21", name: "Sasol Church St", address: "Church St & Nelson Mandela Dr, Pretoria CBD", lat: -25.7460, lng: 28.1880, active: true },
+  { id: "hp_22", name: "BP N14 Centurion", address: "N14 & West Ave, Centurion", lat: -25.8550, lng: 28.1600, active: true },
+  { id: "hp_23", name: "Total Faerie Glen", address: "Atterbury Rd & Ln, Faerie Glen", lat: -25.7930, lng: 28.3180, active: true },
+  { id: "hp_24", name: "Engen Moreleta Park", address: "Garsfontein Rd & Solomon Mahlangu Dr", lat: -25.8310, lng: 28.3200, active: true },
+];

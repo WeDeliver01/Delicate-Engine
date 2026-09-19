@@ -1,0 +1,1164 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Delicate Financial Engine API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: admin
+    description: Admin operations
+  - name: driver
+    description: Driver portal operations
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Admin: aggregates ──────────────────────────────────────────────────────
+  /admin/overview:
+    get:
+      operationId: getAdminOverview
+      tags: [admin]
+      summary: Company P&L snapshot
+      responses:
+        "200":
+          description: Overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminOverview"
+
+  /admin/driver-balances:
+    get:
+      operationId: getDriverBalances
+      tags: [admin]
+      summary: Per-driver available/locked/fuel balances
+      responses:
+        "200":
+          description: Driver balances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DriverBalance"
+
+  /admin/activity:
+    get:
+      operationId: getAdminActivity
+      tags: [admin]
+      summary: Recent deliveries and payouts
+      responses:
+        "200":
+          description: Activity feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminActivity"
+
+  # ── Admin: drivers ─────────────────────────────────────────────────────────
+  /admin/drivers:
+    get:
+      operationId: listDrivers
+      tags: [admin]
+      summary: List all drivers
+      responses:
+        "200":
+          description: Drivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Driver"
+    post:
+      operationId: createDriver
+      tags: [admin]
+      summary: Create a driver
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverInput"
+      responses:
+        "200":
+          description: Created driver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Driver"
+
+  /admin/drivers/{id}:
+    patch:
+      operationId: updateDriver
+      tags: [admin]
+      summary: Update a driver
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DriverInput"
+      responses:
+        "200":
+          description: Updated driver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Driver"
+    delete:
+      operationId: deleteDriver
+      tags: [admin]
+      summary: Delete a driver
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  /admin/drivers/{id}/fuel-spend:
+    post:
+      operationId: recordFuelSpend
+      tags: [admin]
+      summary: Record a fuel card swipe
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FuelSpendInput"
+      responses:
+        "200":
+          description: Fuel spend recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuelSpendResult"
+
+  # ── Admin: bakeries ────────────────────────────────────────────────────────
+  /admin/bakeries:
+    get:
+      operationId: listBakeries
+      tags: [admin]
+      summary: List all bakeries
+      responses:
+        "200":
+          description: Bakeries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bakery"
+    post:
+      operationId: createBakery
+      tags: [admin]
+      summary: Create a bakery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BakeryInput"
+      responses:
+        "200":
+          description: Created bakery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bakery"
+
+  /admin/bakeries/{id}:
+    patch:
+      operationId: updateBakery
+      tags: [admin]
+      summary: Update a bakery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BakeryInput"
+      responses:
+        "200":
+          description: Updated bakery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bakery"
+    delete:
+      operationId: deleteBakery
+      tags: [admin]
+      summary: Delete a bakery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ── Admin: zone rates ──────────────────────────────────────────────────────
+  /admin/zone-rates:
+    get:
+      operationId: listZoneRates
+      tags: [admin]
+      summary: List zone rates
+      responses:
+        "200":
+          description: Zone rates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ZoneRate"
+    post:
+      operationId: createZoneRate
+      tags: [admin]
+      summary: Create a zone rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneRateInput"
+      responses:
+        "200":
+          description: Created zone rate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneRate"
+
+  /admin/zone-rates/{id}:
+    patch:
+      operationId: updateZoneRate
+      tags: [admin]
+      summary: Update a zone rate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ZoneRateInput"
+      responses:
+        "200":
+          description: Updated zone rate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ZoneRate"
+    delete:
+      operationId: deleteZoneRate
+      tags: [admin]
+      summary: Delete a zone rate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ── Admin: pricing rules ───────────────────────────────────────────────────
+  /admin/pricing-rules:
+    get:
+      operationId: listPricingRules
+      tags: [admin]
+      summary: List pricing rules
+      responses:
+        "200":
+          description: Pricing rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PricingRule"
+    post:
+      operationId: createPricingRule
+      tags: [admin]
+      summary: Create a pricing rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PricingRuleInput"
+      responses:
+        "200":
+          description: Created pricing rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingRule"
+
+  /admin/pricing-rules/{id}:
+    patch:
+      operationId: updatePricingRule
+      tags: [admin]
+      summary: Update a pricing rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PricingRuleInput"
+      responses:
+        "200":
+          description: Updated pricing rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricingRule"
+    delete:
+      operationId: deletePricingRule
+      tags: [admin]
+      summary: Delete a pricing rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ── Admin: assignments ─────────────────────────────────────────────────────
+  /admin/assignments:
+    get:
+      operationId: listAssignments
+      tags: [admin]
+      summary: List driver-bakery assignments
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assignment"
+    post:
+      operationId: createAssignment
+      tags: [admin]
+      summary: Pair a driver to a bakery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentInput"
+      responses:
+        "200":
+          description: Created assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assignment"
+
+  # ── Admin: deliveries ──────────────────────────────────────────────────────
+  /admin/deliveries:
+    post:
+      operationId: createDelivery
+      tags: [admin]
+      summary: Create and settle a delivery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeliveryInput"
+      responses:
+        "200":
+          description: Delivery created and settled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeliveryResult"
+
+  /admin/deliveries/{id}/refund:
+    post:
+      operationId: refundDelivery
+      tags: [admin]
+      summary: Refund a delivery
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Refunded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ── Admin: payouts ─────────────────────────────────────────────────────────
+  /admin/payouts:
+    get:
+      operationId: listAdminPayouts
+      tags: [admin]
+      summary: List all payout requests
+      responses:
+        "200":
+          description: Payout requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PayoutRequest"
+
+  /admin/payouts/{id}:
+    patch:
+      operationId: processAdminPayout
+      tags: [admin]
+      summary: Mark payout as paid or cancelled
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutUpdate"
+      responses:
+        "200":
+          description: Processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+
+  # ── Driver portal ──────────────────────────────────────────────────────────
+  /driver/me:
+    get:
+      operationId: getDriverMe
+      tags: [driver]
+      summary: Get authenticated driver profile
+      responses:
+        "200":
+          description: Driver profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverProfile"
+
+  /driver/wallet:
+    get:
+      operationId: getDriverWallet
+      tags: [driver]
+      summary: Get driver wallet balances
+      responses:
+        "200":
+          description: Wallet state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletState"
+
+  /driver/ledger:
+    get:
+      operationId: getDriverLedger
+      tags: [driver]
+      summary: Get driver ledger transactions
+      parameters:
+        - name: account
+          in: query
+          schema:
+            type: string
+            enum: [earnings, fuel]
+      responses:
+        "200":
+          description: Ledger entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LedgerEntry"
+
+  /driver/deliveries:
+    get:
+      operationId: getDriverDeliveries
+      tags: [driver]
+      summary: Get driver's deliveries
+      responses:
+        "200":
+          description: Deliveries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Delivery"
+
+  /driver/payouts:
+    get:
+      operationId: listDriverPayouts
+      tags: [driver]
+      summary: List driver's payout requests
+      responses:
+        "200":
+          description: Payout requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PayoutRequest"
+    post:
+      operationId: requestPayout
+      tags: [driver]
+      summary: Request a payout of available earnings
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutRequestInput"
+      responses:
+        "200":
+          description: Payout requested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayoutRequestResult"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
+
+    # ── Admin overview ──────────────────────────────────────────────────────
+    AdminOverview:
+      type: object
+      properties:
+        totalRevenueCents:
+          type: integer
+        totalDriverPayoutCents:
+          type: integer
+        totalFuelCents:
+          type: integer
+        totalDeliveries:
+          type: integer
+        activeDrivers:
+          type: integer
+        pendingPayoutsCents:
+          type: integer
+        marginBps:
+          type: ["integer", "null"]
+      required:
+        - totalRevenueCents
+        - totalDriverPayoutCents
+        - totalFuelCents
+        - totalDeliveries
+        - activeDrivers
+        - pendingPayoutsCents
+
+    DriverBalance:
+      type: object
+      properties:
+        driverId:
+          type: string
+        driverName:
+          type: string
+        availableCents:
+          type: integer
+        lockedCents:
+          type: integer
+        fuelCents:
+          type: integer
+        nextUnlock:
+          type: ["string", "null"]
+      required:
+        - driverId
+        - driverName
+        - availableCents
+        - lockedCents
+        - fuelCents
+        - nextUnlock
+
+    AdminActivity:
+      type: object
+      properties:
+        deliveries:
+          type: array
+          items:
+            $ref: "#/components/schemas/Delivery"
+        payouts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PayoutRequest"
+      required: [deliveries, payouts]
+
+    # ── Driver ──────────────────────────────────────────────────────────────
+    Driver:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        phone:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        depotLabel:
+          type: ["string", "null"]
+        depotLat:
+          type: number
+        depotLng:
+          type: number
+        vehicleKmPerLitre:
+          type: ["number", "null"]
+        fuelCardId:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        portalToken:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, name, depotLat, depotLng, active]
+
+    DriverInput:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        depotLabel:
+          type: string
+        depotLat:
+          type: number
+        depotLng:
+          type: number
+        vehicleKmPerLitre:
+          type: number
+        fuelCardId:
+          type: string
+        active:
+          type: boolean
+
+    DriverProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        depotLabel:
+          type: ["string", "null"]
+        fuelCardId:
+          type: ["string", "null"]
+      required: [id, name]
+
+    # ── Bakery ──────────────────────────────────────────────────────────────
+    Bakery:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        pickupAddress:
+          type: ["string", "null"]
+        pickupLat:
+          type: number
+        pickupLng:
+          type: number
+        active:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, code, name, pickupLat, pickupLng, active]
+
+    BakeryInput:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        pickupAddress:
+          type: string
+        pickupLat:
+          type: number
+        pickupLng:
+          type: number
+        active:
+          type: boolean
+
+    # ── Zone rates ──────────────────────────────────────────────────────────
+    ZoneRate:
+      type: object
+      properties:
+        id:
+          type: string
+        bakeryId:
+          type: ["string", "null"]
+        zone:
+          type: string
+        priceCents:
+          type: integer
+        currency:
+          type: string
+        source:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, zone, priceCents, currency]
+
+    ZoneRateInput:
+      type: object
+      properties:
+        bakeryId:
+          type: string
+        zone:
+          type: string
+        priceCents:
+          type: integer
+        currency:
+          type: string
+        source:
+          type: string
+
+    # ── Pricing rules ───────────────────────────────────────────────────────
+    PricingRule:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: ["string", "null"]
+        scopeType:
+          type: string
+        scopeRef:
+          type: ["string", "null"]
+        distanceMinKm:
+          type: ["number", "null"]
+        distanceMaxKm:
+          type: ["number", "null"]
+        fuelCostPerKmCents:
+          type: integer
+        driverBaseFeeCents:
+          type: integer
+        variableCostsCents:
+          type: integer
+        batchingBps:
+          type: integer
+        strategy:
+          type: string
+        driverShareBps:
+          type: integer
+        driverPerKmCents:
+          type: ["integer", "null"]
+        priority:
+          type: integer
+        active:
+          type: boolean
+        effectiveFrom:
+          type: ["string", "null"]
+        effectiveTo:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required:
+        - id
+        - scopeType
+        - fuelCostPerKmCents
+        - driverBaseFeeCents
+        - variableCostsCents
+        - batchingBps
+        - strategy
+        - driverShareBps
+        - priority
+        - active
+
+    PricingRuleInput:
+      type: object
+      properties:
+        label:
+          type: string
+        scopeType:
+          type: string
+        scopeRef:
+          type: string
+        distanceMinKm:
+          type: number
+        distanceMaxKm:
+          type: number
+        fuelCostPerKmCents:
+          type: integer
+        driverBaseFeeCents:
+          type: integer
+        variableCostsCents:
+          type: integer
+        batchingBps:
+          type: integer
+        strategy:
+          type: string
+        driverShareBps:
+          type: integer
+        driverPerKmCents:
+          type: integer
+        priority:
+          type: integer
+        active:
+          type: boolean
+        effectiveFrom:
+          type: string
+        effectiveTo:
+          type: string
+
+    # ── Assignments ─────────────────────────────────────────────────────────
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: string
+        driverId:
+          type: string
+        bakeryId:
+          type: string
+        active:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, driverId, bakeryId, active]
+
+    AssignmentInput:
+      type: object
+      properties:
+        driverId:
+          type: string
+        bakeryId:
+          type: string
+      required: [driverId, bakeryId]
+
+    # ── Deliveries ──────────────────────────────────────────────────────────
+    Delivery:
+      type: object
+      properties:
+        id:
+          type: string
+        bakeryId:
+          type: string
+        driverId:
+          type: string
+        customerAddress:
+          type: ["string", "null"]
+        customerLat:
+          type: number
+        customerLng:
+          type: number
+        zone:
+          type: ["string", "null"]
+        priceCents:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+        fuelCents:
+          type: ["integer", "null"]
+        driverPayoutCents:
+          type: ["integer", "null"]
+        companyRevenueCents:
+          type: ["integer", "null"]
+        cogsCents:
+          type: ["integer", "null"]
+        marginBps:
+          type: ["integer", "null"]
+        distanceKm:
+          type: ["number", "null"]
+        settledAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, bakeryId, driverId, priceCents, currency, status]
+
+    DeliveryInput:
+      type: object
+      properties:
+        bakeryId:
+          type: string
+        driverId:
+          type: string
+        customer:
+          type: object
+          properties:
+            lat:
+              type: number
+            lng:
+              type: number
+            address:
+              type: string
+          required: [lat, lng]
+        zone:
+          type: string
+        priceCents:
+          type: integer
+        idempotencyKey:
+          type: string
+        currency:
+          type: string
+      required: [bakeryId, driverId, customer, idempotencyKey]
+
+    DeliveryResult:
+      type: object
+      properties:
+        deliveryId:
+          type: string
+        status:
+          type: string
+        alreadyExisted:
+          type: boolean
+        settlement:
+          $ref: "#/components/schemas/Settlement"
+      required: [deliveryId, status, alreadyExisted, settlement]
+
+    Settlement:
+      type: object
+      properties:
+        fuelCents:
+          type: integer
+        variableCents:
+          type: integer
+        driverPayoutCents:
+          type: integer
+        companyRevenueCents:
+          type: integer
+        cogsCents:
+          type: integer
+        marginBps:
+          type: integer
+        pricingRuleId:
+          type: string
+        distanceKm:
+          type: number
+      required:
+        - fuelCents
+        - variableCents
+        - driverPayoutCents
+        - companyRevenueCents
+        - cogsCents
+        - marginBps
+        - pricingRuleId
+        - distanceKm
+
+    # ── Payouts ─────────────────────────────────────────────────────────────
+    PayoutRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        driverId:
+          type: string
+        amountCents:
+          type: integer
+        status:
+          type: string
+        note:
+          type: ["string", "null"]
+        processedAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, driverId, amountCents, status]
+
+    PayoutUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [paid, cancelled]
+        note:
+          type: string
+      required: [status]
+
+    PayoutRequestInput:
+      type: object
+      properties:
+        amountCents:
+          type: integer
+
+    PayoutRequestResult:
+      type: object
+      properties:
+        id:
+          type: string
+        amountCents:
+          type: integer
+      required: [id, amountCents]
+
+    # ── Wallet ──────────────────────────────────────────────────────────────
+    EarningsBalance:
+      type: object
+      properties:
+        total:
+          type: integer
+        available:
+          type: integer
+        locked:
+          type: integer
+        nextUnlock:
+          type: ["string", "null"]
+      required: [total, available, locked, nextUnlock]
+
+    WalletState:
+      type: object
+      properties:
+        earnings:
+          $ref: "#/components/schemas/EarningsBalance"
+        fuelCents:
+          type: integer
+        availableForPayout:
+          type: integer
+      required: [earnings, fuelCents, availableForPayout]
+
+    LedgerEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        driverId:
+          type: string
+        account:
+          type: string
+        type:
+          type: string
+        amountCents:
+          type: integer
+        currency:
+          type: string
+        deliveryId:
+          type: ["string", "null"]
+        payoutId:
+          type: ["string", "null"]
+        availableFrom:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        idempotencyKey:
+          type: string
+        createdAt:
+          type: string
+      required: [id, driverId, account, type, amountCents, currency, idempotencyKey]
+
+    # ── Fuel spend ──────────────────────────────────────────────────────────
+    FuelSpendInput:
+      type: object
+      properties:
+        amountCents:
+          type: integer
+        reference:
+          type: string
+        description:
+          type: string
+      required: [amountCents]
+
+    FuelSpendResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        balanceCents:
+          type: integer
+      required: [ok, balanceCents]

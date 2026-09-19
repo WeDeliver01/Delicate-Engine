@@ -1,0 +1,388 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+  .material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+  .active-tab-indicator {
+    position: absolute;
+    left: 0;
+    width: 4px;
+    height: 100%;
+    background-color: #E84A8A;
+    border-radius: 0 4px 4px 0;
+  }
+  .settings-card {
+    box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.04);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-container-padding">
+  <header class="mb-8 flex justify-between items-end">
+    <div>
+      <h1 class="font-display-lg text-display-lg text-on-surface">Settings</h1>
+      <p class="text-on-surface-variant mt-1">Manage your business configuration and integration preferences.</p>
+    </div>
+  </header>
+
+  <div class="flex gap-gutter h-full">
+    <!-- Settings Navigation Panel (Left Column) -->
+    <div class="w-64 flex flex-col gap-1">
+      <button class="settings-tab-btn relative flex items-center gap-3 px-4 py-3 rounded-lg text-primary bg-primary-container/10 font-semibold text-left" data-tab="general">
+        <span class="active-tab-indicator" id="indicator-general"></span>
+        <span class="material-symbols-outlined">business</span>
+        <span class="font-body-md text-body-md">General</span>
+      </button>
+      <button class="settings-tab-btn relative flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors text-left" data-tab="notifications">
+        <span class="active-tab-indicator hidden" id="indicator-notifications"></span>
+        <span class="material-symbols-outlined">notifications</span>
+        <span class="font-body-md text-body-md">Notifications</span>
+      </button>
+      <button class="settings-tab-btn relative flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors text-left" data-tab="pricing">
+        <span class="active-tab-indicator hidden" id="indicator-pricing"></span>
+        <span class="material-symbols-outlined">payments</span>
+        <span class="font-body-md text-body-md">Pricing &amp; Fees</span>
+      </button>
+      <button class="settings-tab-btn relative flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors text-left" data-tab="integrations">
+        <span class="active-tab-indicator hidden" id="indicator-integrations"></span>
+        <span class="material-symbols-outlined">integration_instructions</span>
+        <span class="font-body-md text-body-md">Integrations</span>
+      </button>
+      <button class="settings-tab-btn relative flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container-high transition-colors text-left" data-tab="security">
+        <span class="active-tab-indicator hidden" id="indicator-security"></span>
+        <span class="material-symbols-outlined">security</span>
+        <span class="font-body-md text-body-md">Security &amp; Access</span>
+      </button>
+    </div>
+
+    <!-- Content Panels (Right Column) -->
+    <div class="flex-1 max-w-4xl space-y-6">
+      <!-- General Panel -->
+      <section class="settings-panel" id="panel-general">
+        <div class="bg-surface-container-lowest rounded-xl p-8 settings-card border border-outline-variant/10">
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">General Information</h2>
+          <div class="grid grid-cols-2 gap-6">
+            <div class="col-span-2 flex items-center gap-8 mb-4">
+              <div class="w-24 h-24 rounded-xl bg-surface-container-low border-2 border-dashed border-outline-variant flex flex-col items-center justify-center text-on-surface-variant cursor-pointer hover:border-primary transition-colors group relative overflow-hidden">
+                {% if company_logo_url %}
+                <img src="{{ company_logo_url }}" alt="Company Logo" class="absolute inset-0 w-full h-full object-cover">
+                {% else %}
+                <span class="material-symbols-outlined text-primary group-hover:scale-110 transition-transform">cloud_upload</span>
+                <span class="text-[10px] font-bold mt-1">UPLOAD LOGO</span>
+                {% endif %}
+              </div>
+              <div class="flex-1">
+                <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Company Name</label>
+                <input type="text" name="company_name" value="{{ company_name|default:'Delicate Courier Logistics' }}" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+              </div>
+            </div>
+            <div>
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Default Currency</label>
+              <select name="currency" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                <option value="ZAR" {% if currency == 'ZAR' %}selected{% endif %}>South African Rand (ZAR)</option>
+                <option value="USD" {% if currency == 'USD' %}selected{% endif %}>US Dollar (USD)</option>
+                <option value="EUR" {% if currency == 'EUR' %}selected{% endif %}>Euro (EUR)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Language</label>
+              <select name="language" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                <option value="en" {% if language == 'en' %}selected{% endif %}>English (South Africa)</option>
+                <option value="af" {% if language == 'af' %}selected{% endif %}>Afrikaans</option>
+                <option value="zu" {% if language == 'zu' %}selected{% endif %}>Zulu</option>
+              </select>
+            </div>
+            <div class="col-span-2">
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Time Zone</label>
+              <select name="timezone" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                <option value="Africa/Johannesburg" {% if timezone == 'Africa/Johannesburg' %}selected{% endif %}>(GMT+02:00) South Africa Standard Time</option>
+                <option value="Europe/London" {% if timezone == 'Europe/London' %}selected{% endif %}>(GMT+00:00) Western European Time</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Notifications Panel -->
+      <section class="settings-panel hidden" id="panel-notifications">
+        <div class="bg-surface-container-lowest rounded-xl p-8 settings-card border border-outline-variant/10">
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">Notification Preferences</h2>
+          <div class="space-y-6">
+            <div class="flex items-center justify-between p-4 bg-surface-container-low rounded-lg">
+              <div>
+                <h4 class="font-headline-sm text-headline-sm text-on-surface">Email Quotes</h4>
+                <p class="text-body-md text-on-surface-variant">Send automated email notifications when a new quote is requested.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" name="email_quotes" class="sr-only peer" {% if email_quotes %}checked{% endif %}>
+                <div class="w-11 h-6 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <div class="flex items-center justify-between p-4 bg-surface-container-low rounded-lg">
+              <div>
+                <h4 class="font-headline-sm text-headline-sm text-on-surface">SMS Delivery Updates</h4>
+                <p class="text-body-md text-on-surface-variant">Real-time SMS status updates for drivers and customers.</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" name="sms_updates" class="sr-only peer" {% if sms_updates %}checked{% endif %}>
+                <div class="w-11 h-6 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <div class="pt-4">
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">System Webhook URL</label>
+              <div class="flex gap-2">
+                <input type="text" name="webhook_url" value="{{ webhook_url|default:'' }}" class="flex-1 bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20" placeholder="https://api.example.com/webhooks/delicate">
+                <button type="button" class="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors test-webhook">Test Connection</button>
+              </div>
+              <p class="text-[11px] text-on-surface-variant mt-2 italic">Automate status updates to your internal ERP system.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pricing & Fees Panel (simplified for demo) -->
+      <section class="settings-panel hidden" id="panel-pricing">
+        <div class="bg-surface-container-lowest rounded-xl p-8 settings-card border border-outline-variant/10">
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">Financial Rules</h2>
+          <div class="grid grid-cols-3 gap-6 mb-8">
+            <div class="p-4 border border-outline-variant/30 rounded-xl">
+              <label class="block font-label-md text-on-surface-variant mb-2 uppercase tracking-wider">Standard Markup %</label>
+              <input type="number" name="markup_percent" value="{{ markup_percent|default:'15' }}" class="w-full text-headline-lg font-bold text-primary bg-transparent border-none focus:ring-0">
+            </div>
+            <div class="p-4 border border-outline-variant/30 rounded-xl">
+              <label class="block font-label-md text-on-surface-variant mb-2 uppercase tracking-wider">Min. Delivery Fee (ZAR)</label>
+              <input type="number" name="min_delivery_fee" value="{{ min_delivery_fee|default:'150' }}" class="w-full text-headline-lg font-bold text-primary bg-transparent border-none focus:ring-0">
+            </div>
+            <div class="p-4 border border-outline-variant/30 rounded-xl">
+              <label class="block font-label-md text-on-surface-variant mb-2 uppercase tracking-wider">Fuel Surcharge %</label>
+              <input type="number" name="fuel_surcharge" value="{{ fuel_surcharge|default:'4.5' }}" step="0.1" class="w-full text-headline-lg font-bold text-primary bg-transparent border-none focus:ring-0">
+            </div>
+          </div>
+          <div class="mt-8">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-headline-sm text-headline-sm text-on-surface">Discount Rule Table</h3>
+              <button type="button" class="text-primary font-bold text-label-md flex items-center gap-1 hover:underline">
+                <span class="material-symbols-outlined text-[16px]">add</span> ADD RULE
+              </button>
+            </div>
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-surface-container-low">
+                  <th class="p-4 font-label-md text-on-surface-variant first:rounded-l-lg">TIER NAME</th>
+                  <th class="p-4 font-label-md text-on-surface-variant">MIN QUOTES/MO</th>
+                  <th class="p-4 font-label-md text-on-surface-variant">DISCOUNT %</th>
+                  <th class="p-4 font-label-md text-on-surface-variant last:rounded-r-lg text-right">ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-b border-outline-variant/10">
+                  <td class="p-4 font-bold">Preferred Client</td>
+                  <td class="p-4">10+</td>
+                  <td class="p-4"><span class="bg-tertiary-container/30 text-on-tertiary-container px-2 py-1 rounded text-xs">5.0%</span></td>
+                  <td class="p-4 text-right"><button class="text-primary"><span class="material-symbols-outlined">edit</span></button></td>
+                </tr>
+                <tr class="border-b border-outline-variant/10">
+                  <td class="p-4 font-bold">Logistics Partner</td>
+                  <td class="p-4">50+</td>
+                  <td class="p-4"><span class="bg-tertiary-container/30 text-on-tertiary-container px-2 py-1 rounded text-xs">12.0%</span></td>
+                  <td class="p-4 text-right"><button class="text-primary"><span class="material-symbols-outlined">edit</span></button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Integrations Panel -->
+      <section class="settings-panel hidden" id="panel-integrations">
+        <div class="bg-surface-container-lowest rounded-xl p-8 settings-card border border-outline-variant/10">
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">External Integrations</h2>
+          <div class="space-y-6">
+            <div class="p-6 border border-outline-variant/20 rounded-xl bg-surface-bright flex items-center gap-6">
+              <div class="w-12 h-12 bg-white rounded shadow-sm flex items-center justify-center p-2">
+                <span class="material-symbols-outlined text-[32px] text-primary">map</span>
+              </div>
+              <div class="flex-1">
+                <h4 class="font-headline-sm">Google Maps API</h4>
+                <div class="mt-2 relative">
+                  <input type="password" name="google_maps_key" value="{{ google_maps_key|default:'AIzaSyA_B4C5-D6E7-F8G9H0I1J2K3L4M5N6' }}" class="w-full bg-surface-container-low border-none rounded-lg px-4 py-2 font-mono text-xs text-on-surface-variant">
+                  <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-primary text-xs font-bold px-2 toggle-password">REVEAL</button>
+                </div>
+              </div>
+              <div class="flex flex-col items-end">
+                <span class="flex items-center gap-1 text-green-600 text-[10px] font-bold uppercase"><span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Connected</span>
+                <button type="button" class="mt-2 text-error text-xs font-bold hover:underline">REVOKE</button>
+              </div>
+            </div>
+            <div class="p-6 border border-outline-variant/20 rounded-xl bg-surface-bright flex items-center gap-6">
+              <div class="w-12 h-12 bg-white rounded shadow-sm flex items-center justify-center p-2">
+                <span class="material-symbols-outlined text-[32px] text-primary">chat_bubble</span>
+              </div>
+              <div class="flex-1">
+                <h4 class="font-headline-sm">Twilio SMS Gateway</h4>
+                <p class="text-body-md text-on-surface-variant">Send transactional SMS alerts to drivers.</p>
+              </div>
+              <button type="button" class="px-6 py-2 bg-primary text-white rounded-lg font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95">CONFIGURE</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Security Panel -->
+      <section class="settings-panel hidden" id="panel-security">
+        <div class="bg-surface-container-lowest rounded-xl p-8 settings-card border border-outline-variant/10">
+          <h2 class="font-headline-lg text-headline-lg text-on-surface mb-6">Security &amp; Access Control</h2>
+          <div class="grid grid-cols-2 gap-8">
+            <div class="col-span-2 flex items-center justify-between p-6 border-2 border-primary-container bg-primary-container/5 rounded-xl">
+              <div>
+                <h4 class="font-headline-sm flex items-center gap-2"><span class="material-symbols-outlined text-primary">verified_user</span> Two-Factor Authentication (2FA)</h4>
+                <p class="text-body-md text-on-surface-variant mt-1">Add an extra layer of security to your administrator account.</p>
+              </div>
+              <button type="button" class="bg-primary text-white px-6 py-2 rounded-lg font-bold shadow-sm">ENABLE NOW</button>
+            </div>
+            <div>
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Session Timeout</label>
+              <select name="session_timeout" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20">
+                <option value="30" {% if session_timeout == 30 %}selected{% endif %}>30 Minutes</option>
+                <option value="60" {% if session_timeout == 60 %}selected{% endif %}>1 Hour</option>
+                <option value="240" {% if session_timeout == 240 %}selected{% endif %}>4 Hours</option>
+                <option value="480" {% if session_timeout == 480 %}selected{% endif %}>8 Hours</option>
+              </select>
+            </div>
+            <div>
+              <label class="block font-label-md text-on-surface-variant mb-1 uppercase tracking-wider">Allowed IP Ranges</label>
+              <input type="text" name="allowed_ips" value="{{ allowed_ips|default:'' }}" class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary/20" placeholder="192.168.1.1/24">
+            </div>
+            <div class="col-span-2 pt-4">
+              <h4 class="font-headline-sm mb-4">Account Persistence</h4>
+              <div class="flex items-center gap-4">
+                <button type="button" class="px-4 py-2 border border-error text-error rounded-lg text-xs font-bold hover:bg-error/5 transition-colors">Wipe All Local Data</button>
+                <button type="button" class="px-4 py-2 border border-on-surface-variant text-on-surface-variant rounded-lg text-xs font-bold hover:bg-surface-container-low transition-colors">Revoke All Active Sessions</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer Actions -->
+      <div class="flex items-center justify-end gap-4 py-6">
+        <button type="button" class="px-8 py-3 text-secondary font-bold hover:bg-surface-container-low rounded-xl transition-all cancel-btn">Cancel</button>
+        <button type="button" id="save-btn" class="px-10 py-3 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 active:scale-95 transition-all">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Helper function to get CSRF cookie
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  // Tab switching
+  document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabId = btn.getAttribute('data-tab');
+      // Hide all panels
+      document.querySelectorAll('.settings-panel').forEach(panel => panel.classList.add('hidden'));
+      // Show selected panel
+      document.getElementById(`panel-${tabId}`).classList.remove('hidden');
+      // Update button styles
+      document.querySelectorAll('.settings-tab-btn').forEach(b => {
+        b.classList.remove('text-primary', 'bg-primary-container/10', 'font-semibold');
+        b.classList.add('text-on-surface-variant');
+        b.querySelector('.active-tab-indicator')?.classList.add('hidden');
+      });
+      btn.classList.remove('text-on-surface-variant');
+      btn.classList.add('text-primary', 'bg-primary-container/10', 'font-semibold');
+      const indicator = document.getElementById(`indicator-${tabId}`);
+      if (indicator) indicator.classList.remove('hidden');
+    });
+  });
+
+  // Toggle password visibility for API keys
+  document.querySelectorAll('.toggle-password').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const input = e.target.closest('.relative').querySelector('input');
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = 'HIDE';
+      } else {
+        input.type = 'password';
+        btn.textContent = 'REVEAL';
+      }
+    });
+  });
+
+  // Cancel button: reload page to discard changes
+  document.querySelector('.cancel-btn')?.addEventListener('click', () => {
+    window.location.reload();
+  });
+
+  // Save button: collect form data and send via POST
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.classList.add('opacity-80');
+
+    // Collect all input values from all panels
+    const formData = new FormData();
+    document.querySelectorAll('.settings-panel input, .settings-panel select').forEach(field => {
+      if (field.type === 'checkbox') {
+        formData.append(field.name, field.checked ? 'on' : 'off');
+      } else if (field.name) {
+        formData.append(field.name, field.value);
+      }
+    });
+
+    try {
+      const response = await fetch('{% url "settings_save" %}', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': getCookie('csrftoken'),
+        },
+        body: formData
+      });
+      if (response.ok) {
+        saveBtn.textContent = 'Changes Saved!';
+        saveBtn.classList.replace('bg-primary', 'bg-green-600');
+        setTimeout(() => {
+          saveBtn.textContent = 'Save Changes';
+          saveBtn.classList.replace('bg-green-600', 'bg-primary');
+          saveBtn.disabled = false;
+          saveBtn.classList.remove('opacity-80');
+        }, 2000);
+      } else {
+        throw new Error('Save failed');
+      }
+    } catch (error) {
+      saveBtn.textContent = 'Error!';
+      setTimeout(() => {
+        saveBtn.textContent = 'Save Changes';
+        saveBtn.disabled = false;
+        saveBtn.classList.remove('opacity-80');
+      }, 2000);
+    }
+  });
+</script>
+{% endblock %}

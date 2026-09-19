@@ -1,0 +1,46 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useMe } from "@/components/use-me";
+
+const NAV = [
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/accounts", label: "Accounts" },
+  { href: "/admin/outbox", label: "Outbox" },
+  { href: "/admin/audit", label: "Audit log" },
+];
+
+/** Ops / finance console shell. Staff platform roles only; customers are bounced to the portal. */
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const me = useMe();
+
+  useEffect(() => {
+    if (me.error?.status === 401) router.replace("/login?next=/admin");
+    if (me.data && !me.data.user.platformRole) router.replace("/portal");
+  }, [me.error, me.data, router]);
+
+  if (!me.data?.user.platformRole) return null;
+
+  return (
+    <div className="flex min-h-screen bg-slate-100">
+      <aside className="w-56 border-r border-slate-200 bg-white p-4">
+        <div className="font-semibold">Ops console</div>
+        <div className="text-xs text-slate-500">{me.data.user.platformRole.replace("_", " ")}</div>
+        <nav className="mt-6 space-y-1 text-sm">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href} className="block rounded px-2 py-1 hover:bg-slate-100">
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+        <Link href="/portal" className="mt-8 block text-xs text-slate-500 hover:underline">
+          ← Customer portal
+        </Link>
+      </aside>
+      <main className="flex-1 p-8">{children}</main>
+    </div>
+  );
+}
