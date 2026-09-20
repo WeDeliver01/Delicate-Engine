@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { createDb } from "./client.js";
 import { accounts, memberships, organizations, users } from "./schema/index.js";
+import { seedCatalog } from "./seed-catalog.js";
 
 /**
  * Development seed. Idempotent: re-running updates rather than duplicates.
@@ -90,6 +91,8 @@ export async function seed(connectionString: string): Promise<void> {
           ])
           .onConflictDoNothing();
       }
+
+      await seedCatalog(tx);
     });
 
     const count = await db.$count(accounts, eq(accounts.organizationId, SEED.organization.id));

@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from "./common/errors.js";
 import { HealthController } from "./modules/health/health.controller.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
+import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -48,6 +49,7 @@ export class AppModule {
         AuthModule,
         IdentityModule,
         AdminModule,
+        CatalogModule,
         WorkerModule,
       ],
       controllers: [HealthController],

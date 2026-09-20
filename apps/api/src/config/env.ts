@@ -30,6 +30,9 @@ const EnvSchema = z
     /** Dev-only: lets `dev:token` mint local JWTs without a Supabase project. */
     AUTH_DEV_SECRET: z.string().min(32).optional(),
 
+    /** Google Maps Platform (Places API New + Routes API). Unset = free fallback provider. */
+    GOOGLE_MAPS_API_KEY: z.string().min(10).optional(),
+
     /** Worker tuning */
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(25),

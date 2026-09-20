@@ -1,7 +1,7 @@
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { sql } from "drizzle-orm";
 import request from "supertest";
-import { runMigrations } from "@delicate/db";
+import { runMigrations, seedCatalog } from "@delicate/db";
 import { createHttpApp } from "../src/bootstrap.js";
 import { TokenVerifier } from "../src/auth/token-verifier.js";
 import { DbService } from "../src/infra/db.module.js";
@@ -18,6 +18,12 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "quotes",
+  "account_rate_cards",
+  "rate_cards",
+  "service_levels",
+  "package_types",
+  "settings",
   "memberships",
   "accounts",
   "organizations",
@@ -37,6 +43,7 @@ export async function createHarness(): Promise<Harness> {
   await app.init();
 
   const db = app.get(DbService);
+  await db.transaction((tx) => seedCatalog(tx));
   const verifier = app.get(TokenVerifier);
   const dispatcher = app.get(OutboxDispatcher);
 
@@ -50,6 +57,7 @@ export async function createHarness(): Promise<Harness> {
       await db.db.execute(
         sql.raw(`truncate table ${TRUNCATE.join(", ")} restart identity cascade`),
       );
+      await db.transaction((tx) => seedCatalog(tx));
     },
     close: () => app.close(),
   };
