@@ -23,6 +23,29 @@ export const CATALOG_SEED = {
     "company.vat_bps": 1_500,
     "company.timezone": "Africa/Johannesburg",
     "booking.same_day_cutoff_minutes": 10 * 60,
+    "scheduling.policy": {
+      operatingDays: [1, 2, 3, 4, 5, 6],
+      windows: [
+        {
+          key: "morning",
+          label: "Morning · 08:00 – 12:00",
+          startMinutes: 8 * 60,
+          endMinutes: 12 * 60,
+          capacity: null,
+        },
+        {
+          key: "afternoon",
+          label: "Afternoon · 12:00 – 16:00",
+          startMinutes: 12 * 60,
+          endMinutes: 16 * 60,
+          capacity: null,
+        },
+      ],
+      defaultCapacity: 12,
+      minLeadDays: 1,
+      cutoffMinutesBefore: 120,
+      horizonDays: 14,
+    },
   },
   rateCard: {
     name: "Default",

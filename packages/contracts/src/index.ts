@@ -9,3 +9,4 @@ export * from "./dto/geo.js";
 export * from "./dto/catalog.js";
 export * from "./dto/quotes.js";
 export * from "./dto/wallet.js";
+export * from "./dto/slots.js";

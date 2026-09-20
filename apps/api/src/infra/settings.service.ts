@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { Address, Bps, type SettingKey } from "@delicate/contracts";
+import { Address, Bps, SlotPolicy, type SettingKey } from "@delicate/contracts";
 import { settings, type DbExecutor } from "@delicate/db";
 import { DbService } from "./db.module.js";
 import { AuditService } from "./audit.service.js";
@@ -14,6 +14,7 @@ const SCHEMAS = {
   "company.vat_bps": Bps,
   "company.timezone": z.string().min(1),
   "booking.same_day_cutoff_minutes": z.number().int().min(0).max(1439),
+  "scheduling.policy": SlotPolicy,
 } satisfies Record<SettingKey, z.ZodTypeAny>;
 
 type Schemas = typeof SCHEMAS;

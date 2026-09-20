@@ -108,5 +108,6 @@ export const SettingKey = z.enum([
   "company.vat_bps",
   "company.timezone",
   "booking.same_day_cutoff_minutes",
+  "scheduling.policy",
 ]);
 export type SettingKey = z.infer<typeof SettingKey>;

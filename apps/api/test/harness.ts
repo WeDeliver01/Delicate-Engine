@@ -18,6 +18,8 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "delivery_slots",
+  "blackout_dates",
   "top_ups",
   "wallet_holds",
   "wallet_entries",
