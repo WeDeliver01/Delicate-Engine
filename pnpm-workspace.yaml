@@ -23,6 +23,7 @@ allowBuilds:
   unrs-resolver: true
   "@nestjs/core": true
   "@scarf/scarf": false
+  core-js: false
 
 overrides:
   "@esbuild-kit/esm-loader": "npm:tsx@^4.20.5"

@@ -29,8 +29,8 @@ export function DataTable<T extends { id?: string }>(props: {
   });
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+    <section className="rounded-lg border border-[#ECEAE6] bg-white">
+      <div className="flex items-center justify-between border-b border-[#ECEAE6] px-4 py-3">
         <h1 className="font-semibold">{props.title}</h1>
         <div className="flex gap-2 text-sm">
           <button
@@ -53,7 +53,7 @@ export function DataTable<T extends { id?: string }>(props: {
         <p className="p-4 text-sm text-red-600">{String(query.error)}</p>
       ) : (
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-slate-500">
+          <thead className="text-xs uppercase text-[#86817A]">
             <tr>
               {props.columns.map((c) => (
                 <th key={c.key} className="px-4 py-2">
@@ -63,7 +63,7 @@ export function DataTable<T extends { id?: string }>(props: {
               {props.actions && <th />}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-[#F0EDE9]">
             {query.data?.items.map((row, i) => (
               <tr key={row.id ?? i}>
                 {props.columns.map((c) => (
@@ -82,7 +82,7 @@ export function DataTable<T extends { id?: string }>(props: {
               <tr>
                 <td
                   colSpan={props.columns.length + 1}
-                  className="px-4 py-6 text-center text-slate-500"
+                  className="px-4 py-6 text-center text-[#86817A]"
                 >
                   Nothing here yet.
                 </td>

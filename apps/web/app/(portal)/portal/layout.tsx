@@ -25,20 +25,27 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { user, accounts } = me.data;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen bg-[#FAFAF9]">
+      <header className="border-b border-[#ECEAE6] bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-6">
-            <Link href="/portal" className="font-semibold">
-              Delicate Courier
+            <Link href="/portal" className="flex items-center gap-2.5">
+              <span className="text-[17px] font-bold tracking-tight text-[#0A0A0A]">
+                Delicate Courier
+              </span>
+              <span className="flex gap-1">
+                <span className="w-[7px] h-[7px] rounded-full bg-[#E84A8A]" />
+                <span className="w-[7px] h-[7px] rounded-full bg-[#F4C430]" />
+                <span className="w-[7px] h-[7px] rounded-full bg-[#7C5CFF]" />
+              </span>
             </Link>
             {accounts.length > 0 && (
               <label className="flex items-center gap-2 text-sm">
-                <span className="text-slate-500">Account</span>
+                <span className="text-[#86817A]">Account</span>
                 <select
                   value={me.activeAccount?.id ?? ""}
                   onChange={(e) => me.switchAccount(e.target.value)}
-                  className="rounded-md border border-slate-300 bg-white px-2 py-1"
+                  className="rounded-xl border border-[#DAD6CF] bg-white px-2 py-1"
                 >
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>
@@ -46,7 +53,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                     </option>
                   ))}
                 </select>
-                <Link href="/portal/accounts/new" className="text-slate-500 hover:underline">
+                <Link href="/portal/accounts/new" className="text-[#86817A] hover:underline">
                   + new
                 </Link>
               </label>
@@ -54,17 +61,17 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           </div>
           <div className="flex items-center gap-4 text-sm">
             {user.platformRole && (
-              <Link href="/admin" className="rounded-md border border-slate-300 px-3 py-1">
+              <Link href="/admin" className="rounded-xl border border-[#DAD6CF] px-3 py-1">
                 Ops console
               </Link>
             )}
-            <span className="text-slate-600">{user.fullName ?? user.email}</span>
+            <span className="text-[#6B6661]">{user.fullName ?? user.email}</span>
             <button
               onClick={async () => {
                 await signOut();
                 router.replace("/");
               }}
-              className="text-slate-500 hover:underline"
+              className="text-[#86817A] hover:underline"
             >
               Sign out
             </button>
@@ -78,7 +85,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center text-sm text-slate-600">
+    <div className="flex min-h-screen items-center justify-center text-sm text-[#6B6661]">
       {children}
     </div>
   );

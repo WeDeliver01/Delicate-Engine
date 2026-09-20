@@ -20,16 +20,16 @@ export default function PortalHome() {
 
   if (!account) {
     return (
-      <section className="rounded-lg border border-slate-200 bg-white p-8">
+      <section className="rounded-lg border border-[#ECEAE6] bg-white p-8">
         <h1 className="text-xl font-semibold">
           Welcome, {me.data.user.fullName ?? me.data.user.email}
         </h1>
-        <p className="mt-2 text-slate-600">
+        <p className="mt-2 text-[#6B6661]">
           You don&apos;t have an account yet. Create one to start booking deliveries.
         </p>
         <Link
           href="/portal/accounts/new"
-          className="mt-6 inline-block rounded-md bg-slate-900 px-4 py-2 font-medium text-white"
+          className="mt-6 inline-block rounded-xl bg-[#0A0A0A] px-4 py-2 font-medium text-white"
         >
           Create an account
         </Link>
@@ -39,28 +39,28 @@ export default function PortalHome() {
 
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section className="rounded-lg border border-slate-200 bg-white p-6 md:col-span-2">
+      <section className="rounded-lg border border-[#ECEAE6] bg-white p-6 md:col-span-2">
         <h1 className="text-xl font-semibold">{account.name}</h1>
         <dl className="mt-4 grid grid-cols-2 gap-y-2 text-sm">
-          <dt className="text-slate-500">Type</dt>
+          <dt className="text-[#86817A]">Type</dt>
           <dd className="capitalize">{account.type}</dd>
-          <dt className="text-slate-500">Billing</dt>
+          <dt className="text-[#86817A]">Billing</dt>
           <dd className="capitalize">{account.billingMode}</dd>
-          <dt className="text-slate-500">Your role</dt>
+          <dt className="text-[#86817A]">Your role</dt>
           <dd>{account.role === "customer_owner" ? "Owner" : "Staff"}</dd>
-          <dt className="text-slate-500">Status</dt>
+          <dt className="text-[#86817A]">Status</dt>
           <dd className="capitalize">{account.status}</dd>
         </dl>
-        <div className="mt-6 rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+        <div className="mt-6 rounded-xl border border-dashed border-[#DAD6CF] p-4 text-sm text-[#86817A]">
           Wallet, bookings and tracking arrive in Phase 1.
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6">
+      <section className="rounded-lg border border-[#ECEAE6] bg-white p-6">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Members</h2>
           {account.role === "customer_owner" && (
-            <Link href="/portal/members" className="text-sm text-slate-500 hover:underline">
+            <Link href="/portal/members" className="text-sm text-[#86817A] hover:underline">
               Manage
             </Link>
           )}
@@ -69,7 +69,7 @@ export default function PortalHome() {
           {members.data?.map((m) => (
             <li key={m.userId} className="flex justify-between">
               <span>{m.fullName ?? m.email}</span>
-              <span className="text-slate-500">
+              <span className="text-[#86817A]">
                 {m.role === "customer_owner" ? "Owner" : "Staff"}
               </span>
             </li>

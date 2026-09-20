@@ -58,7 +58,7 @@ function LoginForm() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
       <h1 className="text-2xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-slate-600">Delicate Courier portal</p>
+      <p className="mt-1 text-sm text-[#6B6661]">Delicate Courier portal</p>
 
       {supabaseEnabled ? (
         <form onSubmit={signInWithPassword} className="mt-8 space-y-4">
@@ -78,21 +78,21 @@ function LoginForm() {
           />
           <button
             disabled={busy}
-            className="w-full rounded-md bg-slate-900 py-2 font-medium text-white disabled:opacity-50"
+            className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white disabled:opacity-50"
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
           <button
             type="button"
             onClick={signInWithGoogle}
-            className="w-full rounded-md border border-slate-300 py-2 font-medium"
+            className="w-full rounded-xl border border-[#DAD6CF] py-2 font-medium"
           >
             Continue with Google
           </button>
         </form>
       ) : (
         <form onSubmit={useDevToken} className="mt-8 space-y-4">
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="rounded-xl border border-[#F7A8CE] bg-[#FCEEF4] p-3 text-sm text-[#0A0A0A]">
             Supabase is not configured. Local development uses a dev token from the API:
             <code className="mt-1 block text-xs">
               pnpm --filter @delicate/api run dev:token owner
@@ -104,10 +104,10 @@ function LoginForm() {
               value={devToken}
               onChange={(e) => setDev(e.target.value)}
               rows={4}
-              className="mt-1 w-full rounded-md border border-slate-300 p-2 font-mono text-xs"
+              className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2 font-mono text-xs"
             />
           </label>
-          <button className="w-full rounded-md bg-slate-900 py-2 font-medium text-white">
+          <button className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white">
             Use token
           </button>
         </form>
@@ -133,7 +133,7 @@ function Field(props: {
         value={props.value}
         autoComplete={props.autoComplete}
         onChange={(e) => props.onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-slate-300 p-2"
+        className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2"
         required
       />
     </label>

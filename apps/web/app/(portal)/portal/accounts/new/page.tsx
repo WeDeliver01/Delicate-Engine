@@ -55,7 +55,7 @@ export default function NewAccountPage() {
   return (
     <form
       onSubmit={submit}
-      className="mx-auto max-w-lg space-y-6 rounded-lg border border-slate-200 bg-white p-8"
+      className="mx-auto max-w-lg space-y-6 rounded-lg border border-[#ECEAE6] bg-white p-8"
     >
       <h1 className="text-xl font-semibold">Create an account</h1>
 
@@ -74,14 +74,14 @@ export default function NewAccountPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={type === "business" ? "e.g. Honey Bee – Menlyn" : "Your name"}
-          className="mt-1 w-full rounded-md border border-slate-300 p-2"
+          className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2"
           required
           minLength={2}
         />
       </label>
 
       {type === "business" && (
-        <div className="space-y-3 rounded-md bg-slate-50 p-4 text-sm">
+        <div className="space-y-3 rounded-xl bg-[#FAFAF9] p-4 text-sm">
           {ownedOrgs.length > 0 && (
             <div className="flex gap-4">
               <label className="flex items-center gap-2">
@@ -106,7 +106,7 @@ export default function NewAccountPage() {
             <select
               value={orgId}
               onChange={(e) => setOrgId(e.target.value)}
-              className="w-full rounded-md border border-slate-300 p-2"
+              className="w-full rounded-xl border border-[#DAD6CF] p-2"
               required
             >
               <option value="">Select…</option>
@@ -123,7 +123,7 @@ export default function NewAccountPage() {
                 <input
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 p-2"
+                  className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2"
                   required
                   minLength={2}
                 />
@@ -133,7 +133,7 @@ export default function NewAccountPage() {
                 <input
                   value={vat}
                   onChange={(e) => setVat(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-slate-300 p-2"
+                  className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2"
                 />
               </label>
             </>
@@ -144,7 +144,7 @@ export default function NewAccountPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
       <button
         disabled={busy}
-        className="w-full rounded-md bg-slate-900 py-2 font-medium text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white disabled:opacity-50"
       >
         {busy ? "Creating…" : "Create account"}
       </button>

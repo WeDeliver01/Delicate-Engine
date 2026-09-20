@@ -35,7 +35,7 @@ function Callback() {
   }, [params, router]);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center px-4 text-sm text-slate-600">
+    <main className="mx-auto flex min-h-screen max-w-md items-center px-4 text-sm text-[#6B6661]">
       {error ? <p className="text-red-600">{error}</p> : <p>Signing you in…</p>}
     </main>
   );

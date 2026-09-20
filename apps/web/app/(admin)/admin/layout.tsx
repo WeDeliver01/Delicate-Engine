@@ -25,18 +25,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!me.data?.user.platformRole) return null;
 
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <aside className="w-56 border-r border-slate-200 bg-white p-4">
+    <div className="flex min-h-screen bg-[#F8F6F3]">
+      <aside className="w-56 border-r border-[#ECEAE6] bg-white p-4">
         <div className="font-semibold">Ops console</div>
-        <div className="text-xs text-slate-500">{me.data.user.platformRole.replace("_", " ")}</div>
+        <div className="text-xs text-[#86817A]">{me.data.user.platformRole.replace("_", " ")}</div>
         <nav className="mt-6 space-y-1 text-sm">
           {NAV.map((n) => (
-            <Link key={n.href} href={n.href} className="block rounded px-2 py-1 hover:bg-slate-100">
+            <Link key={n.href} href={n.href} className="block rounded px-2 py-1 hover:bg-[#F8F6F3]">
               {n.label}
             </Link>
           ))}
         </nav>
-        <Link href="/portal" className="mt-8 block text-xs text-slate-500 hover:underline">
+        <Link href="/portal" className="mt-8 block text-xs text-[#86817A] hover:underline">
           ← Customer portal
         </Link>
       </aside>
