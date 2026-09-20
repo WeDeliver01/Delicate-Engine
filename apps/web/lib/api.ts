@@ -33,11 +33,20 @@ export async function api<T>(
   if (accountId) headers.set("x-account-id", accountId);
   if (init.json !== undefined) headers.set("content-type", "application/json");
 
-  const res = await fetch(`${publicEnv.apiUrl}${path}`, {
-    ...init,
-    headers,
-    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${publicEnv.apiUrl}${path}`, {
+      ...init,
+      headers,
+      body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+    });
+  } catch (err) {
+    throw new ApiRequestError({
+      statusCode: 0,
+      code: "network_error",
+      message: `could not reach the engine at ${publicEnv.apiUrl}: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
 
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => null)) as T | ApiError | null;

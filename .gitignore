@@ -28,3 +28,4 @@ _reference/**/db.sqlite3
 .web.log
 .worker.log
 .tokens
+*.tsbuildinfo

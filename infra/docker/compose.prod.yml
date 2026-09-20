@@ -53,7 +53,11 @@ services:
   web:
     image: ${IMAGE_WEB:-ghcr.io/delicate-courier/engine-web:latest}
     restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8080
     expose: ["3000"]
+    depends_on:
+      api: { condition: service_healthy }
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
 volumes:

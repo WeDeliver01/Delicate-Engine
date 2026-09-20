@@ -19,7 +19,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   }, [me.error, router]);
 
   if (me.isLoading) return <Centered>Loading your account…</Centered>;
-  if (me.error) return <Centered>Could not load your profile ({me.error.code}).</Centered>;
+  if (me.error) return <Centered>Could not load your profile: {me.error.message}</Centered>;
   if (!me.data) return null;
 
   const { user, accounts } = me.data;
