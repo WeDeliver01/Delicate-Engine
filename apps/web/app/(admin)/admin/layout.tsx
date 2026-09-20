@@ -7,7 +7,12 @@ import { useMe } from "@/components/use-me";
 
 const NAV = [
   { href: "/admin", label: "Overview" },
+  { href: "/admin/shipments", label: "Shipments" },
+  { href: "/admin/bookings", label: "Bookings" },
+  { href: "/admin/capacity", label: "Capacity" },
+  { href: "/admin/top-ups", label: "Top-ups" },
   { href: "/admin/accounts", label: "Accounts" },
+  { href: "/admin/catalog", label: "Pricing" },
   { href: "/admin/outbox", label: "Outbox" },
   { href: "/admin/audit", label: "Audit log" },
 ];

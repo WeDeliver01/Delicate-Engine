@@ -4,8 +4,13 @@ import TrackForm from "./track-form";
 
 export const metadata = { title: "Track a Delivery | Delicate Courier" };
 
-/** Public tracking entry point. Live status per waybill lands with the shipments module (Phase 1). */
-export default function TrackPage() {
+/** Public tracking by waybill, straight from the engine's shipment timeline. */
+export default async function TrackPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ w?: string }>;
+}) {
+  const { w } = await searchParams;
   return (
     <>
       <SiteNav />
@@ -24,7 +29,7 @@ export default function TrackPage() {
             Enter the waybill number from your booking confirmation to see every step of its
             journey.
           </p>
-          <TrackForm />
+          <TrackForm initial={w ?? ""} />
         </section>
       </main>
       <Footer />

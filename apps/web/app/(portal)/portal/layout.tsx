@@ -59,6 +59,17 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               </label>
             )}
           </div>
+          <nav className="hidden items-center gap-6 text-sm md:flex">
+            <Link href="/portal/book" className="text-[#6B6661] hover:text-[#0A0A0A]">
+              Book
+            </Link>
+            <Link href="/portal/bookings" className="text-[#6B6661] hover:text-[#0A0A0A]">
+              Bookings
+            </Link>
+            <Link href="/portal/wallet" className="text-[#6B6661] hover:text-[#0A0A0A]">
+              Wallet
+            </Link>
+          </nav>
           <div className="flex items-center gap-4 text-sm">
             {user.platformRole && (
               <Link href="/admin" className="rounded-xl border border-[#DAD6CF] px-3 py-1">

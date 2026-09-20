@@ -134,14 +134,12 @@ export class BookingService {
               parcels: drop.parcels,
             })
             .returning();
-          await tx
-            .insert(shipmentEvents)
-            .values({
-              shipmentId: s!.id,
-              status: "booked",
-              note: null,
-              actorUserId: requestContext.get()?.userId ?? null,
-            });
+          await tx.insert(shipmentEvents).values({
+            shipmentId: s!.id,
+            status: "booked",
+            note: null,
+            actorUserId: requestContext.get()?.userId ?? null,
+          });
           created.push({ shipmentId: s!.id, waybill });
         }
 
@@ -262,14 +260,12 @@ export class BookingService {
       for (const s of rows) {
         if (s.status === "cancelled") continue;
         await tx.update(shipments).set({ status: "cancelled" }).where(eq(shipments.id, s.id));
-        await tx
-          .insert(shipmentEvents)
-          .values({
-            shipmentId: s.id,
-            status: "cancelled",
-            note: reason,
-            actorUserId: requestContext.get()?.userId ?? null,
-          });
+        await tx.insert(shipmentEvents).values({
+          shipmentId: s.id,
+          status: "cancelled",
+          note: reason,
+          actorUserId: requestContext.get()?.userId ?? null,
+        });
         await this.outbox.emit(
           tx,
           "shipment.status_changed",
@@ -351,14 +347,12 @@ export class BookingService {
         .update(shipments)
         .set({ status: to, deliveredAt: to === "delivered" ? new Date() : s.deliveredAt })
         .where(eq(shipments.id, shipmentId));
-      await tx
-        .insert(shipmentEvents)
-        .values({
-          shipmentId,
-          status: to,
-          note,
-          actorUserId: requestContext.get()?.userId ?? null,
-        });
+      await tx.insert(shipmentEvents).values({
+        shipmentId,
+        status: to,
+        note,
+        actorUserId: requestContext.get()?.userId ?? null,
+      });
       await this.audit.record(tx, {
         action: "shipment.status",
         entityType: "shipment",

@@ -47,7 +47,7 @@ export default function SiteNav() {
             Login
           </a>
           <a
-            href="/quote/step1"
+            href="/quote"
             className="bg-[#0A0A0A] text-white text-[13.5px] font-medium px-6 py-2.5 rounded-full hover:bg-[#E84A8A] transition-all active:scale-95"
           >
             Get a quote
@@ -94,7 +94,7 @@ export default function SiteNav() {
               Login
             </a>
             <a
-              href="/quote/step1"
+              href="/quote"
               onClick={() => setOpen(false)}
               className="mt-3 bg-[#0A0A0A] text-white text-center text-[14px] font-medium px-5 py-3 rounded-full"
             >

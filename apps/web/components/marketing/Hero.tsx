@@ -76,7 +76,7 @@ export default function Hero() {
                 Book a Shipment
               </a>
               <a
-                href="/quote/step1"
+                href="/quote"
                 target="_blank"
                 className="border border-gray-300 text-gray-700 px-6 py-3 rounded-full text-sm font-medium hover:border-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors"
               >

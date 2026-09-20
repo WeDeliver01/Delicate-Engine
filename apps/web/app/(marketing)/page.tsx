@@ -323,7 +323,7 @@ export default function Home() {
                   slot. Cost-effective and ideal for routine deliveries.
                 </p>
                 <a
-                  href="/quote/step1"
+                  href="/quote"
                   className="inline-block mt-3 text-[14px] font-medium text-[#E84A8A] hover:text-[#0A0A0A] transition-colors"
                 >
                   Book standard
@@ -337,7 +337,7 @@ export default function Home() {
                   destination within 90 minutes of booking.
                 </p>
                 <a
-                  href="/quote/step1"
+                  href="/quote"
                   className="inline-block mt-3 text-[14px] font-medium text-[#E84A8A] hover:text-[#0A0A0A] transition-colors"
                 >
                   Book on-demand
@@ -473,7 +473,7 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
               <a
-                href="/quote/step1"
+                href="/quote"
                 className="bg-[#0A0A0A] text-white px-7 py-3 rounded-2xl text-[14px] font-medium hover:bg-[#E84A8A] transition-colors"
               >
                 Get a quote
