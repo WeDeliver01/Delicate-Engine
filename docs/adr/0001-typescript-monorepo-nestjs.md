@@ -16,7 +16,8 @@ each other. Ashley chose one language for engine, web, worker and driver app.
 
 ## Consequences
 
-- NestJS needs `emitDecoratorMetadata`: dev runs `tsc --watch` + `node --watch`; tests use
-  SWC via `unplugin-swc`. esbuild/tsx are not used for the API.
+- NestJS needs `emitDecoratorMetadata`: dev compiles with SWC (`.swcrc`, watch mode) and
+  restarts with nodemon; tests use SWC via `unplugin-swc`; `tsc` is the typecheck gate and the
+  production build. esbuild/tsx are not used for the API.
 - Zod schemas must be wrapped when passed to Nest param decorators (Nest treats anything with
   `.transform` as a pipe) — see `common/zod.ts`.

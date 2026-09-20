@@ -6,8 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "concurrently -k -n tsc,api \"tsc -p tsconfig.build.json --watch --preserveWatchOutput\" \"node --watch --enable-source-maps --env-file-if-exists=../../.env dist/main.js\"",
-    "dev:worker": "node --watch --enable-source-maps --env-file-if-exists=../../.env dist/worker.js",
+    "dev": "swc src -d dist --strip-leading-paths --config-file .swcrc && concurrently -k -n swc,api \"swc src -d dist --strip-leading-paths --config-file .swcrc --watch --quiet\" \"nodemon --quiet --watch dist --ext js --delay 0.7 --exec \\\"node --enable-source-maps --env-file-if-exists=../../.env dist/main.js\\\"\"",
+    "dev:worker": "nodemon --quiet --watch dist --ext js --delay 0.7 --exec \"node --enable-source-maps --env-file-if-exists=../../.env dist/worker.js\"",
     "dev:token": "tsx --env-file-if-exists=../../.env src/scripts/dev-token.ts",
     "start": "node --enable-source-maps dist/main.js",
     "start:worker": "node --enable-source-maps dist/worker.js",
@@ -35,15 +35,19 @@
   "devDependencies": {
     "@delicate/config": "workspace:*",
     "@nestjs/testing": "^11.1.6",
+    "@swc/cli": "^0.7.8",
     "@swc/core": "^1.13.5",
     "@types/express": "^5.0.3",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "@types/supertest": "^6.0.3",
+    "chokidar": "^4.0.3",
     "concurrently": "^9.2.1",
+    "nodemon": "^3.1.14",
     "pino-pretty": "catalog:",
     "supertest": "^7.1.4",
     "tsx": "catalog:",
+    "typescript": "~5.9.2",
     "unplugin-swc": "^1.5.5",
     "vitest": "catalog:"
   }

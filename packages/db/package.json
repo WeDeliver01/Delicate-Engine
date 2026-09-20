@@ -34,6 +34,7 @@
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "drizzle-kit": "catalog:",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "typescript": "~5.9.2"
   }
 }

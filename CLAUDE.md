@@ -42,5 +42,7 @@ pnpm --filter @delicate/api run dev | dev:worker | dev:token <admin|owner|…>
 pnpm --filter @delicate/web run dev
 ```
 
-Windows notes: dev uses `tsc --watch` + `node --watch` (esbuild/tsx cannot emit decorator
-metadata); Next standalone output is Docker-only (`NEXT_STANDALONE=1`); repo is LF-only.
+Notes: API dev uses SWC (`.swcrc`) + nodemon because esbuild/tsx cannot emit decorator metadata
+and `tsc --watch` / `node --watch` misbehave on Windows; `tsc` remains the typecheck gate and
+the production build. Next standalone output is Docker-only (`NEXT_STANDALONE=1`). Repo is LF-only.
+Always run commands from the repo root (that is where `.env` and `docker-compose.yml` live).
