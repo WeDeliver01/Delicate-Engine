@@ -16,6 +16,7 @@ import { DbService } from "../../infra/db.module.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { AppError } from "../../common/errors.js";
+import { WalletService } from "../wallet/wallet.service.js";
 import type { Principal } from "../../auth/principal.js";
 
 /**
@@ -28,6 +29,7 @@ export class IdentityService {
     private readonly dbs: DbService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly wallet: WalletService,
   ) {}
 
   async me(user: Principal["user"]): Promise<MeResponse> {
@@ -110,6 +112,7 @@ export class IdentityService {
       await tx
         .insert(memberships)
         .values({ accountId: account!.id, userId: user.id, role: "customer_owner" });
+      await this.wallet.ensure(tx, account!.id);
 
       await this.audit.record(tx, {
         action: "account.create",

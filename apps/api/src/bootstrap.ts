@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import express from "express";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { Logger } from "nestjs-pino";
@@ -15,7 +16,14 @@ import { APP_VERSION } from "./version.js";
 export async function createHttpApp(overrides: Partial<Env> = {}): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule.forRoot(overrides), {
     bufferLogs: true,
+    bodyParser: false,
   });
+  // Keep the exact request bytes so webhook signatures can be verified against what was sent.
+  const keepRaw = (req: express.Request & { rawBody?: Buffer }, _res: unknown, buf: Buffer) => {
+    req.rawBody = buf;
+  };
+  app.use(express.json({ limit: "1mb", verify: keepRaw }));
+  app.use(express.urlencoded({ extended: false, limit: "1mb", verify: keepRaw }));
   const env = app.get<Env>(ENV);
 
   app.useLogger(app.get(Logger));

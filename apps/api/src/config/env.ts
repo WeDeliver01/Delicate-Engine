@@ -33,6 +33,26 @@ const EnvSchema = z
     /** Google Maps Platform (Places API New + Routes API). Unset = free fallback provider. */
     GOOGLE_MAPS_API_KEY: z.string().min(10).optional(),
 
+    /** Manual EFT bank details shown to customers (provider is disabled until set). */
+    EFT_ACCOUNT_NAME: z.string().optional(),
+    EFT_BANK_NAME: z.string().optional(),
+    EFT_ACCOUNT_NUMBER: z.string().optional(),
+    EFT_BRANCH_CODE: z.string().optional(),
+
+    /** PayFast (payfast.io). All three required to enable; sandbox flag for testing. */
+    PAYFAST_MERCHANT_ID: z.string().optional(),
+    PAYFAST_MERCHANT_KEY: z.string().optional(),
+    PAYFAST_PASSPHRASE: z.string().optional(),
+    PAYFAST_SANDBOX: z
+      .string()
+      .optional()
+      .transform((v) => v === "1" || v === "true"),
+    /** Tests only: skip the server-to-server validate call. Never set in production. */
+    PAYFAST_SKIP_VALIDATE: z
+      .string()
+      .optional()
+      .transform((v) => v === "1" || v === "true"),
+
     /** Worker tuning */
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(25),
@@ -42,6 +62,13 @@ const EnvSchema = z
     if (env.NODE_ENV === "production") {
       if (!env.SUPABASE_URL) {
         ctx.addIssue({ code: "custom", path: ["SUPABASE_URL"], message: "required in production" });
+      }
+      if (env.PAYFAST_SKIP_VALIDATE) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["PAYFAST_SKIP_VALIDATE"],
+          message: "must not be set in production",
+        });
       }
       if (env.AUTH_DEV_SECRET) {
         ctx.addIssue({

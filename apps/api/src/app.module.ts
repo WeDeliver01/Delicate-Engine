@@ -11,6 +11,7 @@ import { HealthController } from "./modules/health/health.controller.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
+import { WalletModule } from "./modules/wallet/wallet.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -50,6 +51,7 @@ export class AppModule {
         IdentityModule,
         AdminModule,
         CatalogModule,
+        WalletModule,
         WorkerModule,
       ],
       controllers: [HealthController],

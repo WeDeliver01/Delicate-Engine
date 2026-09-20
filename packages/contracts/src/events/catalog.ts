@@ -34,17 +34,54 @@ export const MembershipRevoked = defineEvent(
   z.object({ accountId: z.string().uuid(), userId: z.string().uuid() }),
 );
 
-/** Reserved for Phase 1; declared now so the topic list is stable from day one. */
+export const TopUpRequested = defineEvent(
+  "wallet.topup_requested",
+  z.object({
+    accountId: z.string().uuid(),
+    topUpId: z.string().uuid(),
+    provider: z.string(),
+    amountCents: Cents,
+  }),
+);
+
 export const TopUpConfirmed = defineEvent(
   "wallet.topup_confirmed",
-  z.object({ accountId: z.string().uuid(), topUpId: z.string().uuid(), amountCents: Cents }),
+  z.object({
+    accountId: z.string().uuid(),
+    topUpId: z.string().uuid(),
+    provider: z.string(),
+    amountCents: Cents,
+    balanceAfterCents: Cents,
+  }),
+);
+
+export const WalletAdjusted = defineEvent(
+  "wallet.adjusted",
+  z.object({
+    accountId: z.string().uuid(),
+    entryId: z.string().uuid(),
+    amountCents: Cents,
+    reason: z.string(),
+  }),
+);
+
+export const CreditTermsChanged = defineEvent(
+  "account.credit_terms_changed",
+  z.object({
+    accountId: z.string().uuid(),
+    billingMode: BillingMode,
+    creditLimitCents: Cents,
+  }),
 );
 
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
   MembershipRevoked,
+  TopUpRequested,
   TopUpConfirmed,
+  WalletAdjusted,
+  CreditTermsChanged,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

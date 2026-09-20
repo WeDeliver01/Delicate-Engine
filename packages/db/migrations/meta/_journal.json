@@ -15,6 +15,13 @@
       "when": 1789919487481,
       "tag": "0001_complete_typhoid_mary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789925763547,
+      "tag": "0002_luxuriant_cargill",
+      "breakpoints": true
     }
   ]
 }
