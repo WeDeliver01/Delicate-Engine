@@ -18,6 +18,10 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "shipment_events",
+  "shipments",
+  "bookings",
+  "waybill_counters",
   "delivery_slots",
   "blackout_dates",
   "top_ups",

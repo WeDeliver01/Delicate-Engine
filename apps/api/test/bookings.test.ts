@@ -1,0 +1,338 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { bookings, outboxMessages, users } from "@delicate/db";
+import type {
+  Booking,
+  CatalogResponse,
+  Quote,
+  TrackingView,
+  WalletSummary,
+} from "@delicate/contracts";
+import { createHarness, USERS, type Harness } from "./harness.js";
+import { WalletService } from "../src/modules/wallet/wallet.service.js";
+import { SchedulingService } from "../src/modules/scheduling/scheduling.service.js";
+
+const MENLYN = { lat: -25.7826, lng: 28.2755 };
+const CENTURION = { lat: -25.8603, lng: 28.1894 };
+const HATFIELD = { lat: -25.7487, lng: 28.2384 };
+const addr = (formatted: string, location: { lat: number; lng: number }, suburb = "Centurion") => ({
+  formatted,
+  line1: null,
+  suburb,
+  city: "Pretoria",
+  postalCode: null,
+  country: "ZA",
+  location,
+  placeId: null,
+});
+
+describe("bookings & shipments", () => {
+  let h: Harness;
+  let wallet: WalletService;
+  let owner: string;
+  let dispatcher: string;
+  let accountId: string;
+  let cakeId: string;
+  const SLOT = { date: "2026-09-24", windowKey: "morning" };
+
+  beforeAll(async () => {
+    h = await createHarness();
+    wallet = h.app.get(WalletService);
+    h.app.get(SchedulingService).now = () => new Date("2026-09-23T07:00:00Z");
+    owner = await h.tokenFor(USERS.alice);
+    dispatcher = await h.tokenFor(USERS.admin);
+  });
+  afterAll(() => h.close());
+  beforeEach(async () => {
+    await h.reset();
+    await h.db.db.insert(users).values({ ...USERS.admin, platformRole: "dispatcher" });
+    const acc = await h
+      .http()
+      .post("/v1/accounts")
+      .set("Authorization", `Bearer ${owner}`)
+      .send({ name: "Honey Bee", type: "business", organization: { name: "Honey Bee Bakers" } });
+    accountId = acc.body.id;
+    const catalog = (await h.http().get("/v1/public/catalog")).body as CatalogResponse;
+    cakeId = catalog.packageTypes.find((p) => p.code === "cake_single")!.id;
+  });
+
+  const asOwner = () => ({ Authorization: `Bearer ${owner}`, "X-Account-Id": accountId });
+  const summary = async () =>
+    (await h.http().get("/v1/account/wallet").set(asOwner())).body as WalletSummary;
+
+  async function quote(serviceLevelCode = "standard", drops = 1): Promise<Quote> {
+    const res = await h
+      .http()
+      .post("/v1/account/quotes")
+      .set(asOwner())
+      .send({
+        serviceLevelCode,
+        collection: {
+          address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn"),
+          contact: { name: "Baker", phone: "0821111111", email: null },
+          instructions: null,
+        },
+        drops: [
+          {
+            address: addr("12 Oak St, Centurion", CENTURION),
+            recipient: { name: "Jane", phone: "0821234567", email: null },
+            instructions: null,
+            parcels: [
+              { packageTypeId: cakeId, quantity: 1, weightKg: 4, description: "Birthday cake" },
+            ],
+          },
+          {
+            address: addr("5 Burnett St, Hatfield", HATFIELD, "Hatfield"),
+            recipient: { name: "John", phone: "0827654321", email: null },
+            instructions: "call on arrival",
+            parcels: [{ packageTypeId: cakeId, quantity: 1, weightKg: null, description: null }],
+          },
+        ].slice(0, drops),
+        options: {},
+      });
+    expect(res.status).toBe(201);
+    return res.body as Quote;
+  }
+
+  it("rejects an unfunded booking (402), records it, and takes no slot or hold", async () => {
+    const q = await quote();
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+    expect(res.status).toBe(402);
+    expect(res.body.code).toBe("insufficient_funds");
+    expect(res.body.details.shortfallCents).toBe(q.breakdown.totalCents);
+
+    const rows = await h.db.db.select().from(bookings).where(eq(bookings.accountId, accountId));
+    expect(rows.map((r) => r.status)).toEqual(["rejected_insufficient_funds"]);
+    expect(rows[0]!.holdId).toBeNull();
+    expect((await summary()).heldCents).toBe(0);
+    const slot = (
+      await h
+        .http()
+        .get("/v1/public/slots/availability")
+        .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
+    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    expect(slot.booked).toBe(0);
+    // quote is still bookable once funded
+    const q2 = (await h.http().get(`/v1/account/quotes/${q.id}`).set(asOwner())).body as Quote;
+    expect(q2.status).toBe("priced");
+  });
+
+  it("confirms a funded booking atomically: hold, slot, waybills, events, quote consumed", async () => {
+    await wallet.adjust(accountId, 100_000, "test funds");
+    const q = await quote("standard", 2);
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+    expect(res.status).toBe(201);
+    const b = res.body as Booking;
+    expect(b.status).toBe("confirmed");
+    expect(b.reference).toMatch(/^BK-\d{6}-\d{4}$/);
+    expect(b.totalCents).toBe(q.breakdown.totalCents);
+    expect(b.shipments).toHaveLength(2);
+    expect(b.shipments.map((s) => s.waybill)).toEqual([
+      expect.stringMatching(/^DC-\d{6}-00001$/),
+      expect.stringMatching(/^DC-\d{6}-00002$/),
+    ]);
+    expect(b.shipments.every((s) => s.status === "booked" && s.slotDate === SLOT.date)).toBe(true);
+
+    expect(await summary()).toMatchObject({
+      balanceCents: 100_000,
+      heldCents: q.breakdown.totalCents,
+      availableCents: 100_000 - q.breakdown.totalCents,
+    });
+    const slot = (
+      await h
+        .http()
+        .get("/v1/public/slots/availability")
+        .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
+    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    expect(slot.booked).toBe(1);
+    expect(
+      ((await h.http().get(`/v1/account/quotes/${q.id}`).set(asOwner())).body as Quote).status,
+    ).toBe("booked");
+
+    const events = (await h.db.db.select().from(outboxMessages)).map((e) => e.eventType);
+    expect(events).toContain("booking.confirmed");
+
+    // replaying the same submit returns the same booking, no second hold
+    const replay = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+    expect(replay.status).toBe(201);
+    expect(replay.body.id).toBe(b.id);
+    expect((await summary()).heldCents).toBe(q.breakdown.totalCents);
+
+    // the quote cannot be booked twice under a different key either
+    const again = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT, idempotencyKey: "another-attempt-1" });
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe("quote_used");
+  });
+
+  it("standard needs a slot; on-demand does not; a full slot rejects and records", async () => {
+    await wallet.adjust(accountId, 200_000, "test funds");
+    const noSlot = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: (await quote("standard")).id });
+    expect(noSlot.status).toBe(422);
+
+    const od = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: (await quote("on_demand")).id });
+    expect(od.status).toBe(201);
+    expect(od.body.slotDate).toBeNull();
+
+    const sched = h.app.get(SchedulingService);
+    await sched.updatePolicy({ ...(await sched.policy()), defaultCapacity: 1 });
+    const first = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: (await quote()).id, slot: { date: "2026-09-25", windowKey: "afternoon" } });
+    expect(first.status).toBe(201);
+    const second = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: (await quote()).id, slot: { date: "2026-09-25", windowKey: "afternoon" } });
+    expect(second.status).toBe(409);
+    expect(second.body.code).toBe("slot_unavailable");
+    const rejected = await h.db.db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.status, "rejected_slot_unavailable"));
+    expect(rejected).toHaveLength(1);
+  });
+
+  it("cancellation releases the hold and the slot; not after collection", async () => {
+    await wallet.adjust(accountId, 100_000, "test funds");
+    const b = (
+      await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({ quoteId: (await quote()).id, slot: SLOT })
+    ).body as Booking;
+    const cancelled = await h
+      .http()
+      .post(`/v1/account/bookings/${b.id}/cancel`)
+      .set(asOwner())
+      .send({ reason: "customer changed plans" });
+    expect(cancelled.status).toBe(201);
+    expect(cancelled.body.status).toBe("cancelled");
+    expect(cancelled.body.shipments[0].status).toBe("cancelled");
+    expect(await summary()).toMatchObject({
+      balanceCents: 100_000,
+      heldCents: 0,
+      availableCents: 100_000,
+    });
+    const slot = (
+      await h
+        .http()
+        .get("/v1/public/slots/availability")
+        .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
+    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    expect(slot.booked).toBe(0);
+
+    const b2 = (
+      await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({ quoteId: (await quote()).id, slot: SLOT })
+    ).body as Booking;
+    const sid = b2.shipments[0]!.id;
+    await h
+      .http()
+      .post(`/v1/admin/shipments/${sid}/status`)
+      .set("Authorization", `Bearer ${dispatcher}`)
+      .send({ status: "collected" })
+      .expect(201);
+    const late = await h
+      .http()
+      .post(`/v1/account/bookings/${b2.id}/cancel`)
+      .set(asOwner())
+      .send({ reason: "too late" });
+    expect(late.status).toBe(409);
+    expect(late.body.code).toBe("booking_in_progress");
+  });
+
+  it("dispatcher drives the shipment state machine; booking rolls up; public tracking shows the timeline", async () => {
+    await wallet.adjust(accountId, 100_000, "test funds");
+    const b = (
+      await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({ quoteId: (await quote("standard", 2)).id, slot: SLOT })
+    ).body as Booking;
+    const [s1, s2] = b.shipments;
+    const status = (id: string, st: string) =>
+      h
+        .http()
+        .post(`/v1/admin/shipments/${id}/status`)
+        .set("Authorization", `Bearer ${dispatcher}`)
+        .send({ status: st, note: st === "delivered" ? "left with security" : undefined });
+
+    const bad = await status(s1!.id, "delivered"); // booked -> delivered is not allowed
+    expect(bad.status).toBe(409);
+    expect(bad.body.code).toBe("invalid_transition");
+
+    await status(s1!.id, "assigned").expect(201);
+    await status(s1!.id, "collected").expect(201);
+    expect(
+      ((await h.http().get(`/v1/account/bookings/${b.id}`).set(asOwner())).body as Booking).status,
+    ).toBe("in_progress");
+    await status(s1!.id, "delivered").expect(201);
+    await status(s2!.id, "collected").expect(201);
+    await status(s2!.id, "failed").expect(201);
+    expect(
+      ((await h.http().get(`/v1/account/bookings/${b.id}`).set(asOwner())).body as Booking).status,
+    ).toBe("completed");
+
+    const track = await h.http().get(`/v1/public/track/${s1!.waybill.toLowerCase()}`);
+    expect(track.status).toBe(200);
+    const view = track.body as TrackingView;
+    expect(view).toMatchObject({
+      waybill: s1!.waybill,
+      status: "delivered",
+      serviceLevel: "Standard",
+      destination: { suburb: "Centurion", city: "Pretoria" },
+    });
+    expect(view.slot?.label).toContain("Morning");
+    expect(view.timeline.map((t) => t.status)).toEqual([
+      "booked",
+      "assigned",
+      "collected",
+      "delivered",
+    ]);
+    expect(JSON.stringify(view)).not.toContain("Jane"); // no recipient PII on the public page
+
+    // a customer cannot drive statuses
+    expect(
+      (
+        await h
+          .http()
+          .post(`/v1/admin/shipments/${s2!.id}/status`)
+          .set(asOwner())
+          .send({ status: "delivered" })
+      ).status,
+    ).toBe(403);
+    expect((await h.http().get("/v1/public/track/DC-000000-99999")).status).toBe(404);
+  });
+});

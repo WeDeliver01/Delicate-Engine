@@ -13,6 +13,7 @@ import { AdminModule } from "./modules/admin/admin.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { WalletModule } from "./modules/wallet/wallet.module.js";
 import { SchedulingModule } from "./modules/scheduling/scheduling.module.js";
+import { BookingModule } from "./modules/bookings/booking.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -54,6 +55,7 @@ export class AppModule {
         CatalogModule,
         WalletModule,
         SchedulingModule,
+        BookingModule,
         WorkerModule,
       ],
       controllers: [HealthController],
