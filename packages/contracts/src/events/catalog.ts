@@ -125,6 +125,124 @@ export const ShipmentStatusChanged = defineEvent(
   }),
 );
 
+export const ShipmentAssigned = defineEvent(
+  "shipment.assigned",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    waybill: z.string(),
+    driverId: z.string().uuid(),
+    previousDriverId: z.string().uuid().nullable(),
+    source: z.enum(["auto", "dispatcher"]),
+    plannedKm: z.number().nonnegative(),
+  }),
+);
+
+export const ShipmentUnassigned = defineEvent(
+  "shipment.unassigned",
+  z.object({
+    shipmentId: z.string().uuid(),
+    waybill: z.string(),
+    driverId: z.string().uuid(),
+    reason: z.string(),
+  }),
+);
+
+export const ShiftStarted = defineEvent(
+  "shift.started",
+  z.object({
+    shiftId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    odometerKm: z.number(),
+  }),
+);
+
+export const ShiftEnded = defineEvent(
+  "shift.ended",
+  z.object({
+    shiftId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    odometerKm: z.number(),
+    distanceKm: z.number(),
+  }),
+);
+
+export const CollectionCompleted = defineEvent(
+  "collection.completed",
+  z.object({
+    bookingId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    shipmentIds: z.array(z.string().uuid()),
+  }),
+);
+
+/** The only settlement trigger. Carries the ACTUAL distance the optimizer/app measured. */
+export const DeliveryCompleted = defineEvent(
+  "delivery.completed",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    waybill: z.string(),
+    driverId: z.string().uuid(),
+    actualKm: z.number().nonnegative(),
+    plannedKm: z.number().nonnegative(),
+    receivedBy: z.string(),
+  }),
+);
+
+export const DeliveryFailed = defineEvent(
+  "delivery.failed",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    waybill: z.string(),
+    driverId: z.string().uuid(),
+    reason: z.string(),
+  }),
+);
+
+export const FuelLogged = defineEvent(
+  "fuel.logged",
+  z.object({
+    fuelLogId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    litres: z.number(),
+    amountCents: Cents,
+  }),
+);
+
+export const SettlementPosted = defineEvent(
+  "settlement.posted",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    driverId: z.string().uuid().nullable(),
+    journalId: z.string().uuid(),
+    revenueCents: Cents,
+    vatCents: Cents,
+    fuelCostCents: Cents,
+    driverEarningCents: Cents,
+    marginCents: Cents,
+    actualKm: z.number(),
+  }),
+);
+
+export const BookingCharged = defineEvent(
+  "booking.charged",
+  z.object({
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    reference: z.string(),
+    amountCents: Cents,
+    walletEntryId: z.string().uuid(),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -137,6 +255,16 @@ export const DomainEvent = z.discriminatedUnion("type", [
   BookingRejected,
   BookingCancelled,
   ShipmentStatusChanged,
+  ShipmentAssigned,
+  ShipmentUnassigned,
+  ShiftStarted,
+  ShiftEnded,
+  CollectionCompleted,
+  DeliveryCompleted,
+  DeliveryFailed,
+  FuelLogged,
+  SettlementPosted,
+  BookingCharged,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

@@ -1,0 +1,435 @@
+import { Injectable } from "@nestjs/common";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import type {
+  DeliverRequest,
+  Driver,
+  DriverDay,
+  DriverStop,
+  FailRequest,
+  ProofOfDelivery,
+  Shipment,
+  ShipmentStatus,
+} from "@delicate/contracts";
+import {
+  assignments,
+  bookings,
+  proofsOfDelivery,
+  shipmentEvents,
+  shipments,
+  type DbExecutor,
+} from "@delicate/db";
+import { DbService } from "../../infra/db.module.js";
+import { AuditService } from "../../infra/audit.service.js";
+import { OutboxService } from "../../infra/outbox.service.js";
+import { AppError } from "../../common/errors.js";
+import { requestContext } from "../../common/request-context.js";
+import { FleetService } from "../fleet/fleet.service.js";
+import { AssignmentService } from "./assignment.service.js";
+import { SettlementService } from "./settlement.service.js";
+import { BookingService, toShipment } from "../bookings/booking.service.js";
+
+/**
+ * The driver-facing workflow. Every action is a transaction that changes the shipment state,
+ * appends an event, stores evidence and — on delivery/failure — settles the money.
+ */
+@Injectable()
+export class DispatchService {
+  constructor(
+    private readonly dbs: DbService,
+    private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
+    private readonly fleet: FleetService,
+    private readonly assignment: AssignmentService,
+    private readonly settlement: SettlementService,
+    private readonly bookingsSvc: BookingService,
+  ) {}
+
+  /** Today's work for a driver: one collection stop per booking, then one drop per shipment. */
+  async day(driver: Driver): Promise<DriverDay> {
+    const date = await this.fleet.localDate();
+    const shift = await this.fleet.shiftFor(driver.id, date);
+    const rows = await this.dbs.db
+      .select({ s: shipments, b: bookings })
+      .from(assignments)
+      .innerJoin(shipments, eq(shipments.id, assignments.shipmentId))
+      .innerJoin(bookings, eq(bookings.id, shipments.bookingId))
+      .where(
+        and(
+          eq(assignments.driverId, driver.id),
+          eq(assignments.active, true),
+          inArray(shipments.status, ["assigned", "collected", "in_transit", "failed"]),
+        ),
+      )
+      .orderBy(asc(bookings.slotDate), asc(bookings.createdAt), asc(shipments.sequence));
+
+    const byBooking = new Map<
+      string,
+      { b: typeof bookings.$inferSelect; ships: (typeof shipments.$inferSelect)[] }
+    >();
+    for (const r of rows) {
+      const g = byBooking.get(r.b.id) ?? { b: r.b, ships: [] };
+      g.ships.push(r.s);
+      byBooking.set(r.b.id, g);
+    }
+
+    const stops: DriverStop[] = [];
+    for (const { b, ships } of byBooking.values()) {
+      const collection = b.collection as {
+        address: DriverStop["address"];
+        contact: DriverStop["contact"];
+        instructions: string | null;
+      };
+      const summary = ships.map((s) => ({
+        shipmentId: s.id,
+        waybill: s.waybill,
+        status: s.status,
+      }));
+      if (ships.some((s) => s.status === "assigned")) {
+        stops.push({
+          kind: "collection",
+          bookingId: b.id,
+          bookingReference: b.reference,
+          shipmentId: null,
+          waybill: null,
+          status: null,
+          address: collection.address,
+          contact: collection.contact,
+          instructions: collection.instructions,
+          parcels: ships.flatMap((s) => s.parcels as DriverStop["parcels"]),
+          slotDate: b.slotDate,
+          slotWindowKey: b.slotWindowKey,
+          serviceLevelCode: b.serviceLevelCode,
+          shipments: summary,
+        });
+      }
+      for (const s of ships) {
+        stops.push({
+          kind: "drop",
+          bookingId: b.id,
+          bookingReference: b.reference,
+          shipmentId: s.id,
+          waybill: s.waybill,
+          status: s.status,
+          address: s.deliveryAddress as DriverStop["address"],
+          contact: s.recipient as DriverStop["contact"],
+          instructions: s.instructions,
+          parcels: s.parcels as DriverStop["parcels"],
+          slotDate: s.slotDate,
+          slotWindowKey: s.slotWindowKey,
+          serviceLevelCode: s.serviceLevelCode,
+          shipments: summary,
+        });
+      }
+    }
+    return {
+      date,
+      shift: shift
+        ? { id: shift.id, status: shift.status, startedAt: shift.startedAt?.toISOString() ?? null }
+        : null,
+      stops,
+    };
+  }
+
+  /** Collect every assigned shipment of a booking in one go (they are picked up together). */
+  async collect(
+    driver: Driver,
+    bookingId: string,
+    location: { lat: number; lng: number } | null,
+    note: string | null,
+  ): Promise<Shipment[]> {
+    await this.requireOpenShift(driver);
+    return this.dbs.transaction(async (tx) => {
+      const rows = await tx
+        .select({ s: shipments })
+        .from(assignments)
+        .innerJoin(shipments, eq(shipments.id, assignments.shipmentId))
+        .where(
+          and(
+            eq(assignments.driverId, driver.id),
+            eq(assignments.active, true),
+            eq(shipments.bookingId, bookingId),
+            eq(shipments.status, "assigned"),
+          ),
+        )
+        .for("update", { of: shipments });
+      if (rows.length === 0)
+        throw AppError.conflict("nothing_to_collect", "no assigned shipments for this booking");
+      const ids: string[] = [];
+      for (const { s } of rows) {
+        await this.transition(tx, s, "collected", note ?? "Collected", { location });
+        ids.push(s.id);
+      }
+      await this.outbox.emit(
+        tx,
+        "collection.completed",
+        { bookingId, driverId: driver.id, shipmentIds: ids },
+        { dedupeKey: `collection:${bookingId}:${driver.id}:${Date.now()}` },
+      );
+      return rows.map((r) => toShipment({ ...r.s, status: "collected" }));
+    });
+  }
+
+  async deliver(
+    driver: Driver,
+    input: DeliverRequest,
+  ): Promise<{ shipment: Shipment; pod: ProofOfDelivery }> {
+    const shift = await this.requireOpenShift(driver);
+    if (!input.signatureDataUrl && !input.photoDataUrl) {
+      throw AppError.validation([
+        {
+          path: ["photoDataUrl"],
+          message: "a signature or a photo is required as proof of delivery",
+        },
+      ]);
+    }
+    return this.dbs.transaction(async (tx) => {
+      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [
+        "collected",
+        "in_transit",
+      ]);
+      const signatureFileId = input.signatureDataUrl
+        ? await this.fleet.storeDataUrl(tx, "pod_signature", input.signatureDataUrl)
+        : null;
+      const photoFileId = input.photoDataUrl
+        ? await this.fleet.storeDataUrl(tx, "pod_photo", input.photoDataUrl)
+        : null;
+      const [pod] = await tx
+        .insert(proofsOfDelivery)
+        .values({
+          shipmentId: s.id,
+          driverId: driver.id,
+          receivedBy: input.receivedBy,
+          signatureFileId,
+          photoFileId,
+          location: input.location,
+          note: input.note,
+        })
+        .returning();
+
+      await this.transition(tx, s, "delivered", `Delivered to ${input.receivedBy}`, {
+        location: input.location,
+        deliveredAt: new Date(),
+      });
+
+      const plannedKm = Number(a.plannedKm);
+      const actualKm = input.actualKm ?? (await this.measuredKm(driver.id, s.id, plannedKm));
+      await this.outbox.emit(
+        tx,
+        "delivery.completed",
+        {
+          shipmentId: s.id,
+          bookingId: s.bookingId,
+          accountId: s.accountId,
+          waybill: s.waybill,
+          driverId: driver.id,
+          actualKm,
+          plannedKm,
+          receivedBy: input.receivedBy,
+        },
+        { dedupeKey: `delivery:${s.id}` },
+      );
+      await this.settlement.settle(tx, {
+        shipmentId: s.id,
+        driverId: driver.id,
+        shiftId: shift.id,
+        actualKm,
+        plannedKm,
+        outcome: "delivered",
+      });
+      const fresh = await tx.query.shipments.findFirst({ where: eq(shipments.id, s.id) });
+      return { shipment: toShipment(fresh!), pod: toPod(pod!) };
+    });
+  }
+
+  async fail(driver: Driver, input: FailRequest): Promise<Shipment> {
+    const shift = await this.requireOpenShift(driver);
+    return this.dbs.transaction(async (tx) => {
+      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [
+        "collected",
+        "in_transit",
+      ]);
+      const photoFileId = input.photoDataUrl
+        ? await this.fleet.storeDataUrl(tx, "fail_photo", input.photoDataUrl)
+        : null;
+      await this.transition(
+        tx,
+        s,
+        "failed",
+        `${input.reason}${input.note ? `: ${input.note}` : ""}`,
+        { location: input.location, photoFileId },
+      );
+      const plannedKm = Number(a.plannedKm);
+      const actualKm = await this.measuredKm(driver.id, s.id, plannedKm);
+      await this.outbox.emit(
+        tx,
+        "delivery.failed",
+        {
+          shipmentId: s.id,
+          bookingId: s.bookingId,
+          waybill: s.waybill,
+          driverId: driver.id,
+          reason: input.reason,
+        },
+        { dedupeKey: `delivery:${s.id}:failed:${Date.now()}` },
+      );
+      await this.settlement.settle(tx, {
+        shipmentId: s.id,
+        driverId: driver.id,
+        shiftId: shift.id,
+        actualKm,
+        plannedKm,
+        outcome: "failed",
+      });
+      const fresh = await tx.query.shipments.findFirst({ where: eq(shipments.id, s.id) });
+      return toShipment(fresh!);
+    });
+  }
+
+  /** Dispatcher-driven status change; delivered/failed settle without a driver's earnings. */
+  async adminStatus(
+    shipmentId: string,
+    to: ShipmentStatus,
+    note: string | null,
+  ): Promise<Shipment> {
+    if (to !== "delivered" && to !== "failed")
+      return this.bookingsSvc.updateShipmentStatus(shipmentId, to, note);
+    return this.dbs.transaction(async (tx) => {
+      const [s] = await tx
+        .select()
+        .from(shipments)
+        .where(eq(shipments.id, shipmentId))
+        .for("update");
+      if (!s) throw AppError.notFound("shipment");
+      const a = await this.assignment.activeAssignment(shipmentId, tx);
+      await this.transition(tx, s, to, note ?? `Marked ${to} by dispatcher`, {
+        deliveredAt: to === "delivered" ? new Date() : undefined,
+      });
+      const plannedKm = a ? Number(a.plannedKm) : 0;
+      await this.settlement.settle(tx, {
+        shipmentId,
+        driverId: a?.driverId ?? null,
+        shiftId: null,
+        actualKm: plannedKm,
+        plannedKm,
+        outcome: to,
+      });
+      const fresh = await tx.query.shipments.findFirst({ where: eq(shipments.id, shipmentId) });
+      return toShipment(fresh!);
+    });
+  }
+
+  async pod(shipmentId: string): Promise<ProofOfDelivery | null> {
+    const row = await this.dbs.db.query.proofsOfDelivery.findFirst({
+      where: eq(proofsOfDelivery.shipmentId, shipmentId),
+    });
+    return row ? toPod(row) : null;
+  }
+
+  async podFiles(shipmentId: string) {
+    const row = await this.dbs.db.query.proofsOfDelivery.findFirst({
+      where: eq(proofsOfDelivery.shipmentId, shipmentId),
+    });
+    return { signatureFileId: row?.signatureFileId ?? null, photoFileId: row?.photoFileId ?? null };
+  }
+
+  // ── internals ───────────────────────────────────────────────────────────────
+
+  private async requireOpenShift(driver: Driver) {
+    const date = await this.fleet.localDate();
+    const shift = await this.fleet.shiftFor(driver.id, date);
+    if (!shift || shift.status !== "open")
+      throw AppError.conflict("shift_not_open", "start your shift before working stops");
+    return shift;
+  }
+
+  private async ownedShipment(
+    tx: DbExecutor,
+    driver: Driver,
+    shipmentId: string,
+    allowed: ShipmentStatus[],
+  ) {
+    const [s] = await tx.select().from(shipments).where(eq(shipments.id, shipmentId)).for("update");
+    if (!s) throw AppError.notFound("shipment");
+    const a = await this.assignment.activeAssignment(shipmentId, tx);
+    if (!a || a.driverId !== driver.id)
+      throw AppError.forbidden("this shipment is not assigned to you");
+    if (!allowed.includes(s.status))
+      throw AppError.conflict("invalid_transition", `shipment is ${s.status}`, { allowed });
+    return { s, a };
+  }
+
+  private async transition(
+    tx: DbExecutor,
+    s: typeof shipments.$inferSelect,
+    to: ShipmentStatus,
+    note: string,
+    meta: {
+      location?: { lat: number; lng: number } | null;
+      deliveredAt?: Date;
+      photoFileId?: string | null;
+    },
+  ) {
+    await tx
+      .update(shipments)
+      .set({ status: to, ...(meta.deliveredAt ? { deliveredAt: meta.deliveredAt } : {}) })
+      .where(eq(shipments.id, s.id));
+    await tx
+      .insert(shipmentEvents)
+      .values({
+        shipmentId: s.id,
+        status: to,
+        note,
+        actorUserId: requestContext.get()?.userId ?? null,
+        metadata: { location: meta.location ?? null, photoFileId: meta.photoFileId ?? null },
+      });
+    await this.audit.record(tx, {
+      action: "shipment.status",
+      entityType: "shipment",
+      entityId: s.id,
+      before: { status: s.status },
+      after: { status: to, note },
+    });
+    await this.outbox.emit(
+      tx,
+      "shipment.status_changed",
+      {
+        shipmentId: s.id,
+        bookingId: s.bookingId,
+        accountId: s.accountId,
+        waybill: s.waybill,
+        from: s.status,
+        to,
+        note,
+      },
+      { dedupeKey: `shipment:${s.id}:${to}:${Date.now()}` },
+    );
+    await this.bookingsSvc.rollUpBooking(tx, s.bookingId);
+  }
+
+  /** Actual km: the driver's GPS trail since collection, else the plan. */
+  private async measuredKm(
+    driverId: string,
+    shipmentId: string,
+    plannedKm: number,
+  ): Promise<number> {
+    const collected = await this.dbs.db.query.shipmentEvents.findFirst({
+      where: and(eq(shipmentEvents.shipmentId, shipmentId), eq(shipmentEvents.status, "collected")),
+      orderBy: asc(shipmentEvents.occurredAt),
+    });
+    if (!collected) return plannedKm;
+    const km = await this.fleet.trailDistanceKm(driverId, collected.occurredAt, new Date());
+    return km && km > 0 ? km : plannedKm;
+  }
+}
+
+export function toPod(r: typeof proofsOfDelivery.$inferSelect): ProofOfDelivery {
+  return {
+    shipmentId: r.shipmentId,
+    receivedBy: r.receivedBy,
+    hasSignature: !!r.signatureFileId,
+    hasPhoto: !!r.photoFileId,
+    location: r.location as ProofOfDelivery["location"],
+    note: r.note,
+    capturedAt: r.capturedAt.toISOString(),
+  };
+}

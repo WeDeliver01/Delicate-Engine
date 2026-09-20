@@ -11,3 +11,6 @@ export * from "./dto/quotes.js";
 export * from "./dto/wallet.js";
 export * from "./dto/slots.js";
 export * from "./dto/bookings.js";
+export * from "./dto/fleet.js";
+export * from "./dto/dispatch.js";
+export * from "./dto/ledger.js";

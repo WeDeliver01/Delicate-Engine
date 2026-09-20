@@ -1,4 +1,4 @@
-import { Module, type OnModuleInit } from "@nestjs/common";
+import { Global, Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { EventHandlerRegistry } from "./event-handlers.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
@@ -7,6 +7,7 @@ import { OutboxDispatcher } from "./outbox-dispatcher.js";
  * Registers Phase 0 consumers. Each later domain module contributes its own handlers by
  * injecting `EventHandlerRegistry` in its `onModuleInit`.
  */
+@Global()
 @Module({
   providers: [EventHandlerRegistry, OutboxDispatcher],
   exports: [EventHandlerRegistry, OutboxDispatcher],

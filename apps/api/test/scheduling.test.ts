@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { users } from "@delicate/db";
 import type { SlotAvailability, SlotPolicy } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
+import { Clock } from "../src/infra/clock.js";
 import {
   SchedulingService,
   addDays,
@@ -18,7 +19,7 @@ describe("scheduling & capacity", () => {
   beforeAll(async () => {
     h = await createHarness();
     svc = h.app.get(SchedulingService);
-    svc.now = () => NOW;
+    h.app.get(Clock).now = () => NOW;
     dispatcher = await h.tokenFor(USERS.admin);
   });
   afterAll(() => h.close());

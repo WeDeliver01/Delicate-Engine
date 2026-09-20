@@ -14,6 +14,8 @@ import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { WalletModule } from "./modules/wallet/wallet.module.js";
 import { SchedulingModule } from "./modules/scheduling/scheduling.module.js";
 import { BookingModule } from "./modules/bookings/booking.module.js";
+import { LedgerModule } from "./modules/ledger/ledger.module.js";
+import { FleetModule } from "./modules/fleet/fleet.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -50,13 +52,15 @@ export class AppModule {
         }),
         InfraModule,
         AuthModule,
+        WorkerModule,
+        LedgerModule,
         IdentityModule,
         AdminModule,
         CatalogModule,
         WalletModule,
         SchedulingModule,
         BookingModule,
-        WorkerModule,
+        FleetModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],

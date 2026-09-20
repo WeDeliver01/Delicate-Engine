@@ -18,6 +18,19 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "journal_lines",
+  "journals",
+  "settlements",
+  "settlement_forecasts",
+  "proofs_of_delivery",
+  "assignments",
+  "fuel_logs",
+  "driver_location_history",
+  "driver_positions",
+  "shifts",
+  "drivers",
+  "vehicles",
+  "files",
   "shipment_events",
   "shipments",
   "bookings",

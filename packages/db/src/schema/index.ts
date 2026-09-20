@@ -4,3 +4,5 @@ export * from "./catalog.js";
 export * from "./wallet.js";
 export * from "./scheduling.js";
 export * from "./bookings.js";
+export * from "./fleet.js";
+export * from "./dispatch.js";

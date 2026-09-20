@@ -10,6 +10,7 @@ import type {
 } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
 import { WalletService } from "../src/modules/wallet/wallet.service.js";
+import { Clock } from "../src/infra/clock.js";
 import { SchedulingService } from "../src/modules/scheduling/scheduling.service.js";
 
 const MENLYN = { lat: -25.7826, lng: 28.2755 };
@@ -38,7 +39,7 @@ describe("bookings & shipments", () => {
   beforeAll(async () => {
     h = await createHarness();
     wallet = h.app.get(WalletService);
-    h.app.get(SchedulingService).now = () => new Date("2026-09-23T07:00:00Z");
+    h.app.get(Clock).now = () => new Date("2026-09-23T07:00:00Z");
     owner = await h.tokenFor(USERS.alice);
     dispatcher = await h.tokenFor(USERS.admin);
   });
@@ -259,7 +260,7 @@ describe("bookings & shipments", () => {
     const sid = b2.shipments[0]!.id;
     await h
       .http()
-      .post(`/v1/admin/shipments/${sid}/status`)
+      .post(`/v1/admin/dispatch/shipments/${sid}/status`)
       .set("Authorization", `Bearer ${dispatcher}`)
       .send({ status: "collected" })
       .expect(201);
@@ -285,7 +286,7 @@ describe("bookings & shipments", () => {
     const status = (id: string, st: string) =>
       h
         .http()
-        .post(`/v1/admin/shipments/${id}/status`)
+        .post(`/v1/admin/dispatch/shipments/${id}/status`)
         .set("Authorization", `Bearer ${dispatcher}`)
         .send({ status: st, note: st === "delivered" ? "left with security" : undefined });
 
@@ -328,7 +329,7 @@ describe("bookings & shipments", () => {
       (
         await h
           .http()
-          .post(`/v1/admin/shipments/${s2!.id}/status`)
+          .post(`/v1/admin/dispatch/shipments/${s2!.id}/status`)
           .set(asOwner())
           .send({ status: "delivered" })
       ).status,

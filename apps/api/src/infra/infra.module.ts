@@ -4,11 +4,12 @@ import { OutboxService } from "./outbox.service.js";
 import { AuditService } from "./audit.service.js";
 import { SettingsService } from "./settings.service.js";
 import { GeoModule } from "./geo/geo.module.js";
+import { Clock } from "./clock.js";
 
 @Global()
 @Module({
   imports: [DbModule, GeoModule],
-  providers: [OutboxService, AuditService, SettingsService],
-  exports: [DbModule, GeoModule, OutboxService, AuditService, SettingsService],
+  providers: [OutboxService, AuditService, SettingsService, Clock],
+  exports: [DbModule, GeoModule, OutboxService, AuditService, SettingsService, Clock],
 })
 export class InfraModule {}

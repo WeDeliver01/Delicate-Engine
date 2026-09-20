@@ -12,6 +12,7 @@ import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { AppError } from "../../common/errors.js";
+import { Clock } from "../../infra/clock.js";
 
 export interface LocalNow {
   date: string; // YYYY-MM-DD
@@ -29,10 +30,8 @@ export class SchedulingService {
     private readonly dbs: DbService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly clock: Clock,
   ) {}
-
-  /** Injectable clock for tests. */
-  now: () => Date = () => new Date();
 
   async policy(): Promise<SlotPolicy> {
     return this.settings.get("scheduling.policy");
@@ -40,7 +39,7 @@ export class SchedulingService {
 
   async localNow(): Promise<LocalNow> {
     const tz = await this.settings.get("company.timezone");
-    return toLocal(this.now(), tz);
+    return toLocal(this.clock.now(), tz);
   }
 
   async availability(dateFrom?: string, dateTo?: string): Promise<SlotAvailability[]> {

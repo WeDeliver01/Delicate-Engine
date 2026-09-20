@@ -117,14 +117,4 @@ export class AdminBookingsController {
   shipment(@Params(IdParam) p: { id: string }) {
     return this.svc.getShipment(p.id, null);
   }
-
-  /** Dispatcher status update. Phase 2 moves this to the driver app + settlement. */
-  @Post("shipments/:id/status")
-  @PlatformRoles("super_admin", "dispatcher")
-  status(
-    @Params(IdParam) p: { id: string },
-    @Body(UpdateShipmentStatusRequest) body: UpdateShipmentStatusRequest,
-  ) {
-    return this.svc.updateShipmentStatus(p.id, body.status, body.note ?? null);
-  }
 }

@@ -15,6 +15,7 @@ import { OutboxService } from "../../infra/outbox.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
 import { WalletService } from "./wallet.service.js";
+import { LedgerService, cr, dr } from "../ledger/ledger.service.js";
 import { PAYMENT_PROVIDERS, type PaymentProvider } from "./payments/payment.provider.js";
 
 /**
@@ -32,6 +33,7 @@ export class TopUpService {
     private readonly wallet: WalletService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly ledger: LedgerService,
     @Inject(PAYMENT_PROVIDERS) providers: PaymentProvider[],
   ) {
     this.providers = new Map(providers.map((p) => [p.name, p]));
@@ -104,6 +106,22 @@ export class TopUpService {
       reference: row.id,
       description: `Top-up via ${row.provider} (${row.reference})`,
       idempotencyKey: `topup:${row.id}`,
+    });
+    await this.ledger.post(tx, {
+      kind: "topup",
+      refType: "top_up",
+      refId: row.id,
+      description: `Top-up ${row.reference} via ${row.provider}`,
+      idempotencyKey: `topup:${row.id}`,
+      lines: [
+        dr("CASH_CLEARING", row.amountCents, { type: "company" }, row.reference),
+        cr(
+          "CUSTOMER_PREPAID_LIABILITY",
+          row.amountCents,
+          { type: "account", id: row.accountId },
+          row.reference,
+        ),
+      ],
     });
     const [updated] = await tx
       .update(topUps)

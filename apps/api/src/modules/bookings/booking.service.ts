@@ -380,7 +380,7 @@ export class BookingService {
   }
 
   /** Booking status follows its shipments: any collected → in_progress; all terminal → completed. */
-  private async rollUpBooking(tx: DbExecutor, bookingId: string): Promise<void> {
+  async rollUpBooking(tx: DbExecutor, bookingId: string): Promise<void> {
     const rows = await tx
       .select({ status: shipments.status })
       .from(shipments)

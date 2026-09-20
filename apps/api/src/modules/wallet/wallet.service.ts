@@ -13,6 +13,7 @@ import { AuditService } from "../../infra/audit.service.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
+import { LedgerService, cr, dr } from "../ledger/ledger.service.js";
 
 export interface MovementInput {
   accountId: string;
@@ -42,6 +43,7 @@ export class WalletService {
     private readonly dbs: DbService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
+    private readonly ledger: LedgerService,
   ) {}
 
   /** Create the wallet row if missing. Called on account creation and lazily on first use. */
@@ -256,6 +258,23 @@ export class WalletService {
         kind: "adjustment",
         description: `Adjustment: ${reason}`,
         idempotencyKey: `adjust:${requestContext.get()?.requestId ?? crypto.randomUUID()}`,
+      });
+      await this.ledger.post(tx, {
+        kind: "adjustment",
+        refType: "wallet_entry",
+        refId: entry.id,
+        description: `Adjustment: ${reason}`,
+        idempotencyKey: `adjust:${entry.id}`,
+        lines:
+          amountCents > 0
+            ? [
+                dr("ADJUSTMENTS", amountCents),
+                cr("CUSTOMER_PREPAID_LIABILITY", amountCents, { type: "account", id: accountId }),
+              ]
+            : [
+                dr("CUSTOMER_PREPAID_LIABILITY", -amountCents, { type: "account", id: accountId }),
+                cr("ADJUSTMENTS", -amountCents),
+              ],
       });
       await this.audit.record(tx, {
         action: "wallet.adjust",

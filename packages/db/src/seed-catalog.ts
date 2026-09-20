@@ -46,6 +46,13 @@ export const CATALOG_SEED = {
       cutoffMinutesBefore: 120,
       horizonDays: 14,
     },
+    // PLACEHOLDERS until the real fleet economics are supplied.
+    "settlement.rules": {
+      driverEarningPerDropCents: 4_500,
+      driverEarningPerKmCents: 0,
+      fuelCostPerKmCents: 120,
+      chargeFailedAttempts: true,
+    },
   },
   rateCard: {
     name: "Default",

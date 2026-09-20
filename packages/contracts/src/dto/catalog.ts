@@ -109,5 +109,19 @@ export const SettingKey = z.enum([
   "company.timezone",
   "booking.same_day_cutoff_minutes",
   "scheduling.policy",
+  "settlement.rules",
 ]);
+
+/** How money splits per delivered shipment. Admin-editable; snapshotted into every settlement. */
+export const SettlementRules = z.object({
+  /** Driver earning per completed drop, in cents. */
+  driverEarningPerDropCents: NonNegativeCents,
+  /** Optional per-km component of driver earning. */
+  driverEarningPerKmCents: NonNegativeCents,
+  /** Fuel cost recognised per actual km, in cents (loaded to the driver fuel card). */
+  fuelCostPerKmCents: NonNegativeCents,
+  /** Whether a failed delivery attempt is charged to the customer and paid to the driver. */
+  chargeFailedAttempts: z.boolean(),
+});
+export type SettlementRules = z.infer<typeof SettlementRules>;
 export type SettingKey = z.infer<typeof SettingKey>;
