@@ -67,11 +67,11 @@ enforced in code and tests; a change that violates one is a bug, not a trade-off
 
 ## Phase status
 
-| Phase                 | Status                                                                                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0 Foundation          | ✅ monorepo, Supabase JWT auth + dev tokens, accounts/orgs/memberships, transactional outbox + worker, audit log, admin console, Docker + CI |
-| 1 Book & pay          | next                                                                                                                                         |
-| 2 Deliver & settle    |                                                                                                                                              |
-| 3 Treasury & billing  |                                                                                                                                              |
-| 4 Portal apps & comms |                                                                                                                                              |
-| 5 Hardening           |                                                                                                                                              |
+| Phase                 | Status                                                                                                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Foundation          | ✅ monorepo, Supabase JWT auth + dev tokens, accounts/orgs/memberships, transactional outbox + worker, audit log, admin console, Docker + CI                                 |
+| 1 Book & pay          | ✅ catalog + pricing engine, geocoding, quotes, wallet/holds/top-ups (EFT, PayFast), credit terms, slots, bookings/shipments/waybills, public tracking, portal + ops console |
+| 2 Deliver & settle    | next                                                                                                                                                                         |
+| 3 Treasury & billing  |                                                                                                                                                                              |
+| 4 Portal apps & comms |                                                                                                                                                                              |
+| 5 Hardening           |                                                                                                                                                                              |
