@@ -1,7 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import type {
-  DeliverRequest,
+import {
+  SHIPMENT_TRANSITIONS,
+  type DeliverRequest,
   Driver,
   DriverDay,
   DriverStop,
@@ -369,19 +370,26 @@ export class DispatchService {
       photoFileId?: string | null;
     },
   ) {
+    if (!SHIPMENT_TRANSITIONS[s.status].includes(to)) {
+      throw AppError.conflict(
+        "invalid_transition",
+        `cannot move a shipment from ${s.status} to ${to}`,
+        {
+          allowed: SHIPMENT_TRANSITIONS[s.status],
+        },
+      );
+    }
     await tx
       .update(shipments)
       .set({ status: to, ...(meta.deliveredAt ? { deliveredAt: meta.deliveredAt } : {}) })
       .where(eq(shipments.id, s.id));
-    await tx
-      .insert(shipmentEvents)
-      .values({
-        shipmentId: s.id,
-        status: to,
-        note,
-        actorUserId: requestContext.get()?.userId ?? null,
-        metadata: { location: meta.location ?? null, photoFileId: meta.photoFileId ?? null },
-      });
+    await tx.insert(shipmentEvents).values({
+      shipmentId: s.id,
+      status: to,
+      note,
+      actorUserId: requestContext.get()?.userId ?? null,
+      metadata: { location: meta.location ?? null, photoFileId: meta.photoFileId ?? null },
+    });
     await this.audit.record(tx, {
       action: "shipment.status",
       entityType: "shipment",

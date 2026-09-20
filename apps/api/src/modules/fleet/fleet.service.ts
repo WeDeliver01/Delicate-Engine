@@ -293,16 +293,14 @@ export class FleetService {
           recordedAt,
         },
       });
-    await tx
-      .insert(driverLocationHistory)
-      .values({
-        driverId,
-        shiftId,
-        location: ping.location,
-        accuracyM: ping.accuracyM == null ? null : String(ping.accuracyM),
-        speedKmh: ping.speedKmh == null ? null : String(ping.speedKmh),
-        recordedAt,
-      });
+    await tx.insert(driverLocationHistory).values({
+      driverId,
+      shiftId,
+      location: ping.location,
+      accuracyM: ping.accuracyM == null ? null : String(ping.accuracyM),
+      speedKmh: ping.speedKmh == null ? null : String(ping.speedKmh),
+      recordedAt,
+    });
   }
 
   async ping(driver: Driver, pings: LocationPing[]): Promise<void> {

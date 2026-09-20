@@ -184,16 +184,12 @@ describe("fleet, dispatch & settlement", () => {
 
     // a second driver, further away and busier, is ranked second; dispatcher can still pick them
     const d2 = (
-      await h
-        .http()
-        .post("/v1/admin/fleet/drivers")
-        .set(asDispatcher())
-        .send({
-          email: "thabo@delicatecourier.local",
-          fullName: "Thabo M",
-          phone: "0830000000",
-          homeBase: HATFIELD,
-        })
+      await h.http().post("/v1/admin/fleet/drivers").set(asDispatcher()).send({
+        email: "thabo@delicatecourier.local",
+        fullName: "Thabo M",
+        phone: "0830000000",
+        homeBase: HATFIELD,
+      })
     ).body as Driver;
     await h
       .http()
@@ -279,16 +275,12 @@ describe("fleet, dispatch & settlement", () => {
       .send({ shipmentId: b.shipments[0]!.id, receivedBy: "Jane" });
     expect(noPod.status).toBe(422);
 
-    const d1 = await h
-      .http()
-      .post("/v1/driver/deliver")
-      .set(asDriver())
-      .send({
-        shipmentId: b.shipments[0]!.id,
-        receivedBy: "Jane",
-        photoDataUrl: PNG,
-        location: CENTURION,
-      });
+    const d1 = await h.http().post("/v1/driver/deliver").set(asDriver()).send({
+      shipmentId: b.shipments[0]!.id,
+      receivedBy: "Jane",
+      photoDataUrl: PNG,
+      location: CENTURION,
+    });
     expect(d1.status).toBe(201);
     expect(d1.body.shipment.status).toBe("delivered");
     expect(d1.body.pod).toMatchObject({ receivedBy: "Jane", hasPhoto: true, hasSignature: false });
@@ -311,16 +303,12 @@ describe("fleet, dispatch & settlement", () => {
     let w = (await h.http().get("/v1/account/wallet").set(asOwner())).body as WalletSummary;
     expect(w).toMatchObject({ balanceCents: 500_000, heldCents: b.totalCents });
 
-    const d2 = await h
-      .http()
-      .post("/v1/driver/deliver")
-      .set(asDriver())
-      .send({
-        shipmentId: b.shipments[1]!.id,
-        receivedBy: "John",
-        signatureDataUrl: PNG,
-        actualKm: 9.4,
-      });
+    const d2 = await h.http().post("/v1/driver/deliver").set(asDriver()).send({
+      shipmentId: b.shipments[1]!.id,
+      receivedBy: "John",
+      signatureDataUrl: PNG,
+      actualKm: 9.4,
+    });
     expect(d2.status).toBe(201);
     const s2 = (
       await h
@@ -367,17 +355,13 @@ describe("fleet, dispatch & settlement", () => {
       .set(asDriver())
       .send({ odometerKm: 120_452.1, fuelPct: 55 });
     expect(shift.body.status).toBe("closed");
-    const fuel = await h
-      .http()
-      .post("/v1/driver/fuel")
-      .set(asDriver())
-      .send({
-        litres: 30.5,
-        amountCents: 68_000,
-        odometerKm: 120_452,
-        station: "Engen Menlyn",
-        receiptDataUrl: PNG,
-      });
+    const fuel = await h.http().post("/v1/driver/fuel").set(asDriver()).send({
+      litres: 30.5,
+      amountCents: 68_000,
+      odometerKm: 120_452,
+      station: "Engen Menlyn",
+      receiptDataUrl: PNG,
+    });
     expect(fuel.status).toBe(201);
     expect(fuel.body.hasReceipt).toBe(true);
   });
@@ -395,16 +379,12 @@ describe("fleet, dispatch & settlement", () => {
       .set(asDispatcher());
     await h.http().post("/v1/driver/shift/start").set(asDriver()).send({ odometerKm: 1 });
     await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id });
-    const failed = await h
-      .http()
-      .post("/v1/driver/fail")
-      .set(asDriver())
-      .send({
-        shipmentId: b.shipments[0]!.id,
-        reason: "recipient_unavailable",
-        note: "no answer",
-        photoDataUrl: PNG,
-      });
+    const failed = await h.http().post("/v1/driver/fail").set(asDriver()).send({
+      shipmentId: b.shipments[0]!.id,
+      reason: "recipient_unavailable",
+      note: "no answer",
+      photoDataUrl: PNG,
+    });
     expect(failed.status).toBe(201);
     expect(failed.body.status).toBe("failed");
     const st = (

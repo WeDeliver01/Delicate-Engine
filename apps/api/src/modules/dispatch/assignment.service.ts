@@ -186,14 +186,12 @@ export class AssignmentService {
 
     if (s.status !== "assigned") {
       await tx.update(shipments).set({ status: "assigned" }).where(eq(shipments.id, shipmentId));
-      await tx
-        .insert(shipmentEvents)
-        .values({
-          shipmentId,
-          status: "assigned",
-          note: `Driver ${driver.fullName}`,
-          actorUserId: requestContext.get()?.userId ?? null,
-        });
+      await tx.insert(shipmentEvents).values({
+        shipmentId,
+        status: "assigned",
+        note: `Driver ${driver.fullName}`,
+        actorUserId: requestContext.get()?.userId ?? null,
+      });
     }
     await this.writeForecast(tx, s, row!, plannedKm);
     await this.audit.record(tx, {
@@ -233,14 +231,12 @@ export class AssignmentService {
       .where(eq(assignments.id, current.id));
     if (s?.status === "assigned") {
       await tx.update(shipments).set({ status: "booked" }).where(eq(shipments.id, shipmentId));
-      await tx
-        .insert(shipmentEvents)
-        .values({
-          shipmentId,
-          status: "booked",
-          note: `Unassigned: ${reason}`,
-          actorUserId: requestContext.get()?.userId ?? null,
-        });
+      await tx.insert(shipmentEvents).values({
+        shipmentId,
+        status: "booked",
+        note: `Unassigned: ${reason}`,
+        actorUserId: requestContext.get()?.userId ?? null,
+      });
     }
     await this.outbox.emit(
       tx,
@@ -300,17 +296,15 @@ export class AssignmentService {
     const fuelCostCents = Math.round(plannedKm * rules.fuelCostPerKmCents);
     const driverEarningCents =
       rules.driverEarningPerDropCents + Math.round(plannedKm * rules.driverEarningPerKmCents);
-    await tx
-      .insert(settlementForecasts)
-      .values({
-        shipmentId: s.id,
-        assignmentId: a.id,
-        plannedKm: String(plannedKm),
-        revenueCents,
-        fuelCostCents,
-        driverEarningCents,
-        marginCents: revenueCents - fuelCostCents - driverEarningCents,
-      });
+    await tx.insert(settlementForecasts).values({
+      shipmentId: s.id,
+      assignmentId: a.id,
+      plannedKm: String(plannedKm),
+      revenueCents,
+      fuelCostCents,
+      driverEarningCents,
+      marginCents: revenueCents - fuelCostCents - driverEarningCents,
+    });
   }
 }
 
