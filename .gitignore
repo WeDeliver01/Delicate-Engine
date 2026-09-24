@@ -29,3 +29,9 @@ _reference/**/db.sqlite3
 .worker.log
 .tokens
 *.tsbuildinfo
+
+# expo
+apps/driver/.expo/
+apps/driver/.expo-export/
+apps/driver/android/
+apps/driver/ios/

@@ -1,0 +1,17 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "types": ["expo/types"]
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
+}

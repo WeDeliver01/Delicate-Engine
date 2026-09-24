@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Delicate Driver",
+    "slug": "delicate-driver",
+    "scheme": "delicatedriver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0A"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "za.co.delicatecourier.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Your position is shown to dispatch while you are on shift so they can plan routes and give customers accurate ETAs.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location keeps your route measured while the app is in your pocket during a shift. Tracking stops when you end your shift.",
+        "NSCameraUsageDescription": "The camera captures proof of delivery photos and fuel receipts.",
+        "UIBackgroundModes": ["location"]
+      }
+    },
+    "android": {
+      "package": "za.co.delicatecourier.driver",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ],
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Background location keeps your route measured during a shift and stops when you end it.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-camera",
+        { "cameraPermission": "The camera captures proof of delivery photos and fuel receipts." }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:8080"
+    }
+  }
+}
