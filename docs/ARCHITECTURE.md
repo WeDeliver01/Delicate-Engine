@@ -234,14 +234,14 @@ rejected | failed`). The engine only ever creates proposals; a `finance` user ap
 
 ## 6. Phased delivery
 
-| Phase                     | Outcome (demoable)                                                                  | Contents                                                                                                                                               |
-| ------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **0 Foundation**          | Repo boots locally and on the VPS; you can log in.                                  | Monorepo, Docker Compose, CI, Supabase auth wiring, DB + migrations, outbox/worker skeleton, audit log, admin shell, marketing site scaffold.          |
-| **1 Book & pay**          | A customer tops up, gets a quote, books into a slot, sees a waybill; admin sees it. | Accounts/orgs/switcher, wallet + top-up (manual EFT + one provider), rate cards + quote engine, slots, bookings/shipments, tracking page (basic).      |
-| **2 Deliver & settle**    | A driver on the native app completes it; the ledger shows the money.                | Drivers/vehicles/shifts, auto-assign + dispatcher override, Expo driver app (stops, POD, fuel log, location), settlement journals, forecast vs actual. |
-| **3 Treasury & billing**  | Finance sees allocations and approves fuel loads/payouts; statements go out.        | Allocation engine, proposals + approvals, PayCentral adapter, driver payouts, invoices/statements/VAT, remaining payment providers, postpaid credit.   |
-| **4 Portal apps & comms** | The portal feels complete.                                                          | Notifications (email/SMS/WhatsApp), address book + bulk CSV, loyalty, dashboards/analytics, exports.                                                   |
-| **5 Hardening**           | Production-grade.                                                                   | Route optimisation, reconciliation reports, load/security testing, backups, runbooks, app-store releases.                                              |
+| Phase                       | Outcome (demoable)                                                                  | Contents                                                                                                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **0 Foundation**            | Repo boots locally and on the VPS; you can log in.                                  | Monorepo, Docker Compose, CI, Supabase auth wiring, DB + migrations, outbox/worker skeleton, audit log, admin shell, marketing site scaffold.                           |
+| **1 Book & pay**            | A customer tops up, gets a quote, books into a slot, sees a waybill; admin sees it. | Accounts/orgs/switcher, wallet + top-up (manual EFT + one provider), rate cards + quote engine, slots, bookings/shipments, tracking page (basic).                       |
+| **2 Deliver & settle**      | A driver on the native app completes it; the ledger shows the money.                | Drivers/vehicles/shifts, auto-assign + dispatcher override, Expo driver app (stops, POD, fuel log, location), settlement journals, forecast vs actual.                  |
+| **3 Treasury & billing** ✅ | Finance sees allocations and approves fuel loads/payouts; statements go out.        | Allocation engine, proposals + approvals, PayCentral adapter, driver payouts, invoices/statements/VAT, postpaid credit. _Remaining payment providers moved to Phase 4._ |
+| **4 Portal apps & comms**   | The portal feels complete.                                                          | Notifications (email/SMS/WhatsApp), address book + bulk CSV, loyalty, dashboards/analytics, exports.                                                                    |
+| **5 Hardening**             | Production-grade.                                                                   | Route optimisation, reconciliation reports, load/security testing, backups, runbooks, app-store releases.                                                               |
 
 Each phase ends with: tests green, a short demo, and a sign-off before the next.
 
@@ -249,11 +249,20 @@ Each phase ends with: tests green, a short demo, and a sign-off before the next.
 
 ## 7. Open items to confirm
 
-- **PayCentral**: do we have API documentation / sandbox credentials? (Needed for Phase 3.)
+- **PayCentral**: do we have API documentation / sandbox credentials? Until then a fuel load is
+  proposed and instructed, and a person does it in the PayCentral portal — which the "engine
+  proposes, human executes" invariant requires anyway, so this blocks nothing.
+- **Company tax identity**: legal name, CIPC registration number, SARS VAT number and banking
+  details for `company.tax_profile`. The seed carries placeholders and issues a plain "INVOICE"
+  until a VAT number is set, so no document ever claims VAT we are not registered for.
+- **Real monthly bills**: the treasury wallets are seeded with placeholder amounts and debit-order
+  dates. Every allocation decision follows from these numbers, so they matter more than the
+  rate card.
 - **Supabase**: existing project to reuse, or create a fresh one for this build?
 - **VPS**: OS/size, domain names (site, portal, api), who holds DNS.
 - **Google Maps** API key (Places + Routes) — needed from Phase 1 for quotes.
-- **VAT**: company VAT-registered? (Affects invoice layout and the `VAT_OUTPUT` account.)
+- **VAT**: company VAT-registered? (Drives `company.vat_registered`, the invoice layout and the
+  `VAT_OUTPUT` account.)
 - **WhatsApp/SMS** provider preference (Twilio, Clickatell, WhatsApp Cloud API).
 - **Service levels & zones** for the initial rate card (I can seed from the copy deck / old
   quote stepper, but you should confirm the numbers).

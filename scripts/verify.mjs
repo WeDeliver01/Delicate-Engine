@@ -1,11 +1,12 @@
 /**
  * End-to-end smoke test against a RUNNING engine (api on :8080, worker draining the outbox).
  *
- *   node scripts/verify-phase2.mjs
+ *   node scripts/verify.mjs
  *
- * It exercises the whole Phase 1 + 2 chain the way the apps do — quote, book, auto-assign,
- * shift, collect, deliver with POD, settle — and asserts the money that comes out the other
- * end, including that the ledger balances.
+ * It exercises the whole Phase 1-3 chain the way the apps do — quote, book, auto-assign,
+ * shift, collect, deliver with POD, settle, earmark the margin, propose and execute a payout,
+ * invoice — and asserts the money that comes out the other end, including that the ledger
+ * balances and that nothing pays itself.
  */
 import { execSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -33,6 +34,20 @@ const assert = (cond, msg) => {
   console.log(`  ok  ${msg}`);
 };
 const rands = (c) => `R${(c / 100).toFixed(2)}`;
+
+/**
+ * Treasury and invoicing hang off the outbox, so they land a beat after the delivery does.
+ * Poll for the effect rather than sleeping a guessed amount.
+ */
+async function waitFor(what, fn, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await fn();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`ASSERT: timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
 const addr = (formatted, lat, lng, suburb) => ({
   formatted, line1: null, suburb, city: "Pretoria", postalCode: null, country: "ZA",
   location: { lat, lng }, placeId: null,
@@ -126,3 +141,72 @@ assert(!JSON.stringify(track).includes("Jane Verify"), "no recipient PII on the 
 
 await call("/v1/driver/shift/end", { method: "POST", token: driverToken, json: { odometerKm: 100042 } });
 console.log("\nPHASE 2 VERIFIED: booking -> assignment -> driver -> delivery -> settlement -> balanced books.");
+
+// ── Phase 3: where the margin went, and who gets paid ──────────────────────────────
+const finance = token("finance");
+
+console.log("\n8. treasury");
+const dash = await call("/v1/admin/treasury/dashboard", { token: finance });
+const mine = await waitFor("the worker to allocate this settlement's margin", async () => {
+  const tx = await call(`/v1/admin/treasury/transactions?period=${dash.period}&limit=200`, { token: finance });
+  const rows = tx.filter((t) => t.reference === `shipment:${shipmentId}`);
+  return rows.length > 0 ? rows : null;
+});
+assert(mine.length > 0, `margin allocated across ${mine.length} wallet(s)`);
+assert(
+  mine.reduce((a, t) => a + t.amountCents, 0) === st.marginCents,
+  `allocation reconciles to the contribution margin exactly (${rands(st.marginCents)})`,
+);
+assert(
+  dash.healthScore >= 0 && dash.healthScore <= 100 && dash.upcomingDebitOrders.length > 0,
+  `obligation health ${dash.healthScore}/100, next bill "${dash.upcomingDebitOrders[0].name}" on day ${dash.upcomingDebitOrders[0].dueDay}`,
+);
+
+console.log("\n9. payouts (proposed, never paid automatically)");
+const payablesBefore = await call("/v1/admin/payments/payables", { token: finance });
+assert(
+  payablesBefore.driverEarningsOwedCents >= st.driverEarningCents,
+  `ledger says ${rands(payablesBefore.driverEarningsOwedCents)} is owed to drivers`,
+);
+const proposals = await call("/v1/admin/payments/runs", {
+  method: "POST", token: finance,
+  json: { kind: "driver_earnings_payout", driverId: driver.id },
+});
+assert(proposals.length === 1 && proposals[0].status === "proposed", `proposed ${proposals[0]?.reference} for ${rands(proposals[0]?.amountCents)}`);
+const proposal = proposals[0];
+assert(proposal.journalId === null, "proposing posts nothing to the books");
+const refused = await fetch(`${API}/v1/admin/payments/proposals/${proposal.id}/execute`, {
+  method: "POST",
+  headers: { authorization: `Bearer ${finance}`, "content-type": "application/json" },
+  body: JSON.stringify({ externalReference: "SHOULD-NOT-WORK" }),
+});
+assert(refused.status === 409, "an unapproved proposal cannot be executed");
+await call(`/v1/admin/payments/proposals/${proposal.id}/approve`, { method: "POST", token: finance, json: { note: "verification run" } });
+const paid = await call(`/v1/admin/payments/proposals/${proposal.id}/execute`, {
+  method: "POST", token: finance, json: { externalReference: `VERIFY-${Date.now()}` },
+});
+assert(paid.status === "executed" && paid.journalId, "journal posted only once a human recorded the payment");
+const driverPaid = await call("/v1/driver/me", { token: driverToken });
+assert(driverPaid.owedEarningsCents === 0, "driver is square");
+
+console.log("\n10. invoicing");
+const invoice = await waitFor("the worker to issue the invoice", async () => {
+  const invoices = await call("/v1/account/billing/invoices", { token: owner, account: accountId });
+  return invoices.find((i) => i.bookingId === booking.id) ?? null;
+});
+assert(invoice, `invoice ${invoice.number} issued for the booking`);
+assert(invoice.netCents + invoice.vatCents === invoice.totalCents, "invoice adds up");
+assert(invoice.totalCents === booking.totalCents, `invoice total matches the quote (${rands(invoice.totalCents)})`);
+assert(invoice.outstandingCents === 0, "prepaid invoice is born paid");
+assert(invoice.supplier.legalName?.length > 0, `supplier identity snapshotted (${invoice.supplier.legalName})`);
+const statement = await call("/v1/account/billing/statement?from=2000-01-01&to=2100-01-01", { token: owner, account: accountId });
+assert(
+  statement.closingBalanceCents === walletAfter.balanceCents,
+  `statement closes on the wallet balance (${rands(statement.closingBalanceCents)})`,
+);
+
+console.log("\n11. the books after all of that");
+const tbFinal = await call("/v1/admin/ledger/trial-balance", { token: admin });
+assert(tbFinal.totalCents === 0, "ledger balances to zero");
+
+console.log("\nPHASE 3 VERIFIED: margin earmarked -> payout proposed -> human executed -> invoiced -> balanced books.");
