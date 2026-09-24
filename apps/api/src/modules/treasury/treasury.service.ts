@@ -201,6 +201,40 @@ export class TreasuryService {
     return this.resultFrom(tx, reference, after);
   }
 
+  /**
+   * Draw a wallet down when the bill it was saving for is actually paid (Phase 3B). Negative
+   * `amountCents`. Called by PaymentsService inside the execution transaction, so the wallet and
+   * the ledger agree about the same moment.
+   */
+  async recordPayment(
+    tx: DbExecutor,
+    input: { walletId: string; amountCents: number; reference: string; memo?: string; at?: Date },
+  ): Promise<void> {
+    const [w] = await tx
+      .select()
+      .from(allocationWallets)
+      .where(eq(allocationWallets.id, input.walletId))
+      .for("update");
+    if (!w) throw AppError.notFound("allocation wallet");
+    await this.write(
+      tx,
+      [
+        {
+          walletId: w.id,
+          walletSlug: w.slug,
+          name: w.name,
+          amountCents: input.amountCents,
+          kind: "payment",
+        },
+      ],
+      {
+        reference: input.reference,
+        period: periodOf(input.at ?? this.clock.now()),
+        memo: input.memo,
+      },
+    );
+  }
+
   /** Insert the lines and move the denormalised balances. Returns what was written. */
   private async write(
     tx: DbExecutor,

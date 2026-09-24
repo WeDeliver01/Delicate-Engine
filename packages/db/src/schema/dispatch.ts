@@ -125,6 +125,8 @@ export const journalKindEnum = pgEnum("journal_kind", [
   "cashback",
   "payout",
   "fuel_load",
+  "vendor_payment",
+  "bank_sweep",
 ]);
 export const ownerTypeEnum = pgEnum("owner_type", ["company", "account", "driver"]);
 

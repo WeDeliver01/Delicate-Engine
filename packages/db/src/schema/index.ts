@@ -7,3 +7,4 @@ export * from "./bookings.js";
 export * from "./fleet.js";
 export * from "./dispatch.js";
 export * from "./treasury.js";
+export * from "./payments.js";

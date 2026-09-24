@@ -14,6 +14,7 @@ export const LedgerAccount = z.enum([
   "CUSTOMER_PREPAID_LIABILITY", // what we owe customers (their wallet balances)     credit-normal
   "CUSTOMER_RECEIVABLE", // postpaid usage not yet paid                             debit-normal
   "CASH_CLEARING", // top-ups received, awaiting bank reconciliation                  debit-normal
+  "BANK", // the operating bank account, once cash has actually landed               debit-normal
   // revenue and tax
   "REVENUE", // delivery revenue ex VAT                                              credit-normal
   "VAT_OUTPUT", // VAT collected, owed to SARS                                        credit-normal
@@ -23,6 +24,7 @@ export const LedgerAccount = z.enum([
   "DRIVER_EARNINGS_EXPENSE", // driver pay recognised                                debit-normal
   "DRIVER_EARNINGS_PAYABLE", // owed to drivers                                      credit-normal
   "LOYALTY_EXPENSE", // cashback granted                                             debit-normal
+  "OPERATING_EXPENSE", // overheads paid to vendors (rent, insurance, payroll…)       debit-normal
   "ADJUSTMENTS", // finance corrections                                              either
 ]);
 export type LedgerAccount = z.infer<typeof LedgerAccount>;
@@ -38,6 +40,8 @@ export const JournalKind = z.enum([
   "cashback",
   "payout",
   "fuel_load",
+  "vendor_payment",
+  "bank_sweep",
 ]);
 export type JournalKind = z.infer<typeof JournalKind>;
 

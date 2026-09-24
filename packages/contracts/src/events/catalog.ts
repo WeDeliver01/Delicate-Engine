@@ -257,6 +257,44 @@ export const TreasuryAllocated = defineEvent(
   }),
 );
 
+/** A money movement the engine wants a human to make. Nothing is paid until it is executed. */
+export const PaymentProposed = defineEvent(
+  "payment.proposed",
+  z.object({
+    proposalId: z.string().uuid(),
+    reference: z.string(),
+    kind: z.enum(["driver_earnings_payout", "driver_fuel_load", "vendor_payment"]),
+    amountCents: Cents,
+    driverId: z.string().uuid().nullable(),
+    vendorName: z.string().nullable(),
+    period: z.string(),
+  }),
+);
+
+export const PaymentApproved = defineEvent(
+  "payment.approved",
+  z.object({
+    proposalId: z.string().uuid(),
+    reference: z.string(),
+    amountCents: Cents,
+    approvedByUserId: z.string().uuid().nullable(),
+  }),
+);
+
+/** The money has actually left. Recorded by the human who moved it, with their proof. */
+export const PaymentExecuted = defineEvent(
+  "payment.executed",
+  z.object({
+    proposalId: z.string().uuid(),
+    reference: z.string(),
+    kind: z.enum(["driver_earnings_payout", "driver_fuel_load", "vendor_payment"]),
+    amountCents: Cents,
+    driverId: z.string().uuid().nullable(),
+    externalReference: z.string(),
+    journalId: z.string().uuid(),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -280,6 +318,9 @@ export const DomainEvent = z.discriminatedUnion("type", [
   SettlementPosted,
   BookingCharged,
   TreasuryAllocated,
+  PaymentProposed,
+  PaymentApproved,
+  PaymentExecuted,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

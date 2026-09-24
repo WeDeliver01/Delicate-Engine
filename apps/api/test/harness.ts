@@ -18,6 +18,8 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "payment_proposals",
+  "payment_counters",
   "allocation_transactions",
   "allocation_wallets",
   "journal_lines",

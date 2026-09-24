@@ -17,6 +17,7 @@ import { BookingModule } from "./modules/bookings/booking.module.js";
 import { LedgerModule } from "./modules/ledger/ledger.module.js";
 import { FleetModule } from "./modules/fleet/fleet.module.js";
 import { TreasuryModule } from "./modules/treasury/treasury.module.js";
+import { PaymentsModule } from "./modules/payments/payments.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -63,6 +64,7 @@ export class AppModule {
         BookingModule,
         FleetModule,
         TreasuryModule,
+        PaymentsModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],
