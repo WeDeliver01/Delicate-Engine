@@ -26,6 +26,9 @@ get a sign-off before starting the next phase.
 - Auth: `@Public()`, `@PlatformRoles(...)`, `@AccountRoles(...)`, `@RequireAccount()`;
   read the caller with `@CurrentPrincipal()` / `@ActiveAccountId()`. Active account comes from
   the `X-Account-Id` header.
+- Money on delivery: `DispatchService` → `SettlementService.settle` writes ONE balanced journal
+  per shipment (`LedgerService` is the only journal writer) and captures the booking's wallet
+  hold when every live drop is settled. Never post a journal outside `LedgerService`.
 - Worker handlers register in a module's `onModuleInit` via `EventHandlerRegistry.register`
   and must be idempotent (at-least-once delivery).
 - DB changes: edit `packages/db/src/schema/*`, run `pnpm db:generate`, commit the SQL file,

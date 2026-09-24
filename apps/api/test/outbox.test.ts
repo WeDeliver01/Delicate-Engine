@@ -67,10 +67,15 @@ describe("transactional outbox", () => {
         { dedupeKey: "test:revoke:1" },
       );
     });
-    await h.db.db.update(outboxMessages).set({ maxAttempts: 2 });
+    await h.db.db
+      .update(outboxMessages)
+      .set({ maxAttempts: 2 })
+      .where(eq(outboxMessages.dedupeKey, "test:revoke:1"));
+    const ours = () =>
+      h.db.db.select().from(outboxMessages).where(eq(outboxMessages.dedupeKey, "test:revoke:1"));
 
     expect(await h.dispatcher.tick()).toBe(1);
-    let [row] = await h.db.db.select().from(outboxMessages);
+    let [row] = await ours();
     expect(row).toMatchObject({ status: "failed", attempts: 1 });
     expect(row!.lastError).toMatch(/downstream unavailable/);
     expect(row!.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + 1000);
@@ -78,9 +83,12 @@ describe("transactional outbox", () => {
     // Not due yet: nothing claimed.
     expect(await h.dispatcher.tick()).toBe(0);
 
-    await h.db.db.update(outboxMessages).set({ nextAttemptAt: new Date(Date.now() - 1) });
+    await h.db.db
+      .update(outboxMessages)
+      .set({ nextAttemptAt: new Date(Date.now() - 1) })
+      .where(eq(outboxMessages.dedupeKey, "test:revoke:1"));
     expect(await h.dispatcher.tick()).toBe(1);
-    [row] = await h.db.db.select().from(outboxMessages);
+    [row] = await ours();
     expect(row).toMatchObject({ status: "dead", attempts: 2 });
     expect(calls).toBe(2);
 
