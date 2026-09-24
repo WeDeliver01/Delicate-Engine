@@ -111,6 +111,7 @@ export const SettingKey = z.enum([
   "scheduling.policy",
   "settlement.rules",
   "treasury.policy",
+  "company.tax_profile",
 ]);
 
 /** How money splits per delivered shipment. Admin-editable; snapshotted into every settlement. */

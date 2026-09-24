@@ -8,3 +8,4 @@ export * from "./fleet.js";
 export * from "./dispatch.js";
 export * from "./treasury.js";
 export * from "./payments.js";
+export * from "./billing.js";

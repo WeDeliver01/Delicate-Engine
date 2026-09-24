@@ -1,5 +1,14 @@
 import { relations } from "drizzle-orm";
-import { index, pgEnum, pgTable, primaryKey, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { id, timestamps } from "./_shared.js";
 
 /**
@@ -59,6 +68,9 @@ export const accounts = pgTable(
     name: text("name").notNull(),
     type: accountTypeEnum("type").notNull(),
     billingMode: billingModeEnum("billing_mode").notNull().default("prepaid"),
+    /** Printed on invoices; a tax invoice over R5 000 must carry the recipient's details. */
+    billingEmail: text("billing_email"),
+    billingAddress: jsonb("billing_address"),
     status: accountStatusEnum("status").notNull().default("active"),
     ...timestamps(),
   },

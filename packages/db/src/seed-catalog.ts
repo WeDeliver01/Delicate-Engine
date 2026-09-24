@@ -59,6 +59,26 @@ export const CATALOG_SEED = {
       fuelCostPerKmCents: 120,
       chargeFailedAttempts: true,
     },
+    "company.tax_profile": {
+      legalName: "Delicate Courier (Pty) Ltd",
+      tradingName: "Delicate Courier",
+      // PLACEHOLDERS: replace with the real CIPC and SARS numbers before issuing a document.
+      registrationNumber: null,
+      vatNumber: null,
+      address: {
+        formatted: "14 Camellia Avenue, Lynnwood Ridge, Pretoria, 0081, South Africa",
+        line1: "14 Camellia Avenue",
+        suburb: "Lynnwood Ridge",
+        city: "Pretoria",
+        postalCode: "0081",
+        country: "ZA",
+        location: { lat: -25.7642, lng: 28.2917 },
+        placeId: null,
+      },
+      email: "accounts@delicatecourier.co.za",
+      phone: "0800 000 000",
+      bank: { bankName: "", accountName: "", accountNumber: "", branchCode: "" },
+    },
     "treasury.policy": {
       urgencyWindowDays: 10,
       urgencyMaxMultiplierBps: 25_000,

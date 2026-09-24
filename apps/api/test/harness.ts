@@ -5,6 +5,7 @@ import { runMigrations, seedCatalog } from "@delicate/db";
 import { createHttpApp } from "../src/bootstrap.js";
 import { TokenVerifier } from "../src/auth/token-verifier.js";
 import { DbService } from "../src/infra/db.module.js";
+import { SettingsService } from "../src/infra/settings.service.js";
 import { OutboxDispatcher } from "../src/worker/outbox-dispatcher.js";
 
 export interface Harness {
@@ -18,6 +19,10 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "invoice_payments",
+  "invoice_lines",
+  "invoices",
+  "invoice_counters",
   "payment_proposals",
   "payment_counters",
   "allocation_transactions",
@@ -72,6 +77,7 @@ export async function createHarness(): Promise<Harness> {
   const db = app.get(DbService);
   await db.transaction((tx) => seedCatalog(tx));
   const verifier = app.get(TokenVerifier);
+  const settings = app.get(SettingsService);
   const dispatcher = app.get(OutboxDispatcher);
 
   return {
@@ -85,6 +91,8 @@ export async function createHarness(): Promise<Harness> {
         sql.raw(`truncate table ${TRUNCATE.join(", ")} restart identity cascade`),
       );
       await db.transaction((tx) => seedCatalog(tx));
+      // The settings table was just truncated and re-seeded underneath the read cache.
+      settings.invalidate();
     },
     close: () => app.close(),
   };

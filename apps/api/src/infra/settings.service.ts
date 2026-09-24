@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   Address,
   Bps,
+  CompanyTaxProfile,
   SettlementRules,
   SlotPolicy,
   TreasuryPolicy,
@@ -24,6 +25,7 @@ const SCHEMAS = {
   "scheduling.policy": SlotPolicy,
   "settlement.rules": SettlementRules,
   "treasury.policy": TreasuryPolicy,
+  "company.tax_profile": CompanyTaxProfile,
 } satisfies Record<SettingKey, z.ZodTypeAny>;
 
 type Schemas = typeof SCHEMAS;
@@ -68,6 +70,14 @@ export class SettingsService {
       });
     });
     this.cache.delete(key);
+  }
+
+  /**
+   * Drop the read cache. Used after a bulk change to the settings table (and by the test
+   * harness, whose reset truncates and re-seeds settings underneath the cache).
+   */
+  invalidate(): void {
+    this.cache.clear();
   }
 
   /** VAT in basis points to apply to quotes: 0 when the company is not registered. */
