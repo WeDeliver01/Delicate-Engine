@@ -110,6 +110,7 @@ export const SettingKey = z.enum([
   "booking.same_day_cutoff_minutes",
   "scheduling.policy",
   "settlement.rules",
+  "treasury.policy",
 ]);
 
 /** How money splits per delivered shipment. Admin-editable; snapshotted into every settlement. */

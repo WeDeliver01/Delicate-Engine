@@ -1,6 +1,12 @@
 import { eq } from "drizzle-orm";
 import type { DbExecutor } from "./client.js";
-import { packageTypes, rateCards, serviceLevels, settings } from "./schema/index.js";
+import {
+  allocationWallets,
+  packageTypes,
+  rateCards,
+  serviceLevels,
+  settings,
+} from "./schema/index.js";
 
 /**
  * Catalog defaults. PLACEHOLDER NUMBERS: taken from the reference quote formula so the engine
@@ -52,6 +58,11 @@ export const CATALOG_SEED = {
       driverEarningPerKmCents: 0,
       fuelCostPerKmCents: 120,
       chargeFailedAttempts: true,
+    },
+    "treasury.policy": {
+      urgencyWindowDays: 10,
+      urgencyMaxMultiplierBps: 25_000,
+      reserveGateBps: 8_000,
     },
   },
   rateCard: {
@@ -150,6 +161,101 @@ export const CATALOG_SEED = {
       sortOrder: 9,
     },
   ],
+  /**
+   * Starter treasury wallets. PLACEHOLDER amounts — replace with the real monthly bills and
+   * debit-order dates in the admin console; nothing here moves money on its own.
+   */
+  allocationWallets: [
+    {
+      slug: "premises",
+      name: "Premises rent",
+      category: "operating_expense",
+      priority: 1,
+      vendor: "Landlord",
+      obligationAmountCents: 950_000,
+      dueDay: 1,
+    },
+    {
+      slug: "vehicle-finance",
+      name: "Vehicle finance",
+      category: "operating_expense",
+      priority: 2,
+      vendor: "Bank",
+      obligationAmountCents: 1_240_000,
+      dueDay: 3,
+    },
+    {
+      slug: "insurance",
+      name: "Fleet & goods-in-transit insurance",
+      category: "operating_expense",
+      priority: 3,
+      vendor: "Insurer",
+      obligationAmountCents: 680_000,
+      dueDay: 7,
+    },
+    {
+      slug: "salaries",
+      name: "Salaries & wages",
+      category: "operating_expense",
+      priority: 4,
+      vendor: "Payroll",
+      obligationAmountCents: 4_500_000,
+      dueDay: 25,
+    },
+    {
+      slug: "telecoms",
+      name: "Connectivity & software",
+      category: "operating_expense",
+      priority: 5,
+      vendor: "Various",
+      obligationAmountCents: 320_000,
+      dueDay: 15,
+    },
+    {
+      slug: "accounting",
+      name: "Accounting & compliance",
+      category: "operating_expense",
+      priority: 6,
+      vendor: "Accountants",
+      obligationAmountCents: 450_000,
+      dueDay: 20,
+    },
+    {
+      slug: "tax",
+      name: "Tax reserve (provisional + VAT)",
+      category: "reserve",
+      priority: 1,
+      monthlyTargetCents: 1_500_000,
+    },
+    {
+      slug: "maintenance",
+      name: "Vehicle maintenance & tyres",
+      category: "reserve",
+      priority: 2,
+      monthlyTargetCents: 600_000,
+    },
+    {
+      slug: "emergency",
+      name: "Emergency buffer",
+      category: "reserve",
+      priority: 3,
+      monthlyTargetCents: 1_000_000,
+    },
+    {
+      slug: "growth",
+      name: "Growth fund (next vehicle)",
+      category: "capital",
+      priority: 1,
+      monthlyTargetCents: 800_000,
+    },
+    {
+      slug: "retained",
+      name: "Retained earnings",
+      category: "capital",
+      priority: 99,
+      isRetainedEarnings: true,
+    },
+  ],
 } as const;
 
 export async function seedCatalog(tx: DbExecutor): Promise<void> {
@@ -172,5 +278,11 @@ export async function seedCatalog(tx: DbExecutor): Promise<void> {
       .insert(packageTypes)
       .values({ ...pt, maxWeightKg: String(pt.maxWeightKg) })
       .onConflictDoNothing({ target: packageTypes.code });
+  }
+  for (const w of CATALOG_SEED.allocationWallets) {
+    await tx
+      .insert(allocationWallets)
+      .values(w)
+      .onConflictDoNothing({ target: allocationWallets.slug });
   }
 }

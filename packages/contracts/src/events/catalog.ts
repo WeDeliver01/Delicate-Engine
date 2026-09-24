@@ -243,6 +243,20 @@ export const BookingCharged = defineEvent(
   }),
 );
 
+/** Treasury earmarked a settlement's contribution margin across the allocation wallets. */
+export const TreasuryAllocated = defineEvent(
+  "treasury.allocated",
+  z.object({
+    settlementRef: z.string(),
+    shipmentId: z.string().uuid().nullable(),
+    period: z.string(),
+    marginCents: Cents,
+    lines: z.array(
+      z.object({ walletId: z.string().uuid(), walletSlug: z.string(), amountCents: Cents }),
+    ),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -265,6 +279,7 @@ export const DomainEvent = z.discriminatedUnion("type", [
   FuelLogged,
   SettlementPosted,
   BookingCharged,
+  TreasuryAllocated,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

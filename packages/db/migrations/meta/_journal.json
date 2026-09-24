@@ -43,6 +43,13 @@
       "when": 1789929361431,
       "tag": "0005_lowly_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790271638872,
+      "tag": "0006_reflective_marauders",
+      "breakpoints": true
     }
   ]
 }

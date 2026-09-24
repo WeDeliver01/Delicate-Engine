@@ -6,3 +6,4 @@ export * from "./scheduling.js";
 export * from "./bookings.js";
 export * from "./fleet.js";
 export * from "./dispatch.js";
+export * from "./treasury.js";
