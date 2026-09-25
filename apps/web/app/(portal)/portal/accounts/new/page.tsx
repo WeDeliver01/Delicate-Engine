@@ -53,11 +53,8 @@ export default function NewAccountPage() {
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="mx-auto max-w-lg space-y-6 rounded-lg border border-[#ECEAE6] bg-white p-8"
-    >
-      <h1 className="text-xl font-semibold">Create an account</h1>
+    <form onSubmit={submit} className="mx-auto max-w-lg space-y-6 panel p-8">
+      <h1 className="page-title">Create an account</h1>
 
       <fieldset className="flex gap-4 text-sm">
         {(["business", "individual"] as const).map((t) => (
@@ -141,10 +138,10 @@ export default function NewAccountPage() {
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-[#C13B73]">{error}</p>}
       <button
         disabled={busy}
-        className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white disabled:opacity-50"
+        className="w-full rounded-xl bg-ink py-2 font-medium text-white disabled:opacity-50"
       >
         {busy ? "Creating…" : "Create account"}
       </button>

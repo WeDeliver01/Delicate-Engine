@@ -47,7 +47,7 @@ export default function AdminOutbox() {
           {
             key: "lastError",
             label: "Last error",
-            render: (r) => <span className="text-xs text-red-700">{r.lastError ?? "—"}</span>,
+            render: (r) => <span className="text-xs text-[#C13B73]">{r.lastError ?? "—"}</span>,
           },
         ]}
         actions={(row, refetch) =>

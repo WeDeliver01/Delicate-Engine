@@ -137,3 +137,166 @@ h1, h2, h3, h4, h5, h6 {
     animation: none;
   }
 }
+
+/* ─── App shell design system ───────────────────────────────────────────────────
+   The portal and the ops console are the same product as the marketing site, so they
+   use its exact vocabulary, taken from app/(marketing)/page.tsx:
+
+     eyebrow      13px semibold pink, uppercase, tracking-wider
+     h1           text-4xl/5xl extrabold, tracking-tight, leading-[1.08]
+     h2           text-3xl/[32px] bold
+     buttons      rounded-2xl px-8 py-3, black → pink on hover, active:scale-95
+     cards        rounded-xl, hairline #ECEAE6 border on white
+     figures      JetBrains Mono, tabular
+
+   Defined once here so a colour changes in one place rather than in forty files. */
+@layer components {
+  /* Layout */
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Typography */
+  .eyebrow {
+    @apply text-[13px] font-semibold uppercase tracking-wider text-brand-pink;
+  }
+  /* The quiet grey label used on table headers, stat tiles and field captions. */
+  .label-mini {
+    @apply text-[11px] uppercase tracking-wide text-muted;
+  }
+  .page-title {
+    @apply font-display text-3xl font-extrabold leading-[1.08] tracking-tight text-ink;
+  }
+  .section-title {
+    @apply font-display text-lg font-bold tracking-tight text-ink;
+  }
+  .lede {
+    @apply text-sm leading-relaxed text-[#6B6661];
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-2xl
+           px-8 py-3 text-[14px] font-medium transition-colors active:scale-95
+           disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply bg-ink text-white hover:bg-brand-pink;
+  }
+  .btn-secondary {
+    @apply border border-[#DAD6CF] text-ink hover:border-ink hover:bg-[#FAFAF9];
+  }
+  .btn-danger {
+    @apply border border-[#F3C6D9] text-[#C13B73] hover:border-[#C13B73] hover:bg-[#FCEEF4];
+  }
+  .btn-sm {
+    @apply rounded-xl px-5 py-2 text-[13px];
+  }
+  .link-quiet {
+    @apply text-muted transition-colors hover:text-ink hover:underline;
+  }
+  .link-accent {
+    @apply text-brand-pink transition-colors hover:underline;
+  }
+
+  /* Surfaces */
+  .panel {
+    @apply rounded-xl border border-line bg-white;
+  }
+  .panel-head {
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6;
+  }
+  .panel-body {
+    @apply px-5 py-4 sm:px-6;
+  }
+  .panel-note {
+    @apply border-t border-line px-5 py-3 text-xs text-muted sm:px-6;
+  }
+
+  /* Data tables */
+  .table-base {
+    @apply w-full text-left text-sm;
+  }
+  .table-base thead {
+    @apply text-[11px] uppercase tracking-wide text-muted;
+  }
+  .table-base th {
+    @apply px-5 py-2.5 font-medium sm:px-6;
+  }
+  .table-base td {
+    @apply px-5 py-3 align-top sm:px-6;
+  }
+  .table-base tbody {
+    @apply divide-y divide-[#F0EDE9];
+  }
+  .table-empty {
+    @apply px-5 py-10 text-center text-sm text-muted;
+  }
+
+  /* Chips */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .chip-neutral {
+    @apply bg-[#F0EDE9] text-[#6B6661];
+  }
+  .chip-good {
+    @apply bg-[#E7F5EC] text-[#1B7F4B];
+  }
+  .chip-warn {
+    @apply bg-[#FDF3E3] text-[#8A5A12];
+  }
+  .chip-bad {
+    @apply bg-[#FCEEF4] text-[#C13B73];
+  }
+  .chip-info {
+    @apply bg-[#EAF1FB] text-[#1F4E8C];
+  }
+  .chip-outline {
+    @apply border border-[#DAD6CF] bg-white text-[#6B6661];
+  }
+  /* The pink "most popular" flag from the pricing cards. */
+  .chip-accent {
+    @apply bg-brand-pink text-[10px] font-bold uppercase tracking-wide text-white;
+  }
+
+  /* Forms */
+  .field-label {
+    @apply block text-[11px] font-medium uppercase tracking-wide text-muted;
+  }
+  .field-hint {
+    @apply mt-1 block text-xs text-muted;
+  }
+  .input {
+    @apply w-full rounded-xl border border-[#DAD6CF] bg-white px-3 py-2 text-sm text-ink
+           transition-colors placeholder:text-[#B5AFA7]
+           focus:border-ink focus:outline-none focus:ring-2 focus:ring-[#E84A8A]/20
+           disabled:bg-[#F5F3F0] disabled:text-muted;
+  }
+  .checkbox {
+    @apply h-4 w-4 accent-[#E84A8A];
+  }
+
+  /* Feedback */
+  .alert-error {
+    @apply rounded-xl border border-[#F3C6D9] bg-[#FCEEF4] p-3 text-sm text-[#C13B73];
+  }
+  .alert-success {
+    @apply rounded-xl border border-[#BEE3CD] bg-[#E7F5EC] p-3 text-sm text-[#1B7F4B];
+  }
+  .alert-info {
+    @apply rounded-xl border border-[#EADFC4] bg-[#FDF3E3] p-3 text-sm text-[#8A5A12];
+  }
+
+  /* Money and counts: tabular, so figures do not shuffle as they update */
+  .figure {
+    @apply font-mono tabular-nums;
+  }
+}
+
+/* A waybill, a reference or an amount must never break across lines — "DC-260924-00006"
+   split over three rows is unreadable, and hyphens invite exactly that inside a table cell. */
+table .font-mono,
+table .figure {
+  white-space: nowrap;
+}

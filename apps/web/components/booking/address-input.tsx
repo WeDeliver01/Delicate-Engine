@@ -69,7 +69,7 @@ export function AddressInput(props: {
 
   return (
     <label className="relative block text-sm">
-      <span className="font-medium text-[#0A0A0A]">{props.label}</span>
+      <span className="font-medium text-ink">{props.label}</span>
       <input
         value={text}
         onChange={(e) => {
@@ -82,9 +82,9 @@ export function AddressInput(props: {
         className={`mt-1 w-full rounded-xl border p-3 outline-none focus:border-[#0A0A0A] ${props.value ? "border-[#0A0A0A]" : "border-[#DAD6CF]"}`}
         autoComplete="off"
       />
-      {loading && <span className="absolute right-3 top-9 text-xs text-[#86817A]">…</span>}
+      {loading && <span className="absolute right-3 top-9 text-xs text-muted">…</span>}
       {open && suggestions.length > 0 && (
-        <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-[#ECEAE6] bg-white shadow-lg">
+        <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-line bg-white shadow-lg">
           {suggestions.map((s, i) => (
             <li key={`${s.placeId ?? i}`}>
               <button
@@ -99,7 +99,7 @@ export function AddressInput(props: {
         </ul>
       )}
       {!props.value && text.length >= 4 && !loading && suggestions.length === 0 && (
-        <span className="mt-1 block text-xs text-[#86817A]">
+        <span className="mt-1 block text-xs text-muted">
           Pick an address from the list so we can measure the route.
         </span>
       )}

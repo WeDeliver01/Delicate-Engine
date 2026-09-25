@@ -74,16 +74,12 @@ export default function AdminDrivers() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <h1 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Drivers</h1>
+      <section className="panel">
+        <h1 className="panel-head section-title">Drivers</h1>
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[#86817A]">
+          <thead className="label-mini">
             <tr>
               <th className="px-5 py-2">Driver</th>
               <th className="px-5 py-2">Contact</th>
@@ -101,13 +97,13 @@ export default function AdminDrivers() {
                 <tr key={dr.id}>
                   <td className="px-5 py-2">
                     {dr.fullName}
-                    <div className="text-xs text-[#86817A]">
+                    <div className="text-xs text-muted">
                       {dr.userId ? "app linked" : "not signed in yet"}
                     </div>
                   </td>
                   <td className="px-5 py-2">
                     {dr.phone}
-                    <div className="text-xs text-[#86817A]">{dr.email}</div>
+                    <div className="text-xs text-muted">{dr.email}</div>
                   </td>
                   <td className="px-5 py-2">
                     {vehicles.data?.find((x) => x.id === dr.vehicleId)?.registration ?? "—"}
@@ -121,15 +117,12 @@ export default function AdminDrivers() {
                         {shift.status}
                       </span>
                     ) : (
-                      <button
-                        onClick={() => schedule.mutate(dr.id)}
-                        className="rounded-full border border-[#DAD6CF] px-2 py-0.5 text-xs hover:border-[#0A0A0A]"
-                      >
+                      <button onClick={() => schedule.mutate(dr.id)} className="chip chip-outline">
                         schedule
                       </button>
                     )}
                   </td>
-                  <td className="px-5 py-2 text-xs text-[#86817A]">
+                  <td className="px-5 py-2 text-xs text-muted">
                     {pos
                       ? `${pos.location.lat.toFixed(3)}, ${pos.location.lng.toFixed(3)} · ${dateTime(pos.recordedAt)}`
                       : "—"}
@@ -149,7 +142,7 @@ export default function AdminDrivers() {
             });
             setD({ fullName: "", email: "", phone: "", vehicleId: "", dailyStopCapacity: "25" });
           }}
-          className="flex flex-wrap items-end gap-2 border-t border-[#ECEAE6] p-4 text-sm"
+          className="flex flex-wrap items-end gap-2 border-t border-line p-4 text-sm"
         >
           <Field
             label="Full name"
@@ -175,7 +168,7 @@ export default function AdminDrivers() {
             <select
               value={d.vehicleId}
               onChange={(e) => setD({ ...d, vehicleId: e.target.value })}
-              className="mt-1 block rounded-lg border border-[#DAD6CF] px-2 py-1.5"
+              className="mt-1 block input px-2 py-1.5"
             >
               <option value="">none</option>
               {vehicles.data?.map((x) => (
@@ -191,14 +184,12 @@ export default function AdminDrivers() {
             onChange={(x) => setD({ ...d, dailyStopCapacity: x })}
             type="number"
           />
-          <button className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-white hover:bg-[#E84A8A]">
-            Add driver
-          </button>
+          <button className="btn btn-primary btn-sm">Add driver</button>
         </form>
       </section>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Vehicles</h2>
+      <section className="panel">
+        <h2 className="panel-head section-title">Vehicles</h2>
         <ul className="divide-y divide-[#F0EDE9] text-sm">
           {vehicles.data?.map((x) => (
             <li key={x.id} className="flex justify-between px-5 py-2">
@@ -221,7 +212,7 @@ export default function AdminDrivers() {
             });
             setV({ registration: "", make: "", model: "", fuelType: "petrol", litresPer100Km: "" });
           }}
-          className="flex flex-wrap items-end gap-2 border-t border-[#ECEAE6] p-4 text-sm"
+          className="flex flex-wrap items-end gap-2 border-t border-line p-4 text-sm"
         >
           <Field
             label="Registration"
@@ -236,7 +227,7 @@ export default function AdminDrivers() {
             <select
               value={v.fuelType}
               onChange={(e) => setV({ ...v, fuelType: e.target.value })}
-              className="mt-1 block rounded-lg border border-[#DAD6CF] px-2 py-1.5"
+              className="mt-1 block input px-2 py-1.5"
             >
               <option value="petrol">petrol</option>
               <option value="diesel">diesel</option>
@@ -249,14 +240,12 @@ export default function AdminDrivers() {
             onChange={(x) => setV({ ...v, litresPer100Km: x })}
             type="number"
           />
-          <button className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-white hover:bg-[#E84A8A]">
-            Add vehicle
-          </button>
+          <button className="btn btn-primary btn-sm">Add vehicle</button>
         </form>
       </section>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-5 text-sm">
-        <h2 className="font-semibold">Recent fuel logs</h2>
+      <section className="panel p-5 text-sm">
+        <h2 className="section-title">Recent fuel logs</h2>
         <ul className="mt-3 divide-y divide-[#F0EDE9]">
           {fuel.data?.slice(0, 15).map((f) => (
             <li key={f.id} className="flex justify-between py-2">
@@ -271,7 +260,7 @@ export default function AdminDrivers() {
             </li>
           ))}
           {fuel.data?.length === 0 && (
-            <li className="py-4 text-center text-[#86817A]">No fuel logged yet.</li>
+            <li className="py-4 text-center text-muted">No fuel logged yet.</li>
           )}
         </ul>
       </section>
@@ -294,7 +283,7 @@ function Field(props: {
         value={props.value}
         required={props.required}
         onChange={(e) => props.onChange(e.target.value)}
-        className="mt-1 block rounded-lg border border-[#DAD6CF] px-2 py-1.5 text-sm"
+        className="mt-1 block input px-2 py-1.5 text-sm"
       />
     </label>
   );

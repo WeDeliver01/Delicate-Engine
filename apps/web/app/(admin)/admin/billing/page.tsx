@@ -40,16 +40,12 @@ export default function AdminBilling() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
 
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Billing</h1>
-          <p className="text-sm text-[#86817A]">
+          <h1 className="page-title">Billing</h1>
+          <p className="text-sm text-muted">
             Prepaid bookings invoice themselves as they settle. Postpaid accounts are billed here,
             monthly.
           </p>
@@ -59,25 +55,25 @@ export default function AdminBilling() {
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
             placeholder="YYYY-MM"
-            className="w-28 rounded-lg border border-[#DAD6CF] px-3 py-1.5 font-mono"
+            className="w-28 input py-1.5 font-mono"
           />
           <button
             onClick={() => run.mutate()}
             disabled={run.isPending || !/^\d{4}-\d{2}$/.test(period)}
-            className="rounded-full bg-[#0A0A0A] px-5 py-1.5 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+            className="btn btn-primary btn-sm"
           >
             {run.isPending ? "Running…" : "Run monthly billing"}
           </button>
         </div>
       </header>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <div className="flex items-center justify-between border-b border-[#ECEAE6] px-5 py-4">
-          <h2 className="font-semibold">Ageing</h2>
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="section-title">Ageing</h2>
           <span className="font-mono text-sm">{rands(owed)} outstanding</span>
         </div>
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[#86817A]">
+          <thead className="label-mini">
             <tr>
               <th className="px-5 py-2">Account</th>
               <th className="px-5 py-2 text-right">Current</th>
@@ -103,20 +99,16 @@ export default function AdminBilling() {
                 </td>
                 <td className="px-5 py-2">
                   {r.overLimit ? (
-                    <span className="rounded-full bg-[#FCEEF4] px-2 py-0.5 text-xs text-[#C13B73]">
-                      over {rands(r.creditLimitCents)}
-                    </span>
+                    <span className="chip chip-bad">over {rands(r.creditLimitCents)}</span>
                   ) : (
-                    <span className="text-xs text-[#86817A]">
-                      within {rands(r.creditLimitCents)}
-                    </span>
+                    <span className="text-xs text-muted">within {rands(r.creditLimitCents)}</span>
                   )}
                 </td>
               </tr>
             ))}
             {ageing.data?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-[#86817A]">
+                <td colSpan={7} className="table-empty">
                   Nobody owes anything. Good day.
                 </td>
               </tr>
@@ -125,10 +117,10 @@ export default function AdminBilling() {
         </table>
       </section>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Documents</h2>
+      <section className="panel">
+        <h2 className="panel-head section-title">Documents</h2>
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[#86817A]">
+          <thead className="label-mini">
             <tr>
               <th className="px-5 py-2">Number</th>
               <th className="px-5 py-2">Kind</th>
@@ -151,7 +143,7 @@ export default function AdminBilling() {
                       {inv.number}
                     </button>
                   </td>
-                  <td className="px-5 py-2 text-[#86817A]">{inv.kind.replace(/_/g, " ")}</td>
+                  <td className="px-5 py-2 text-muted">{inv.kind.replace(/_/g, " ")}</td>
                   <td className="px-5 py-2">{inv.issuedAt ? dateOnly(inv.issuedAt) : "—"}</td>
                   <td className="px-5 py-2">{inv.dueAt ? dateOnly(inv.dueAt) : "—"}</td>
                   <td className="px-5 py-2 text-right font-mono">{rands(inv.totalCents)}</td>
@@ -171,7 +163,7 @@ export default function AdminBilling() {
             ))}
             {invoices.data?.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-[#86817A]">
+                <td colSpan={7} className="table-empty">
                   No documents yet.
                 </td>
               </tr>
@@ -228,12 +220,12 @@ function Detail({
             value={payRef}
             onChange={(e) => setPayRef(e.target.value)}
             placeholder="payment reference"
-            className="flex-1 rounded-lg border border-[#DAD6CF] px-3 py-1.5 font-mono"
+            className="flex-1 input py-1.5 font-mono"
           />
           <button
             disabled={payRef.trim().length < 2}
             onClick={() => pay.mutate()}
-            className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+            className="btn btn-primary btn-sm"
           >
             Record {rands(invoice.outstandingCents)} received
           </button>
@@ -246,27 +238,25 @@ function Detail({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="reason for the credit note"
-            className="flex-1 rounded-lg border border-[#DAD6CF] px-3 py-1.5"
+            className="flex-1 input py-1.5"
           />
           <input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="rands (blank = full)"
-            className="w-36 rounded-lg border border-[#DAD6CF] px-3 py-1.5 font-mono"
+            className="w-36 input py-1.5 font-mono"
           />
           <button
             disabled={reason.trim().length < 3}
             onClick={() => credit.mutate()}
-            className="rounded-full border border-[#DAD6CF] px-4 py-1.5 hover:border-[#0A0A0A] disabled:opacity-40"
+            className="btn btn-secondary btn-sm"
           >
             Issue credit note
           </button>
         </div>
       )}
       {invoice.creditedByInvoiceId && (
-        <p className="text-sm text-[#86817A]">
-          Already credited. An issued document is never edited.
-        </p>
+        <p className="text-sm text-muted">Already credited. An issued document is never edited.</p>
       )}
     </div>
   );

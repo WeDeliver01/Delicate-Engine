@@ -64,30 +64,22 @@ export default function AdminSettings() {
     onError,
   });
 
-  if (!s.data) return <p className="text-sm text-[#86817A]">Loading…</p>;
+  if (!s.data) return <p className="text-sm text-muted">Loading…</p>;
 
   return (
     <div className="max-w-3xl space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-[#86817A]">
+        <h1 className="page-title">Settings</h1>
+        <p className="text-sm text-muted">
           Who the company is on a tax invoice, whether it charges VAT, and what a delivery costs to
           run. Every change is audited.
         </p>
       </header>
 
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-      {saved && (
-        <p className="rounded-xl border border-[#BEE3CD] bg-[#E7F5EC] p-3 text-sm text-[#1B7F4B]">
-          {saved}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
+      {saved && <p className="alert-success">{saved}</p>}
       {!canWrite && (
-        <p className="rounded-xl border border-[#DAD6CF] bg-white p-3 text-sm text-[#86817A]">
+        <p className="rounded-xl border border-[#DAD6CF] bg-white p-3 text-sm text-muted">
           You can see these, but only a super admin can change them.
         </p>
       )}
@@ -122,10 +114,10 @@ function Readiness({ readiness }: { readiness: SettingsBundle["readiness"] }) {
   const blocking = readiness.missing.filter((m) => m.severity === "blocking");
   return (
     <section
-      className={`rounded-xl border p-5 ${blocking.length ? "border-red-200 bg-red-50" : "border-[#ECEAE6] bg-white"}`}
+      className={`rounded-xl border p-5 ${blocking.length ? "border-[#F3C6D9] bg-[#FCEEF4]" : "border-line bg-white"}`}
     >
       <div className="flex items-center justify-between gap-4">
-        <h2 className="font-semibold">Document readiness</h2>
+        <h2 className="section-title">Document readiness</h2>
         <span
           className={`rounded-full px-3 py-0.5 text-xs ${readiness.issuesTaxInvoices ? "bg-[#E7F5EC] text-[#1B7F4B]" : "bg-[#FDF3E3] text-[#8A5A12]"}`}
         >
@@ -148,7 +140,7 @@ function Readiness({ readiness }: { readiness: SettingsBundle["readiness"] }) {
           ))}
         </ul>
       )}
-      <p className="mt-3 text-xs text-[#86817A]">
+      <p className="mt-3 text-xs text-muted">
         {readiness.obligationCount} monthly bill(s) configured in{" "}
         <a href="/admin/treasury" className="underline">
           treasury
@@ -203,11 +195,11 @@ function CompanyCard({
         <Text label="Phone" value={v.phone} onChange={(x) => set({ phone: x })} />
       </div>
 
-      <h3 className="mt-6 text-xs uppercase text-[#86817A]">Registered address</h3>
+      <h3 className="mt-6 label-mini">Registered address</h3>
       <AddressFields value={v.address} onChange={(address) => set({ address })} />
 
-      <h3 className="mt-6 text-xs uppercase text-[#86817A]">Banking details</h3>
-      <p className="text-xs text-[#86817A]">
+      <h3 className="mt-6 label-mini">Banking details</h3>
+      <p className="text-xs text-muted">
         Printed on invoices so a postpaid customer knows where to pay.
       </p>
       <div className="mt-2 grid gap-4 sm:grid-cols-2">
@@ -357,7 +349,7 @@ function SettlementCard({
         />
         Charge the customer (and pay the driver) for a failed delivery attempt
       </label>
-      <p className="mt-4 rounded-lg bg-[#FAFAF9] p-3 text-xs text-[#6B6661]">
+      <p className="mt-4 rounded-xl bg-[#FAFAF9] p-3 text-xs text-[#6B6661]">
         A 20 km drop earns the driver{" "}
         <span className="font-mono">
           {rands(v.driverEarningPerDropCents + v.driverEarningPerKmCents * 20)}
@@ -384,15 +376,11 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-      <h2 className="font-semibold">{title}</h2>
-      <p className="mt-1 text-sm text-[#86817A]">{hint}</p>
+    <section className="panel p-5">
+      <h2 className="section-title">{title}</h2>
+      <p className="mt-1 text-sm text-muted">{hint}</p>
       <div className="mt-4">{children}</div>
-      <button
-        onClick={onSave}
-        disabled={disabled}
-        className="mt-5 rounded-full bg-[#0A0A0A] px-5 py-2 text-sm text-white hover:bg-[#E84A8A] disabled:opacity-40"
-      >
+      <button onClick={onSave} disabled={disabled} className="mt-5 btn btn-primary">
         Save {title.toLowerCase()}
       </button>
     </section>
@@ -459,14 +447,14 @@ function Text({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-xs uppercase text-[#86817A]">{label}</span>
+      <span className="label-mini">{label}</span>
       <input
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+        className="mt-1 w-full input"
       />
-      {hint && <span className="mt-1 block text-xs text-[#86817A]">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
     </label>
   );
 }
@@ -486,15 +474,15 @@ function Num({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-xs uppercase text-[#86817A]">{label}</span>
+      <span className="label-mini">{label}</span>
       <input
         type="number"
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+        className="mt-1 w-full input font-mono"
       />
-      {hint && <span className="mt-1 block text-xs text-[#86817A]">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
     </label>
   );
 }

@@ -27,28 +27,28 @@ export default function PortalInvoices() {
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-4 py-10">
       <header>
-        <h1 className="text-2xl font-semibold">Invoices &amp; statements</h1>
+        <h1 className="page-title">Invoices &amp; statements</h1>
         <p className="mt-1 text-sm text-[#6B6661]">
           Every delivery you are charged for appears here, with the VAT shown separately for your
           bookkeeping.
         </p>
       </header>
 
-      <section className="rounded-2xl border border-[#ECEAE6] bg-white">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#ECEAE6] px-5 py-4">
-          <h2 className="font-semibold">Statement</h2>
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="section-title">Statement</h2>
           <input
             type="date"
             value={range.from}
             onChange={(e) => setRange({ ...range, from: e.target.value })}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+            className="input px-2 py-1 text-sm"
           />
-          <span className="text-sm text-[#86817A]">to</span>
+          <span className="text-sm text-muted">to</span>
           <input
             type="date"
             value={range.to}
             onChange={(e) => setRange({ ...range, to: e.target.value })}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+            className="input px-2 py-1 text-sm"
           />
         </div>
 
@@ -61,7 +61,7 @@ export default function PortalInvoices() {
               <Stat label="Closing balance" value={rands(st.closingBalanceCents)} />
             </div>
             <table className="w-full text-left text-sm">
-              <thead className="text-xs uppercase text-[#86817A]">
+              <thead className="label-mini">
                 <tr>
                   <th className="px-5 py-2">When</th>
                   <th className="px-5 py-2">Description</th>
@@ -72,11 +72,11 @@ export default function PortalInvoices() {
               <tbody className="divide-y divide-[#F0EDE9]">
                 {st.lines.map((l, i) => (
                   <tr key={i}>
-                    <td className="px-5 py-2 text-[#86817A]">{dateTime(l.at)}</td>
+                    <td className="px-5 py-2 text-muted">{dateTime(l.at)}</td>
                     <td className="px-5 py-2">
                       {l.description}
                       {l.reference && (
-                        <span className="ml-2 font-mono text-xs text-[#86817A]">{l.reference}</span>
+                        <span className="ml-2 font-mono text-xs text-muted">{l.reference}</span>
                       )}
                     </td>
                     <td
@@ -84,14 +84,14 @@ export default function PortalInvoices() {
                     >
                       {rands(l.amountCents)}
                     </td>
-                    <td className="px-5 py-2 text-right font-mono text-[#86817A]">
+                    <td className="px-5 py-2 text-right font-mono text-muted">
                       {rands(l.balanceAfterCents)}
                     </td>
                   </tr>
                 ))}
                 {st.lines.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-5 py-8 text-center text-[#86817A]">
+                    <td colSpan={4} className="table-empty">
                       Nothing moved in this period.
                     </td>
                   </tr>
@@ -99,7 +99,7 @@ export default function PortalInvoices() {
               </tbody>
             </table>
             {st.outstandingCents > 0 && (
-              <p className="border-t border-[#ECEAE6] px-5 py-3 text-sm">
+              <p className="panel-note text-sm">
                 <span className="font-semibold">{rands(st.outstandingCents)}</span> is outstanding
                 on your account.
               </p>
@@ -109,14 +109,14 @@ export default function PortalInvoices() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="font-semibold">Documents</h2>
+        <h2 className="section-title">Documents</h2>
         {invoices.data?.length === 0 && (
-          <p className="rounded-2xl border border-[#ECEAE6] bg-white p-8 text-center text-sm text-[#86817A]">
+          <p className="panel p-8 text-center text-sm text-muted">
             No invoices yet. One is issued for every booking once it has been delivered.
           </p>
         )}
         {invoices.data?.map((inv) => (
-          <div key={inv.id} className="rounded-2xl border border-[#ECEAE6] bg-white">
+          <div key={inv.id} className="panel">
             <div className="flex flex-wrap items-center gap-3 px-5 py-4 text-sm">
               <button
                 onClick={() => setOpen(open === inv.id ? null : inv.id)}
@@ -124,25 +124,23 @@ export default function PortalInvoices() {
               >
                 {inv.number}
               </button>
-              <span className="text-[#86817A]">{inv.kind.replace(/_/g, " ")}</span>
-              <span className="text-[#86817A]">{inv.issuedAt ? dateOnly(inv.issuedAt) : "—"}</span>
+              <span className="text-muted">{inv.kind.replace(/_/g, " ")}</span>
+              <span className="text-muted">{inv.issuedAt ? dateOnly(inv.issuedAt) : "—"}</span>
               <span className="ml-auto font-mono">{rands(inv.totalCents)}</span>
               {inv.outstandingCents > 0 ? (
-                <span className="rounded-full bg-[#FDF3E3] px-2 py-0.5 text-xs text-[#8A5A12]">
-                  {rands(inv.outstandingCents)} due
-                </span>
+                <span className="chip chip-warn">{rands(inv.outstandingCents)} due</span>
               ) : (
-                <span className="rounded-full bg-[#E7F5EC] px-2 py-0.5 text-xs text-[#1B7F4B]">
+                <span className="chip chip-good">
                   {inv.kind === "credit_note" ? "credited" : "paid"}
                 </span>
               )}
             </div>
             {open === inv.id && (
-              <div className="border-t border-[#ECEAE6] p-5">
+              <div className="border-t border-line p-5">
                 <InvoiceDocument invoice={inv} />
                 <button
                   onClick={() => window.print()}
-                  className="mt-4 rounded-full border border-[#DAD6CF] px-4 py-1.5 text-sm hover:border-[#0A0A0A] print:hidden"
+                  className="mt-4 btn btn-secondary btn-sm print:hidden"
                 >
                   Print / save as PDF
                 </button>
@@ -158,7 +156,7 @@ export default function PortalInvoices() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-[#FAFAF9] p-3">
-      <div className="text-xs uppercase text-[#86817A]">{label}</div>
+      <div className="label-mini">{label}</div>
       <div className="mt-1 font-mono">{value}</div>
     </div>
   );

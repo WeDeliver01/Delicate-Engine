@@ -86,8 +86,8 @@ export default function WalletPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-6 lg:col-span-2">
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6">
-          <h1 className="text-2xl font-bold">Wallet · {account.name}</h1>
+        <section className="panel p-6">
+          <h1 className="page-title">Wallet · {account.name}</h1>
           {s && (
             <dl className="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
               <Stat label="Balance" value={rands(s.balanceCents)} />
@@ -115,36 +115,34 @@ export default function WalletPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6">
-          <h2 className="font-semibold">Statement</h2>
+        <section className="panel p-6">
+          <h2 className="section-title">Statement</h2>
           <ul className="mt-3 divide-y divide-[#F0EDE9] text-sm">
             {entries.data?.items.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-2">
                 <div>
                   <p>{e.description}</p>
-                  <p className="text-xs text-[#86817A]">{dateTime(e.createdAt)}</p>
+                  <p className="text-xs text-muted">{dateTime(e.createdAt)}</p>
                 </div>
                 <div className="text-right">
-                  <p
-                    className={`font-mono ${e.amountCents < 0 ? "text-[#0A0A0A]" : "text-[#1B7F4B]"}`}
-                  >
+                  <p className={`font-mono ${e.amountCents < 0 ? "text-ink" : "text-[#1B7F4B]"}`}>
                     {e.amountCents > 0 ? "+" : ""}
                     {rands(e.amountCents)}
                   </p>
-                  <p className="font-mono text-xs text-[#86817A]">{rands(e.balanceAfterCents)}</p>
+                  <p className="font-mono text-xs text-muted">{rands(e.balanceAfterCents)}</p>
                 </div>
               </li>
             ))}
             {entries.data?.items.length === 0 && (
-              <li className="py-6 text-center text-[#86817A]">No movements yet.</li>
+              <li className="py-6 text-center text-muted">No movements yet.</li>
             )}
           </ul>
         </section>
       </div>
 
       <div className="space-y-6">
-        <form onSubmit={topUp} className="rounded-xl border border-[#ECEAE6] bg-white p-6 text-sm">
-          <h2 className="font-semibold">Top up</h2>
+        <form onSubmit={topUp} className="panel p-6 text-sm">
+          <h2 className="section-title">Top up</h2>
           {providers.data?.providers.length === 0 ? (
             <p className="mt-3 text-[#6B6661]">
               Top-ups are not configured yet. Contact us to load your account.
@@ -183,7 +181,7 @@ export default function WalletPage() {
                     key={v}
                     type="button"
                     onClick={() => setAmount(String(v))}
-                    className="rounded-full border border-[#DAD6CF] px-3 py-1 text-xs hover:border-[#0A0A0A]"
+                    className="btn btn-secondary btn-sm"
                   >
                     R{v}
                   </button>
@@ -191,18 +189,18 @@ export default function WalletPage() {
               </div>
               <button
                 disabled={busy || !provider}
-                className="mt-4 w-full rounded-2xl bg-[#0A0A0A] py-3 font-medium text-white hover:bg-[#E84A8A] transition-colors disabled:opacity-40"
+                className="mt-4 w-full rounded-2xl bg-ink py-3 font-medium text-white hover:bg-brand-pink transition-colors disabled:opacity-40"
               >
                 {busy ? "Please wait…" : "Continue"}
               </button>
             </>
           )}
-          {error && <p className="mt-3 text-red-600">{error}</p>}
+          {error && <p className="mt-3 text-[#C13B73]">{error}</p>}
         </form>
 
         {result?.instructions.type === "eft" && (
           <div className="rounded-xl border border-[#0A0A0A] bg-white p-6 text-sm">
-            <h2 className="font-semibold">Pay {rands(result.topUp.amountCents)} by EFT</h2>
+            <h2 className="section-title">Pay {rands(result.topUp.amountCents)} by EFT</h2>
             <dl className="mt-3 space-y-1">
               <Row k="Account name" v={result.instructions.bank.accountName} />
               <Row k="Bank" v={result.instructions.bank.bankName} />
@@ -214,21 +212,21 @@ export default function WalletPage() {
           </div>
         )}
 
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6 text-sm">
-          <h2 className="font-semibold">Top-up history</h2>
+        <section className="panel p-6 text-sm">
+          <h2 className="section-title">Top-up history</h2>
           <ul className="mt-3 divide-y divide-[#F0EDE9]">
             {topUps.data?.items.map((t) => (
               <li key={t.id} className="flex justify-between py-2">
                 <div>
                   <p className="font-mono">{t.reference}</p>
-                  <p className="text-xs text-[#86817A]">
+                  <p className="text-xs text-muted">
                     {PROVIDER_LABELS[t.provider]} · {dateTime(t.createdAt)}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="font-mono">{rands(t.amountCents)}</p>
                   <p
-                    className={`text-xs ${t.status === "confirmed" ? "text-[#1B7F4B]" : t.status === "pending" ? "text-[#B7791F]" : "text-[#86817A]"}`}
+                    className={`text-xs ${t.status === "confirmed" ? "text-[#1B7F4B]" : t.status === "pending" ? "text-[#B7791F]" : "text-muted"}`}
                   >
                     {t.status}
                   </p>
@@ -236,7 +234,7 @@ export default function WalletPage() {
               </li>
             ))}
             {topUps.data?.items.length === 0 && (
-              <li className="py-4 text-center text-[#86817A]">No top-ups yet.</li>
+              <li className="py-4 text-center text-muted">No top-ups yet.</li>
             )}
           </ul>
         </section>
@@ -281,9 +279,9 @@ function Stat({
 }) {
   return (
     <div>
-      <dt className="text-[#86817A]">{label}</dt>
+      <dt className="text-muted">{label}</dt>
       <dd className={`font-mono ${strong ? "text-xl font-bold" : "text-lg"}`}>{value}</dd>
-      {hint && <dd className="text-xs text-[#86817A]">{hint}</dd>}
+      {hint && <dd className="text-xs text-muted">{hint}</dd>}
     </div>
   );
 }
@@ -291,8 +289,8 @@ function Stat({
 function Row({ k, v, mono, strong }: { k: string; v: string; mono?: boolean; strong?: boolean }) {
   return (
     <div className="flex justify-between gap-4">
-      <dt className="text-[#86817A]">{k}</dt>
-      <dd className={`${mono ? "font-mono" : ""} ${strong ? "font-bold text-[#E84A8A]" : ""}`}>
+      <dt className="text-muted">{k}</dt>
+      <dd className={`${mono ? "font-mono" : ""} ${strong ? "font-bold text-brand-pink" : ""}`}>
         {v}
       </dd>
     </div>

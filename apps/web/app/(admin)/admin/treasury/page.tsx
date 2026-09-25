@@ -45,16 +45,12 @@ export default function AdminTreasury() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
 
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Treasury</h1>
-          <p className="text-sm text-[#86817A]">
+          <h1 className="page-title">Treasury</h1>
+          <p className="text-sm text-muted">
             Earmarks over money the ledger has already recorded — {d?.period ?? "…"}
           </p>
         </div>
@@ -83,10 +79,10 @@ export default function AdminTreasury() {
       )}
 
       {d && d.upcomingDebitOrders.length > 0 && (
-        <section className="rounded-xl border border-[#ECEAE6] bg-white">
-          <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Next debit orders</h2>
+        <section className="panel">
+          <h2 className="panel-head section-title">Next debit orders</h2>
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-[#86817A]">
+            <thead className="label-mini">
               <tr>
                 <th className="px-5 py-2">Bill</th>
                 <th className="px-5 py-2">Vendor</th>
@@ -100,17 +96,15 @@ export default function AdminTreasury() {
               {d.upcomingDebitOrders.map((o) => (
                 <tr key={o.slug}>
                   <td className="px-5 py-2">{o.name}</td>
-                  <td className="px-5 py-2 text-[#86817A]">{o.vendor || "—"}</td>
+                  <td className="px-5 py-2 text-muted">{o.vendor || "—"}</td>
                   <td className="px-5 py-2">day {o.dueDay}</td>
                   <td className="px-5 py-2 text-right font-mono">{rands(o.amountCents)}</td>
                   <td className="px-5 py-2 text-right font-mono">{rands(o.fundedCents)}</td>
                   <td className="px-5 py-2">
                     {o.covered ? (
-                      <span className="rounded-full bg-[#E7F5EC] px-2 py-0.5 text-xs text-[#1B7F4B]">
-                        covered
-                      </span>
+                      <span className="chip chip-good">covered</span>
                     ) : (
-                      <span className="rounded-full bg-[#FCEEF4] px-2 py-0.5 text-xs text-[#C13B73]">
+                      <span className="chip chip-bad">
                         short {rands(o.amountCents - o.fundedCents)}
                       </span>
                     )}
@@ -131,10 +125,10 @@ export default function AdminTreasury() {
       )}
 
       {d && (
-        <section className="rounded-xl border border-[#ECEAE6] bg-white">
-          <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Recent allocations</h2>
+        <section className="panel">
+          <h2 className="panel-head section-title">Recent allocations</h2>
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-[#86817A]">
+            <thead className="label-mini">
               <tr>
                 <th className="px-5 py-2">When</th>
                 <th className="px-5 py-2">Wallet</th>
@@ -147,21 +141,21 @@ export default function AdminTreasury() {
             <tbody className="divide-y divide-[#F0EDE9]">
               {d.recent.map((t) => (
                 <tr key={t.id}>
-                  <td className="px-5 py-2 text-[#86817A]">{dateTime(t.createdAt)}</td>
+                  <td className="px-5 py-2 text-muted">{dateTime(t.createdAt)}</td>
                   <td className="px-5 py-2">{t.walletSlug}</td>
-                  <td className="px-5 py-2 text-[#86817A]">{t.kind}</td>
-                  <td className="px-5 py-2 font-mono text-xs text-[#86817A]">
+                  <td className="px-5 py-2 text-muted">{t.kind}</td>
+                  <td className="px-5 py-2 font-mono text-xs text-muted">
                     {t.reference?.replace(/^shipment:/, "") ?? "—"}
                   </td>
                   <td className="px-5 py-2 text-right font-mono">{rands(t.amountCents)}</td>
-                  <td className="px-5 py-2 text-right font-mono text-[#86817A]">
+                  <td className="px-5 py-2 text-right font-mono text-muted">
                     {rands(t.balanceAfterCents)}
                   </td>
                 </tr>
               ))}
               {d.recent.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-[#86817A]">
+                  <td colSpan={6} className="table-empty">
                     Nothing allocated yet this month. Margin lands here as deliveries settle.
                   </td>
                 </tr>
@@ -207,8 +201,8 @@ function Health({ score }: { score: number }) {
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "good" | "warn" }) {
   return (
-    <div className="rounded-xl border border-[#ECEAE6] bg-white p-4">
-      <div className="text-xs uppercase text-[#86817A]">{label}</div>
+    <div className="panel p-4">
+      <div className="label-mini">{label}</div>
       <div
         className={`mt-1 font-mono text-lg ${tone === "warn" ? "text-[#C13B73]" : tone === "good" ? "text-[#1B7F4B]" : ""}`}
       >
@@ -220,14 +214,14 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "go
 
 function WalletGroup({ title, rows }: { title: string; rows: WalletForecast[] }) {
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-      <h2 className="font-semibold">{title}</h2>
+    <section className="panel p-5">
+      <h2 className="section-title">{title}</h2>
       <ul className="mt-3 space-y-4">
         {rows.map((f) => (
           <li key={f.walletId}>
             <div className="flex items-baseline justify-between gap-2 text-sm">
               <span>{f.name}</span>
-              <span className="font-mono text-xs text-[#86817A]">
+              <span className="font-mono text-xs text-muted">
                 {rands(f.fundedCents)}
                 {f.targetCents > 0 && ` / ${rands(f.targetCents)}`}
               </span>
@@ -235,12 +229,12 @@ function WalletGroup({ title, rows }: { title: string; rows: WalletForecast[] })
             {f.targetCents > 0 && (
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#F0EDE9]">
                 <div
-                  className={`h-full rounded-full ${f.atRisk ? "bg-[#E84A8A]" : "bg-[#1B7F4B]"}`}
+                  className={`h-full rounded-full ${f.atRisk ? "bg-brand-pink" : "bg-[#1B7F4B]"}`}
                   style={{ width: `${Math.min(100, f.progressBps / 100)}%` }}
                 />
               </div>
             )}
-            <div className="mt-1 flex justify-between text-xs text-[#86817A]">
+            <div className="mt-1 flex justify-between text-xs text-muted">
               <span>
                 {f.daysUntilDue !== null
                   ? `due in ${f.daysUntilDue} day${f.daysUntilDue === 1 ? "" : "s"}`
@@ -252,7 +246,7 @@ function WalletGroup({ title, rows }: { title: string; rows: WalletForecast[] })
             </div>
           </li>
         ))}
-        {rows.length === 0 && <li className="text-sm text-[#86817A]">None configured.</li>}
+        {rows.length === 0 && <li className="text-sm text-muted">None configured.</li>}
       </ul>
     </section>
   );
@@ -269,9 +263,9 @@ function PolicyCard({
 }) {
   const [draft, setDraft] = useState(policy);
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-      <h2 className="font-semibold">Allocation policy</h2>
-      <p className="mt-1 text-sm text-[#86817A]">
+    <section className="panel p-5">
+      <h2 className="section-title">Allocation policy</h2>
+      <p className="mt-1 text-sm text-muted">
         How hard an approaching debit order pulls margin towards itself, and how covered the bills
         must be before anything reaches reserves.
       </p>
@@ -292,11 +286,7 @@ function PolicyCard({
           onChange={(v) => setDraft({ ...draft, reserveGateBps: v })}
         />
       </div>
-      <button
-        onClick={() => onSave(draft)}
-        disabled={saving}
-        className="mt-4 rounded-full bg-[#0A0A0A] px-5 py-2 text-sm text-white hover:bg-[#E84A8A] disabled:opacity-50"
-      >
+      <button onClick={() => onSave(draft)} disabled={saving} className="mt-4 btn btn-primary">
         {saving ? "Saving…" : "Save policy"}
       </button>
     </section>
@@ -314,12 +304,12 @@ function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="text-xs uppercase text-[#86817A]">{label}</span>
+      <span className="label-mini">{label}</span>
       <input
         type="number"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+        className="mt-1 w-full input font-mono"
       />
     </label>
   );
@@ -346,11 +336,11 @@ function WalletEditor({
   const targets = wallets.filter((w) => w.category !== "operating_expense");
 
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white">
-      <div className="flex items-center justify-between border-b border-[#ECEAE6] px-5 py-4">
+    <section className="panel">
+      <div className="panel-head">
         <div>
-          <h2 className="font-semibold">Monthly bills &amp; reserves</h2>
-          <p className="text-xs text-[#86817A]">
+          <h2 className="section-title">Monthly bills &amp; reserves</h2>
+          <p className="text-xs text-muted">
             Earmarks, not bank accounts — the ledger remains the book of account.
           </p>
         </div>
@@ -359,14 +349,14 @@ function WalletEditor({
             setAdding(!adding);
             setEditing(null);
           }}
-          className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-sm text-white hover:bg-[#E84A8A]"
+          className="btn btn-primary btn-sm"
         >
           {adding ? "Cancel" : "Add a bill"}
         </button>
       </div>
 
       {adding && (
-        <div className="border-b border-[#ECEAE6] bg-[#FAFAF9] p-5">
+        <div className="border-b border-line bg-[#FAFAF9] p-5">
           <WalletForm
             onDone={() => {
               setAdding(false);
@@ -415,9 +405,9 @@ function WalletGroupRows({
   if (rows.length === 0) return null;
   return (
     <>
-      <h3 className="px-5 pt-4 text-xs uppercase text-[#86817A]">{title}</h3>
+      <h3 className="px-5 pt-4 label-mini">{title}</h3>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase text-[#86817A]">
+        <thead className="label-mini">
           <tr>
             <th className="px-5 py-2">Name</th>
             <th className="px-5 py-2">Paid to</th>
@@ -433,15 +423,11 @@ function WalletGroupRows({
               <tr className={w.active ? "" : "opacity-50"}>
                 <td className="px-5 py-2">
                   {w.name}
-                  {w.isRetainedEarnings && (
-                    <span className="ml-2 rounded-full bg-[#F0EDE9] px-2 py-0.5 text-xs text-[#6B6661]">
-                      sink
-                    </span>
-                  )}
+                  {w.isRetainedEarnings && <span className="ml-2 chip chip-neutral">sink</span>}
                   {!w.active && <span className="ml-2 text-xs">(inactive)</span>}
-                  <div className="font-mono text-xs text-[#86817A]">{w.slug}</div>
+                  <div className="font-mono text-xs text-muted">{w.slug}</div>
                 </td>
-                <td className="px-5 py-2 text-[#86817A]">{w.obligation?.vendor || "—"}</td>
+                <td className="px-5 py-2 text-muted">{w.obligation?.vendor || "—"}</td>
                 <td className="px-5 py-2 text-right font-mono">
                   {w.obligation
                     ? rands(w.obligation.monthlyAmountCents)
@@ -455,7 +441,7 @@ function WalletGroupRows({
                   {!w.isRetainedEarnings && (
                     <button
                       onClick={() => setEditing(editing === w.id ? null : w.id)}
-                      className="text-xs text-[#E84A8A] hover:underline"
+                      className="text-xs text-brand-pink hover:underline"
                     >
                       {editing === w.id ? "close" : "edit"}
                     </button>
@@ -549,7 +535,7 @@ function WalletForm({
               if (!wallet && !slug) setSlug(slugify(e.target.value));
             }}
             placeholder="Premises rent"
-            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+            className="w-full input"
           />
         </Labelled>
         <Labelled label="Slug" hint={wallet ? "cannot be changed" : "lowercase, dashes"}>
@@ -558,14 +544,14 @@ function WalletForm({
             disabled={!!wallet}
             onChange={(e) => setSlug(slugify(e.target.value))}
             placeholder="premises"
-            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono disabled:bg-[#F0EDE9]"
+            className="w-full input font-mono disabled:bg-[#F0EDE9]"
           />
         </Labelled>
         <Labelled label="Kind">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as AllocationWallet["category"])}
-            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+            className="w-full input"
           >
             <option value="operating_expense">Monthly bill</option>
             <option value="reserve">Reserve</option>
@@ -581,7 +567,7 @@ function WalletForm({
               value={vendor}
               onChange={(e) => setVendor(e.target.value)}
               placeholder="Landlord"
-              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+              className="w-full input"
             />
           </Labelled>
           <Labelled label="Amount per month (rands)">
@@ -589,7 +575,7 @@ function WalletForm({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="9500"
-              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+              className="w-full input font-mono"
             />
           </Labelled>
           <Labelled label="Debit order day" hint="1–28; urgency climbs as it approaches">
@@ -599,7 +585,7 @@ function WalletForm({
               max={28}
               value={dueDay}
               onChange={(e) => setDueDay(Number(e.target.value))}
-              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+              className="w-full input font-mono"
             />
           </Labelled>
         </div>
@@ -610,7 +596,7 @@ function WalletForm({
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               placeholder="15000"
-              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+              className="w-full input font-mono"
             />
           </Labelled>
           <Labelled label="Priority" hint="lower fills first">
@@ -618,7 +604,7 @@ function WalletForm({
               type="number"
               value={priority}
               onChange={(e) => setPriority(Number(e.target.value))}
-              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+              className="w-full input font-mono"
             />
           </Labelled>
         </div>
@@ -633,14 +619,14 @@ function WalletForm({
             className="h-4 w-4"
           />
           Active
-          <span className="text-xs text-[#86817A]">
+          <span className="text-xs text-muted">
             (an inactive wallet keeps its balance and history, it just stops receiving margin)
           </span>
         </label>
         <button
           onClick={() => save.mutate()}
           disabled={!valid || save.isPending}
-          className="ml-auto rounded-full bg-[#0A0A0A] px-5 py-2 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+          className="ml-auto rounded-full bg-ink px-5 py-2 text-white hover:bg-brand-pink disabled:opacity-40"
         >
           {wallet ? "Save changes" : "Add bill"}
         </button>
@@ -660,9 +646,9 @@ function Labelled({
 }) {
   return (
     <label className="block">
-      <span className="text-xs uppercase text-[#86817A]">{label}</span>
+      <span className="label-mini">{label}</span>
       <div className="mt-1">{children}</div>
-      {hint && <span className="mt-1 block text-xs text-[#86817A]">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}
     </label>
   );
 }

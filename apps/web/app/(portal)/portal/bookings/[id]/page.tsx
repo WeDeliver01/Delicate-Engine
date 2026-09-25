@@ -50,11 +50,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             </p>
           </div>
         )}
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6">
+        <section className="panel p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs text-[#86817A]">Booking</p>
-              <h1 className="font-mono text-2xl font-bold">{b.reference}</h1>
+              <p className="text-xs text-muted">Booking</p>
+              <h1 className="page-title">{b.reference}</h1>
               <p className="mt-1 text-sm text-[#6B6661]">
                 {b.serviceLevelCode.replace("_", " ")}
                 {b.slotDate && ` · ${b.slotDate} · ${b.slotWindowKey}`} · placed{" "}
@@ -64,7 +64,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <StatusBadge status={b.status} />
           </div>
           <div className="mt-5 text-sm">
-            <p className="text-[#86817A]">Collection</p>
+            <p className="text-muted">Collection</p>
             <p>{b.collection.address.formatted}</p>
             {b.collection.contact && (
               <p className="text-[#6B6661]">
@@ -77,8 +77,8 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        <section className="rounded-xl border border-[#ECEAE6] bg-white">
-          <h2 className="border-b border-[#ECEAE6] px-6 py-4 font-semibold">Shipments</h2>
+        <section className="panel">
+          <h2 className="panel-head section-title">Shipments</h2>
           <ul className="divide-y divide-[#F0EDE9] text-sm">
             {b.shipments.map((s) => (
               <li key={s.id} className="px-6 py-4">
@@ -96,7 +96,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   {s.recipient.name} · {s.recipient.phone}
                   {s.instructions && ` · ${s.instructions}`}
                 </p>
-                <p className="text-xs text-[#86817A]">
+                <p className="text-xs text-muted">
                   {s.parcels.map((p) => `${p.quantity} × ${p.description ?? "parcel"}`).join(", ")}
                 </p>
               </li>
@@ -106,15 +106,15 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       <aside className="space-y-6">
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6">
-          <h2 className="font-semibold">Price</h2>
+        <section className="panel p-6">
+          <h2 className="section-title">Price</h2>
           <div className="mt-3">
             <Breakdown b={b.breakdown} />
           </div>
         </section>
         {cancellable && (
-          <section className="rounded-xl border border-[#ECEAE6] bg-white p-6 text-sm">
-            <h2 className="font-semibold">Cancel booking</h2>
+          <section className="panel p-6 text-sm">
+            <h2 className="section-title">Cancel booking</h2>
             <p className="mt-1 text-[#6B6661]">
               Free until we collect. The reserved amount returns to your wallet immediately.
             </p>
@@ -127,11 +127,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <button
               disabled={reason.trim().length < 3 || cancel.isPending}
               onClick={() => cancel.mutate()}
-              className="mt-3 w-full rounded-2xl border border-red-300 py-2 font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+              className="btn btn-danger mt-3 w-full"
             >
               Cancel this booking
             </button>
-            {error && <p className="mt-2 text-red-600">{error}</p>}
+            {error && <p className="mt-2 text-[#C13B73]">{error}</p>}
           </section>
         )}
       </aside>

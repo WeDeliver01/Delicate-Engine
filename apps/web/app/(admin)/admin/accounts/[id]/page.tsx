@@ -77,44 +77,44 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="space-y-6 lg:col-span-2">
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-          <p className="font-mono text-xs text-[#86817A]">{id}</p>
+        <section className="panel p-5">
+          <p className="font-mono text-xs text-muted">{id}</p>
           {wallet.data && (
             <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               <div>
-                <dt className="text-[#86817A]">Balance</dt>
+                <dt className="text-muted">Balance</dt>
                 <dd className="font-mono text-lg">{rands(wallet.data.balanceCents)}</dd>
               </div>
               <div>
-                <dt className="text-[#86817A]">Reserved</dt>
+                <dt className="text-muted">Reserved</dt>
                 <dd className="font-mono text-lg">{rands(wallet.data.heldCents)}</dd>
               </div>
               <div>
-                <dt className="text-[#86817A]">Credit</dt>
+                <dt className="text-muted">Credit</dt>
                 <dd className="font-mono text-lg">{rands(wallet.data.creditLimitCents)}</dd>
               </div>
               <div>
-                <dt className="text-[#86817A]">Available</dt>
+                <dt className="text-muted">Available</dt>
                 <dd className="font-mono text-lg font-bold">{rands(wallet.data.availableCents)}</dd>
               </div>
             </dl>
           )}
           {verify.data && (
-            <p className={`mt-3 text-xs ${verify.data.ok ? "text-[#1B7F4B]" : "text-red-600"}`}>
+            <p className={`mt-3 text-xs ${verify.data.ok ? "text-[#1B7F4B]" : "text-[#C13B73]"}`}>
               Ledger check: cached {rands(verify.data.cachedCents)} vs derived{" "}
               {rands(verify.data.derivedCents)} —{" "}
               {verify.data.ok ? "consistent" : "MISMATCH, investigate"}
             </p>
           )}
         </section>
-        <section className="rounded-xl border border-[#ECEAE6] bg-white">
-          <h2 className="border-b border-[#ECEAE6] px-5 py-3 font-semibold">Ledger</h2>
+        <section className="panel">
+          <h2 className="border-b border-line px-5 py-3 section-title">Ledger</h2>
           <ul className="divide-y divide-[#F0EDE9] text-sm">
             {entries.data?.items.map((e) => (
               <li key={e.id} className="flex justify-between px-5 py-2">
                 <div>
                   <p>{e.description}</p>
-                  <p className="text-xs text-[#86817A]">
+                  <p className="text-xs text-muted">
                     {e.kind} · {dateTime(e.createdAt)}
                   </p>
                 </div>
@@ -123,7 +123,7 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
                     {e.amountCents > 0 ? "+" : ""}
                     {rands(e.amountCents)}
                   </p>
-                  <p className="text-xs text-[#86817A]">{rands(e.balanceAfterCents)}</p>
+                  <p className="text-xs text-muted">{rands(e.balanceAfterCents)}</p>
                 </div>
               </li>
             ))}
@@ -131,17 +131,15 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
         </section>
       </div>
       <div className="space-y-6 text-sm">
-        {error && (
-          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>
-        )}
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-          <h2 className="font-semibold">Credit terms</h2>
+        {error && <p className="alert-error">{error}</p>}
+        <section className="panel p-5">
+          <h2 className="section-title">Credit terms</h2>
           <label className="mt-3 block">
             <span className="text-[#6B6661]">Billing mode</span>
             <select
               value={terms.billingMode}
               onChange={(e) => setTerms({ ...terms, billingMode: e.target.value as BillingMode })}
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 bg-white"
+              className="mt-1 w-full input px-2 py-1.5 bg-white"
             >
               <option value="prepaid">prepaid</option>
               <option value="postpaid">postpaid (monthly account)</option>
@@ -156,7 +154,7 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
                   step="0.01"
                   value={terms.creditLimit}
                   onChange={(e) => setTerms({ ...terms, creditLimit: e.target.value })}
-                  className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+                  className="mt-1 w-full input px-2 py-1.5 font-mono"
                 />
               </label>
               <div className="mt-2 grid grid-cols-2 gap-2">
@@ -168,7 +166,7 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
                     max={28}
                     value={terms.statementDay}
                     onChange={(e) => setTerms({ ...terms, statementDay: Number(e.target.value) })}
-                    className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+                    className="mt-1 w-full input px-2 py-1.5 font-mono"
                   />
                 </label>
                 <label>
@@ -180,7 +178,7 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
                     onChange={(e) =>
                       setTerms({ ...terms, paymentTermsDays: Number(e.target.value) })
                     }
-                    className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+                    className="mt-1 w-full input px-2 py-1.5 font-mono"
                   />
                 </label>
               </div>
@@ -188,14 +186,14 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
           )}
           <button
             onClick={() => saveTerms.mutate()}
-            className="mt-3 w-full rounded-full bg-[#0A0A0A] py-1.5 text-white hover:bg-[#E84A8A]"
+            className="mt-3 w-full rounded-full bg-ink py-1.5 text-white hover:bg-brand-pink"
           >
             Save terms
           </button>
         </section>
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-          <h2 className="font-semibold">Manual adjustment</h2>
-          <p className="mt-1 text-xs text-[#86817A]">
+        <section className="panel p-5">
+          <h2 className="section-title">Manual adjustment</h2>
+          <p className="mt-1 text-xs text-muted">
             Positive credits, negative debits. Audited with your name and reason.
           </p>
           <input
@@ -204,13 +202,13 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
             value={adj.amount}
             onChange={(e) => setAdj({ ...adj, amount: e.target.value })}
             placeholder="Amount (R)"
-            className="mt-3 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+            className="mt-3 w-full input px-2 py-1.5 font-mono"
           />
           <input
             value={adj.reason}
             onChange={(e) => setAdj({ ...adj, reason: e.target.value })}
             placeholder="Reason (required)"
-            className="mt-2 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5"
+            className="mt-2 w-full input px-2 py-1.5"
           />
           <button
             disabled={!adj.amount || adj.reason.length < 5}

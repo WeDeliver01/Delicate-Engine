@@ -34,24 +34,20 @@ export default function AdminCatalog() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
       {cards.data?.map((c) => (
         <RateCardForm key={c.id} card={c} onSaved={invalidate} onError={onError} />
       ))}
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-        <h2 className="font-semibold">Service levels</h2>
+      <section className="panel p-5">
+        <h2 className="section-title">Service levels</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           {levels.data?.map((s) => (
             <ServiceLevelForm key={s.id} level={s} onSaved={invalidate} onError={onError} />
           ))}
         </div>
       </section>
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-        <h2 className="font-semibold">Package types</h2>
+      <section className="panel p-5">
+        <h2 className="section-title">Package types</h2>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {types.data?.map((p) => (
             <PackageTypeForm key={p.id} pt={p} onSaved={invalidate} onError={onError} />
@@ -122,9 +118,9 @@ function RateCardForm({
     onError,
   });
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
+    <section className="panel p-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">
+        <h2 className="section-title">
           Rate card · {card.name}{" "}
           {card.isDefault && (
             <span className="ml-2 rounded-full bg-[#EFE9FF] px-2 py-0.5 text-xs text-[#5B43C9]">
@@ -135,12 +131,12 @@ function RateCardForm({
         <button
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-sm text-white hover:bg-[#E84A8A] disabled:opacity-40"
+          className="btn btn-primary btn-sm disabled:opacity-40"
         >
           Save
         </button>
       </div>
-      <p className="mt-1 text-xs text-[#86817A]">
+      <p className="mt-1 text-xs text-muted">
         price = distance × cost/km ÷ (1 − margin) × service multiplier + surcharges, floored at the
         minimum fee, then VAT.
       </p>
@@ -153,7 +149,7 @@ function RateCardForm({
               step="0.01"
               value={form[k] ?? ""}
               onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+              className="mt-1 w-full input px-2 py-1.5 font-mono"
             />
           </label>
         ))}
@@ -198,9 +194,9 @@ function ServiceLevelForm({
     onError,
   });
   return (
-    <div className="rounded-xl border border-[#ECEAE6] p-4 text-sm">
+    <div className="panel p-4 text-sm">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs text-[#86817A]">{level.code}</span>
+        <span className="font-mono text-xs text-muted">{level.code}</span>
         <label className="flex items-center gap-1 text-xs">
           <input
             type="checkbox"
@@ -213,13 +209,13 @@ function ServiceLevelForm({
       <input
         value={f.name}
         onChange={(e) => setF({ ...f, name: e.target.value })}
-        className="mt-2 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-semibold"
+        className="mt-2 w-full input px-2 py-1.5 font-semibold"
       />
       <textarea
         value={f.description}
         onChange={(e) => setF({ ...f, description: e.target.value })}
         rows={2}
-        className="mt-2 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5"
+        className="mt-2 w-full input px-2 py-1.5"
       />
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label>
@@ -228,7 +224,7 @@ function ServiceLevelForm({
             type="number"
             value={f.multiplier}
             onChange={(e) => setF({ ...f, multiplier: e.target.value })}
-            className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+            className="mt-1 w-full input px-2 py-1 font-mono"
           />
         </label>
         <label>
@@ -238,17 +234,14 @@ function ServiceLevelForm({
             step="0.01"
             value={f.surcharge}
             onChange={(e) => setF({ ...f, surcharge: e.target.value })}
-            className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+            className="mt-1 w-full input px-2 py-1 font-mono"
           />
         </label>
       </div>
-      <p className="mt-2 text-xs text-[#86817A]">
+      <p className="mt-2 text-xs text-muted">
         {level.requiresSlot ? "Needs a delivery slot" : "Immediate dispatch"}
       </p>
-      <button
-        onClick={() => save.mutate()}
-        className="mt-3 rounded-full border border-[#DAD6CF] px-3 py-1 text-xs hover:border-[#0A0A0A]"
-      >
+      <button onClick={() => save.mutate()} className="mt-3 btn btn-secondary btn-sm">
         Save
       </button>
     </div>
@@ -289,9 +282,9 @@ function PackageTypeForm({
     onError,
   });
   return (
-    <div className="rounded-xl border border-[#ECEAE6] p-3 text-sm">
+    <div className="panel p-3 text-sm">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs text-[#86817A]">{pt.code}</span>
+        <span className="font-mono text-xs text-muted">{pt.code}</span>
         <label className="flex items-center gap-1 text-xs">
           <input
             type="checkbox"
@@ -304,7 +297,7 @@ function PackageTypeForm({
       <input
         value={f.name}
         onChange={(e) => setF({ ...f, name: e.target.value })}
-        className="mt-2 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-semibold"
+        className="mt-2 w-full input px-2 py-1 font-semibold"
       />
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label>
@@ -314,7 +307,7 @@ function PackageTypeForm({
             step="0.5"
             value={f.maxWeightKg}
             onChange={(e) => setF({ ...f, maxWeightKg: e.target.value })}
-            className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+            className="mt-1 w-full input px-2 py-1 font-mono"
           />
         </label>
         <label>
@@ -324,14 +317,11 @@ function PackageTypeForm({
             step="0.01"
             value={f.surcharge}
             onChange={(e) => setF({ ...f, surcharge: e.target.value })}
-            className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+            className="mt-1 w-full input px-2 py-1 font-mono"
           />
         </label>
       </div>
-      <button
-        onClick={() => save.mutate()}
-        className="mt-3 rounded-full border border-[#DAD6CF] px-3 py-1 text-xs hover:border-[#0A0A0A]"
-      >
+      <button onClick={() => save.mutate()} className="mt-3 btn btn-secondary btn-sm">
         Save
       </button>
     </div>

@@ -27,11 +27,11 @@ export default function AdminLedger() {
   return (
     <div className="space-y-6">
       <section
-        className={`rounded-xl border p-5 ${balanced ? "border-[#ECEAE6] bg-white" : "border-red-300 bg-red-50"}`}
+        className={`rounded-xl border p-5 ${balanced ? "border-line bg-white" : "border-[#F3C6D9] bg-[#FCEEF4]"}`}
       >
         <div className="flex items-center justify-between">
-          <h1 className="font-semibold">Trial balance</h1>
-          <span className={`text-sm ${balanced ? "text-[#1B7F4B]" : "text-red-700"}`}>
+          <h1 className="page-title">Trial balance</h1>
+          <span className={`text-sm ${balanced ? "text-[#1B7F4B]" : "text-[#C13B73]"}`}>
             {tb.data
               ? balanced
                 ? "Balanced ✓"
@@ -40,7 +40,7 @@ export default function AdminLedger() {
           </span>
         </div>
         <table className="mt-4 w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[#86817A]">
+          <thead className="label-mini">
             <tr>
               <th className="py-2">Account</th>
               <th className="py-2 text-right">Balance</th>
@@ -55,20 +55,20 @@ export default function AdminLedger() {
             ))}
           </tbody>
         </table>
-        <p className="mt-3 text-xs text-[#86817A]">
+        <p className="mt-3 text-xs text-muted">
           Customer prepaid liability and revenue are credit-normal, so they show negative here. What
           matters is that everything sums to zero.
         </p>
       </section>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Journals</h2>
+      <section className="panel">
+        <h2 className="panel-head section-title">Journals</h2>
         <ul className="divide-y divide-[#F0EDE9] text-sm">
           {journals.data?.items.map((j) => (
             <li key={j.id} className="px-5 py-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{j.description}</span>
-                <span className="text-xs text-[#86817A]">
+                <span className="text-xs text-muted">
                   {j.kind} · {dateTime(j.occurredAt)}
                 </span>
               </div>
@@ -79,7 +79,7 @@ export default function AdminLedger() {
                       <td className="py-0.5 text-[#6B6661]">
                         {l.account.replace(/_/g, " ").toLowerCase()}
                       </td>
-                      <td className="py-0.5 text-[#86817A]">
+                      <td className="py-0.5 text-muted">
                         {l.ownerType === "company"
                           ? "company"
                           : `${l.ownerType} ${l.ownerId?.slice(0, 8)}`}
@@ -96,9 +96,7 @@ export default function AdminLedger() {
               </table>
             </li>
           ))}
-          {journals.data?.items.length === 0 && (
-            <li className="px-5 py-8 text-center text-[#86817A]">No journals yet.</li>
-          )}
+          {journals.data?.items.length === 0 && <li className="table-empty">No journals yet.</li>}
         </ul>
       </section>
     </div>

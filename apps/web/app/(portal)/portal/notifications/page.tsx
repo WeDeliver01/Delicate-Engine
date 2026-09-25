@@ -40,7 +40,7 @@ export default function PortalNotifications() {
     },
   });
 
-  if (!draft) return <p className="p-10 text-sm text-[#86817A]">Loading…</p>;
+  if (!draft) return <p className="p-10 text-sm text-muted">Loading…</p>;
   const set = (patch: Partial<NotificationPreferences>) => {
     setSaved(false);
     setDraft({ ...draft, ...patch });
@@ -49,25 +49,17 @@ export default function PortalNotifications() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>
-        <h1 className="text-2xl font-semibold">Notifications</h1>
+        <h1 className="page-title">Notifications</h1>
         <p className="mt-1 text-sm text-[#6B6661]">
           How we keep you and the people receiving your parcels informed.
         </p>
       </header>
 
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-      {saved && (
-        <p className="rounded-xl border border-[#BEE3CD] bg-[#E7F5EC] p-3 text-sm text-[#1B7F4B]">
-          Saved.
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
+      {saved && <p className="alert-success">Saved.</p>}
 
-      <section className="rounded-2xl border border-[#ECEAE6] bg-white p-6">
-        <h2 className="font-semibold">How we reach you</h2>
+      <section className="panel p-6">
+        <h2 className="section-title">How we reach you</h2>
         <div className="mt-4 space-y-3 text-sm">
           <Toggle
             label="Email"
@@ -89,7 +81,7 @@ export default function PortalNotifications() {
           />
         </div>
 
-        <h2 className="mt-8 font-semibold">Your recipients</h2>
+        <h2 className="mt-8 section-title">Your recipients</h2>
         <div className="mt-4 space-y-3 text-sm">
           <Toggle
             label="Let us message the person receiving the parcel"
@@ -99,16 +91,16 @@ export default function PortalNotifications() {
           />
         </div>
 
-        <h2 className="mt-8 font-semibold">Wallet</h2>
+        <h2 className="mt-8 section-title">Wallet</h2>
         <label className="mt-3 block max-w-xs text-sm">
-          <span className="text-xs uppercase text-[#86817A]">Warn me below (rands)</span>
+          <span className="label-mini">Warn me below (rands)</span>
           <input
             type="number"
             value={draft.lowBalanceCents / 100}
             onChange={(e) => set({ lowBalanceCents: Math.round(Number(e.target.value) * 100) })}
-            className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+            className="mt-1 w-full input font-mono"
           />
-          <span className="mt-1 block text-xs text-[#86817A]">
+          <span className="mt-1 block text-xs text-muted">
             Currently {rands(draft.lowBalanceCents)}.
           </span>
         </label>
@@ -116,23 +108,23 @@ export default function PortalNotifications() {
         <button
           onClick={() => save.mutate(draft)}
           disabled={save.isPending}
-          className="mt-6 rounded-full bg-[#0A0A0A] px-5 py-2 text-sm text-white hover:bg-[#E84A8A] disabled:opacity-40"
+          className="mt-6 btn btn-primary"
         >
           Save preferences
         </button>
       </section>
 
-      <section className="rounded-2xl border border-[#ECEAE6] bg-white">
-        <h2 className="border-b border-[#ECEAE6] px-6 py-4 font-semibold">What we have sent</h2>
+      <section className="panel">
+        <h2 className="panel-head section-title">What we have sent</h2>
         <ul className="divide-y divide-[#F0EDE9] text-sm">
           {history.data?.map((n) => (
             <li key={n.id} className="px-6 py-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{n.subject ?? n.kind.replace(/[._]/g, " ")}</span>
-                <span className="text-xs text-[#86817A]">
+                <span className="text-xs text-muted">
                   {n.channel} · {n.to}
                 </span>
-                <span className="ml-auto text-xs text-[#86817A]">{dateTime(n.createdAt)}</span>
+                <span className="ml-auto text-xs text-muted">{dateTime(n.createdAt)}</span>
               </div>
               {n.status !== "sent" && (
                 <p className="mt-1 text-xs text-[#8A5A12]">
@@ -141,9 +133,7 @@ export default function PortalNotifications() {
               )}
             </li>
           ))}
-          {history.data?.length === 0 && (
-            <li className="px-6 py-8 text-center text-[#86817A]">Nothing yet.</li>
-          )}
+          {history.data?.length === 0 && <li className="table-empty">Nothing yet.</li>}
         </ul>
       </section>
     </div>
@@ -171,7 +161,7 @@ function Toggle({
       />
       <span>
         {label}
-        <span className="block text-xs text-[#86817A]">{hint}</span>
+        <span className="block text-xs text-muted">{hint}</span>
       </span>
     </label>
   );

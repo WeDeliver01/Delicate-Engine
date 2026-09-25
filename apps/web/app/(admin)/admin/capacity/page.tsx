@@ -51,18 +51,14 @@ export default function AdminCapacity() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
       {policy.data && <PolicyForm policy={policy.data} onSaved={invalidate} onError={onError} />}
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-        <h2 className="font-semibold">Next {days.length} operating days</h2>
+      <section className="panel p-5">
+        <h2 className="section-title">Next {days.length} operating days</h2>
         <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
           {days.map((d) => (
-            <div key={d} className="rounded-xl border border-[#ECEAE6] p-3 text-sm">
+            <div key={d} className="panel p-3 text-sm">
               <p className="font-semibold">
                 {new Date(`${d}T00:00:00`).toLocaleDateString("en-ZA", {
                   weekday: "long",
@@ -88,7 +84,7 @@ export default function AdminCapacity() {
                             closed: s.closedReason !== "closed",
                           })
                         }
-                        className="rounded-full border border-[#DAD6CF] px-2 py-0.5 text-xs hover:border-[#0A0A0A]"
+                        className="chip chip-outline"
                       >
                         {s.closedReason === "closed" ? "open" : "close"}
                       </button>
@@ -102,7 +98,7 @@ export default function AdminCapacity() {
                               capacity: Number(v),
                             });
                         }}
-                        className="rounded-full border border-[#DAD6CF] px-2 py-0.5 text-xs hover:border-[#0A0A0A]"
+                        className="chip chip-outline"
                       >
                         cap
                       </button>
@@ -114,17 +110,17 @@ export default function AdminCapacity() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-5 text-sm">
-        <h2 className="font-semibold">Blackout dates</h2>
+      <section className="panel p-5 text-sm">
+        <h2 className="section-title">Blackout dates</h2>
         <ul className="mt-2 divide-y divide-[#F0EDE9]">
           {blackouts.data?.map((b) => (
             <li key={b.date} className="flex items-center justify-between py-2">
               <span>
-                {b.date} <span className="text-[#86817A]">{b.reason}</span>
+                {b.date} <span className="text-muted">{b.reason}</span>
               </span>
               <button
                 onClick={() => removeBlackout.mutate(b.date)}
-                className="text-xs text-red-600 hover:underline"
+                className="text-xs text-[#C13B73] hover:underline"
               >
                 remove
               </button>
@@ -144,15 +140,15 @@ export default function AdminCapacity() {
             required
             value={bo.date}
             onChange={(e) => setBo({ ...bo, date: e.target.value })}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1"
+            className="input px-2 py-1"
           />
           <input
             value={bo.reason}
             onChange={(e) => setBo({ ...bo, reason: e.target.value })}
             placeholder="Reason"
-            className="flex-1 rounded-lg border border-[#DAD6CF] px-2 py-1"
+            className="flex-1 input px-2 py-1"
           />
-          <button className="rounded-full bg-[#0A0A0A] px-3 py-1 text-xs text-white">Add</button>
+          <button className="rounded-full bg-ink px-3 py-1 text-xs text-white">Add</button>
         </form>
       </section>
     </div>
@@ -191,18 +187,15 @@ function PolicyForm({
         type="number"
         value={p[k]}
         onChange={(e) => setP({ ...p, [k]: Number(e.target.value) })}
-        className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1.5 font-mono"
+        className="mt-1 w-full input px-2 py-1.5 font-mono"
       />
     </label>
   );
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
+    <section className="panel p-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Slot policy</h2>
-        <button
-          onClick={() => save.mutate()}
-          className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-sm text-white hover:bg-[#E84A8A]"
-        >
+        <h2 className="section-title">Slot policy</h2>
+        <button onClick={() => save.mutate()} className="btn btn-primary btn-sm">
           Save policy
         </button>
       </div>
@@ -210,7 +203,7 @@ function PolicyForm({
         {DAYS.map((d, i) => (
           <label
             key={d}
-            className={`cursor-pointer rounded-full border px-3 py-1 text-sm ${p.operatingDays.includes(i) ? "border-[#0A0A0A] bg-[#0A0A0A] text-white" : "border-[#DAD6CF]"}`}
+            className={`cursor-pointer rounded-full border px-3 py-1 text-sm ${p.operatingDays.includes(i) ? "border-[#0A0A0A] bg-ink text-white" : "border-[#DAD6CF]"}`}
           >
             <input
               type="checkbox"
@@ -235,7 +228,7 @@ function PolicyForm({
         {num("cutoffMinutesBefore")}
         {num("horizonDays")}
       </div>
-      <h3 className="mt-4 text-sm font-semibold">Windows</h3>
+      <h3 className="mt-4 section-title">Windows</h3>
       {p.windows.map((w, i) => (
         <div key={i} className="mt-2 grid items-end gap-2 sm:grid-cols-5 text-sm">
           <label>
@@ -248,7 +241,7 @@ function PolicyForm({
                   windows: p.windows.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)),
                 })
               }
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+              className="mt-1 w-full input px-2 py-1 font-mono"
             />
           </label>
           <label>
@@ -261,7 +254,7 @@ function PolicyForm({
                   windows: p.windows.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)),
                 })
               }
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1"
+              className="mt-1 w-full input px-2 py-1"
             />
           </label>
           <label>
@@ -277,7 +270,7 @@ function PolicyForm({
                   ),
                 })
               }
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1"
+              className="mt-1 w-full input px-2 py-1"
             />
           </label>
           <label>
@@ -293,7 +286,7 @@ function PolicyForm({
                   ),
                 })
               }
-              className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1"
+              className="mt-1 w-full input px-2 py-1"
             />
           </label>
           <div className="flex gap-2">
@@ -313,13 +306,13 @@ function PolicyForm({
                     ),
                   })
                 }
-                className="mt-1 w-full rounded-lg border border-[#DAD6CF] px-2 py-1 font-mono"
+                className="mt-1 w-full input px-2 py-1 font-mono"
               />
             </label>
             <button
               type="button"
               onClick={() => setP({ ...p, windows: p.windows.filter((_, j) => j !== i) })}
-              className="mb-1 text-xs text-red-600"
+              className="mb-1 text-xs text-[#C13B73]"
             >
               ×
             </button>
@@ -343,7 +336,7 @@ function PolicyForm({
             ],
           })
         }
-        className="mt-3 text-xs text-[#E84A8A]"
+        className="mt-3 text-xs text-brand-pink"
       >
         + Add window
       </button>

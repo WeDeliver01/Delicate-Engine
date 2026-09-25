@@ -36,7 +36,7 @@ export default function AdminOverview() {
       </Card>
       <Card title="Outbox">
         {outbox.error ? (
-          <p className="text-sm text-[#86817A]">Super admin only.</p>
+          <p className="text-sm text-muted">Super admin only.</p>
         ) : (
           ["pending", "processing", "delivered", "failed", "dead"].map((s) => (
             <Row key={s} k={s} v={String(outbox.data?.[s] ?? 0)} />
@@ -49,8 +49,8 @@ export default function AdminOverview() {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[#ECEAE6] bg-white p-6">
-      <h2 className="font-semibold">{title}</h2>
+    <section className="panel p-6">
+      <h2 className="section-title">{title}</h2>
       <dl className="mt-3 text-sm">{children}</dl>
     </section>
   );
@@ -59,7 +59,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between py-1">
-      <dt className="capitalize text-[#86817A]">{k}</dt>
+      <dt className="capitalize text-muted">{k}</dt>
       <dd>{v}</dd>
     </div>
   );

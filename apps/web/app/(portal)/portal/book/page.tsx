@@ -181,14 +181,14 @@ export default function BookPage() {
   return (
     <div className="grid gap-8 lg:grid-cols-5">
       <div className="space-y-6 lg:col-span-3">
-        <h1 className="text-2xl font-bold">New booking</h1>
+        <h1 className="page-title">New booking</h1>
 
         <Section title="1 · Service">
           <div className="grid grid-cols-2 gap-3">
             {catalog.data?.serviceLevels.map((s) => (
               <label
                 key={s.code}
-                className={`cursor-pointer rounded-xl border p-4 ${serviceLevel === s.code ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-[#ECEAE6]"}`}
+                className={`cursor-pointer rounded-xl border p-4 ${serviceLevel === s.code ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-line"}`}
               >
                 <input
                   type="radio"
@@ -233,7 +233,7 @@ export default function BookPage() {
 
         <Section title="3 · Drops">
           {drops.map((d, i) => (
-            <div key={i} className="mb-4 rounded-xl border border-[#ECEAE6] p-4 last:mb-0">
+            <div key={i} className="mb-4 panel p-4 last:mb-0">
               <div className="flex items-center justify-between">
                 <p className="font-semibold">Drop {i + 1}</p>
                 {drops.length > 1 && (
@@ -243,7 +243,7 @@ export default function BookPage() {
                       setDrops((ds) => ds.filter((_, j) => j !== i));
                       setQuote(null);
                     }}
-                    className="text-sm text-[#86817A] hover:text-red-600"
+                    className="text-sm text-muted hover:text-[#C13B73]"
                   >
                     Remove
                   </button>
@@ -331,7 +331,7 @@ export default function BookPage() {
                 setDrops((ds) => [...ds, emptyDrop()]);
                 setQuote(null);
               }}
-              className="mt-3 text-sm font-medium text-[#E84A8A] hover:text-[#0A0A0A]"
+              className="mt-3 text-sm font-medium text-brand-pink hover:text-ink"
             >
               + Add another drop
             </button>
@@ -390,7 +390,7 @@ export default function BookPage() {
           <button
             disabled={!detailsComplete || busy}
             onClick={getQuote}
-            className="w-full rounded-2xl bg-[#0A0A0A] py-3 font-medium text-white hover:bg-[#E84A8A] transition-colors disabled:opacity-40"
+            className="w-full rounded-2xl bg-ink py-3 font-medium text-white hover:bg-brand-pink transition-colors disabled:opacity-40"
           >
             {busy ? "Pricing…" : "Get my price"}
           </button>
@@ -399,7 +399,7 @@ export default function BookPage() {
 
       <aside className="space-y-4 lg:col-span-2">
         <div className="sticky top-6 space-y-4">
-          <div className="rounded-xl border border-[#ECEAE6] bg-white p-5">
+          <div className="panel p-5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-[#6B6661]">Available to spend</span>
               <span className="font-mono font-semibold">
@@ -407,25 +407,25 @@ export default function BookPage() {
               </span>
             </div>
             {wallet.data?.billingMode === "postpaid" && (
-              <p className="mt-1 text-xs text-[#86817A]">Includes your account credit limit.</p>
+              <p className="mt-1 text-xs text-muted">Includes your account credit limit.</p>
             )}
           </div>
 
           {quote && (
-            <div className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-              <h2 className="font-semibold">Your price</h2>
+            <div className="panel p-5">
+              <h2 className="section-title">Your price</h2>
               <div className="mt-3">
                 <Breakdown b={quote.breakdown} />
               </div>
               {quote.distanceProvider === "haversine" && (
-                <p className="mt-2 text-xs text-[#86817A]">
+                <p className="mt-2 text-xs text-muted">
                   Distance estimated; live routing arrives with the maps key.
                 </p>
               )}
               <button
                 type="button"
                 onClick={() => setQuote(null)}
-                className="mt-3 text-xs text-[#86817A] hover:underline"
+                className="mt-3 text-xs text-muted hover:underline"
               >
                 Edit details
               </button>
@@ -433,22 +433,22 @@ export default function BookPage() {
           )}
 
           {quote && needsSlot && (
-            <div className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-              <h2 className="font-semibold">Pick a delivery slot</h2>
+            <div className="panel p-5">
+              <h2 className="section-title">Pick a delivery slot</h2>
               <SlotPicker slots={slots.data ?? []} value={slot} onChange={setSlot} />
             </div>
           )}
 
           {quote && (
-            <div className="rounded-xl border border-[#ECEAE6] bg-white p-5">
+            <div className="panel p-5">
               {short > 0 ? (
                 <>
-                  <p className="text-sm text-red-700">
+                  <p className="text-sm text-[#C13B73]">
                     You are {rands(short)} short for this booking.
                   </p>
                   <a
                     href="/portal/wallet"
-                    className="mt-3 block rounded-2xl bg-[#0A0A0A] py-3 text-center text-sm font-medium text-white hover:bg-[#E84A8A]"
+                    className="mt-3 block rounded-2xl bg-ink py-3 text-center text-sm font-medium text-white hover:bg-brand-pink"
                   >
                     Top up your wallet
                   </a>
@@ -457,22 +457,18 @@ export default function BookPage() {
                 <button
                   disabled={busy || (needsSlot && !slot)}
                   onClick={confirm}
-                  className="w-full rounded-2xl bg-[#E84A8A] py-3 font-medium text-white hover:bg-[#0A0A0A] transition-colors disabled:opacity-40"
+                  className="w-full rounded-2xl bg-brand-pink py-3 font-medium text-white hover:bg-ink transition-colors disabled:opacity-40"
                 >
                   {busy ? "Booking…" : `Confirm booking · ${rands(quote.breakdown.totalCents)}`}
                 </button>
               )}
-              <p className="mt-2 text-xs text-[#86817A]">
+              <p className="mt-2 text-xs text-muted">
                 The amount is reserved from your wallet now and charged when delivered. Cancel free
                 of charge before collection.
               </p>
             </div>
           )}
-          {error && (
-            <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </p>
-          )}
+          {error && <p className="alert-error">{error}</p>}
         </div>
       </aside>
     </div>
@@ -503,7 +499,7 @@ function SlotPicker({
               type="button"
               disabled={!any}
               onClick={() => setDay(d)}
-              className={`rounded-full border px-3 py-1 ${activeDay === d ? "border-[#0A0A0A] bg-[#0A0A0A] text-white" : "border-[#DAD6CF]"} disabled:opacity-40`}
+              className={`rounded-full border px-3 py-1 ${activeDay === d ? "border-[#0A0A0A] bg-ink text-white" : "border-[#DAD6CF]"} disabled:opacity-40`}
             >
               {new Date(`${d}T00:00:00`).toLocaleDateString("en-ZA", {
                 weekday: "short",
@@ -525,10 +521,10 @@ function SlotPicker({
                 type="button"
                 disabled={!s.bookable}
                 onClick={() => onChange({ date: s.date, windowKey: s.windowKey })}
-                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${selected ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-[#ECEAE6]"} disabled:opacity-40`}
+                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${selected ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-line"} disabled:opacity-40`}
               >
                 <span>{s.label}</span>
-                <span className="text-xs text-[#86817A]">
+                <span className="text-xs text-muted">
                   {s.bookable ? `${s.remaining} left` : s.closedReason?.replace("_", " ")}
                 </span>
               </button>
@@ -541,8 +537,8 @@ function SlotPicker({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-      <h2 className="mb-3 font-semibold">{title}</h2>
+    <section className="panel p-5">
+      <h2 className="mb-3 section-title">{title}</h2>
       {children}
     </section>
   );

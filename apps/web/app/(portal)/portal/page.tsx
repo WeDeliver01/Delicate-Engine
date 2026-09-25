@@ -25,16 +25,14 @@ export default function PortalHome() {
   if (!me.data) return null;
   if (!account) {
     return (
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-8">
-        <h1 className="text-xl font-semibold">
-          Welcome, {me.data.user.fullName ?? me.data.user.email}
-        </h1>
+      <section className="panel p-8">
+        <h1 className="page-title">Welcome, {me.data.user.fullName ?? me.data.user.email}</h1>
         <p className="mt-2 text-[#6B6661]">
           You don&apos;t have an account yet. Create one to start booking deliveries.
         </p>
         <Link
           href="/portal/accounts/new"
-          className="mt-6 inline-block rounded-xl bg-[#0A0A0A] px-4 py-2 font-medium text-white hover:bg-[#E84A8A]"
+          className="mt-6 inline-block rounded-xl bg-ink px-4 py-2 font-medium text-white hover:bg-brand-pink"
         >
           Create an account
         </Link>
@@ -45,10 +43,10 @@ export default function PortalHome() {
   const recent = bookings.data?.items.filter((b) => !b.status.startsWith("rejected")) ?? [];
   return (
     <div className="grid gap-6 md:grid-cols-3">
-      <section className="rounded-xl border border-[#ECEAE6] bg-white p-6 md:col-span-2">
+      <section className="panel p-6 md:col-span-2">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-xl font-bold">{account.name}</h1>
+            <h1 className="page-title">{account.name}</h1>
             <p className="text-sm text-[#6B6661]">
               {account.type === "business" ? "Business" : "Personal"} ·{" "}
               {wallet.data?.billingMode ?? account.billingMode} · you are{" "}
@@ -57,12 +55,12 @@ export default function PortalHome() {
           </div>
           <Link
             href="/portal/book"
-            className="rounded-full bg-[#0A0A0A] px-5 py-2 text-sm font-medium text-white hover:bg-[#E84A8A]"
+            className="rounded-full bg-ink px-5 py-2 text-sm font-medium text-white hover:bg-brand-pink"
           >
             Book a delivery
           </Link>
         </div>
-        <h2 className="mt-8 font-semibold">Recent bookings</h2>
+        <h2 className="mt-8 section-title">Recent bookings</h2>
         <ul className="mt-2 divide-y divide-[#F0EDE9] text-sm">
           {recent.map((b) => (
             <li key={b.id}>
@@ -81,7 +79,7 @@ export default function PortalHome() {
             </li>
           ))}
           {recent.length === 0 && (
-            <li className="py-6 text-center text-[#86817A]">
+            <li className="py-6 text-center text-muted">
               No bookings yet — your first one is a click away.
             </li>
           )}
@@ -89,7 +87,7 @@ export default function PortalHome() {
         {recent.length > 0 && (
           <Link
             href="/portal/bookings"
-            className="mt-3 inline-block text-sm text-[#86817A] hover:underline"
+            className="mt-3 inline-block text-sm text-muted hover:underline"
           >
             All bookings →
           </Link>
@@ -97,25 +95,25 @@ export default function PortalHome() {
       </section>
 
       <div className="space-y-6">
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6">
+        <section className="panel p-6">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Wallet</h2>
-            <Link href="/portal/wallet" className="text-sm text-[#86817A] hover:underline">
+            <h2 className="section-title">Wallet</h2>
+            <Link href="/portal/wallet" className="text-sm text-muted hover:underline">
               Top up
             </Link>
           </div>
           <p className="mt-3 font-mono text-3xl font-bold">
             {wallet.data ? rands(wallet.data.availableCents) : "…"}
           </p>
-          <p className="text-xs text-[#86817A]">
+          <p className="text-xs text-muted">
             available · {wallet.data ? rands(wallet.data.heldCents) : "…"} reserved
           </p>
         </section>
-        <section className="rounded-xl border border-[#ECEAE6] bg-white p-6 text-sm">
+        <section className="panel p-6 text-sm">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Team</h2>
+            <h2 className="section-title">Team</h2>
             {account.role === "customer_owner" && (
-              <Link href="/portal/members" className="text-[#86817A] hover:underline">
+              <Link href="/portal/members" className="text-muted hover:underline">
                 Manage
               </Link>
             )}

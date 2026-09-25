@@ -15,7 +15,7 @@ export function Breakdown({ b, compact = false }: { b: QuoteBreakdown; compact?:
           ))}
         </ul>
       )}
-      <div className={`${compact ? "" : "mt-2 border-t border-[#ECEAE6] pt-2"} space-y-1`}>
+      <div className={`${compact ? "" : "mt-2 border-t border-line pt-2"} space-y-1`}>
         <div className="flex justify-between text-[#6B6661]">
           <span>Subtotal</span>
           <span className="font-mono">{rands(b.subtotalCents)}</span>
@@ -26,13 +26,11 @@ export function Breakdown({ b, compact = false }: { b: QuoteBreakdown; compact?:
             <span className="font-mono">{rands(b.vatCents)}</span>
           </div>
         )}
-        <div className="flex justify-between text-base font-bold text-[#0A0A0A]">
+        <div className="flex justify-between text-base font-bold text-ink">
           <span>Total</span>
           <span className="font-mono">{rands(b.totalCents)}</span>
         </div>
-        <p className="text-xs text-[#86817A]">
-          {b.distanceKm.toFixed(1)} km round trip from our depot
-        </p>
+        <p className="text-xs text-muted">{b.distanceKm.toFixed(1)} km round trip from our depot</p>
       </div>
     </div>
   );

@@ -74,11 +74,7 @@ export default function AdminShipments() {
 
   return (
     <div className="space-y-4">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
 
       {unassigned.data && unassigned.data.length > 0 && (
         <section className="rounded-xl border border-[#F7A8CE] bg-[#FCEEF4] p-4 text-sm">
@@ -88,7 +84,7 @@ export default function AdminShipments() {
             </span>
             <button
               onClick={() => unassigned.data?.forEach((s) => autoAssign.mutate(s.id))}
-              className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-xs text-white hover:bg-[#E84A8A]"
+              className="rounded-full bg-ink px-4 py-1.5 text-xs text-white hover:bg-brand-pink"
             >
               Auto-assign all
             </button>
@@ -96,19 +92,19 @@ export default function AdminShipments() {
         </section>
       )}
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#ECEAE6] px-5 py-4">
-          <h1 className="font-semibold">Shipments</h1>
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="section-title">Shipments</h2>
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+            className="input px-2 py-1 text-sm"
           />
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as ShipmentStatus | "")}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+            className="input px-2 py-1 text-sm"
           >
             <option value="">all statuses</option>
             {Object.keys(SHIPMENT_TRANSITIONS).map((s) => (
@@ -119,7 +115,7 @@ export default function AdminShipments() {
           </select>
         </div>
         <table className="w-full text-left text-sm">
-          <thead className="text-xs uppercase text-[#86817A]">
+          <thead className="label-mini">
             <tr>
               <th className="px-5 py-2">Waybill</th>
               <th className="px-5 py-2">Slot</th>
@@ -146,7 +142,7 @@ export default function AdminShipments() {
                   </td>
                   <td className="px-5 py-2">
                     {s.deliveryAddress.suburb ?? s.deliveryAddress.city}
-                    <div className="text-xs text-[#86817A]">
+                    <div className="text-xs text-muted">
                       {s.recipient.name} · {s.recipient.phone}
                     </div>
                   </td>
@@ -168,7 +164,7 @@ export default function AdminShipments() {
                         <button
                           key={to}
                           onClick={() => move.mutate({ id: s.id, to })}
-                          className="rounded-full border border-[#DAD6CF] px-2 py-0.5 text-xs hover:border-[#0A0A0A]"
+                          className="chip chip-outline"
                         >
                           {to.replace("_", " ")}
                         </button>
@@ -187,7 +183,7 @@ export default function AdminShipments() {
             ))}
             {list.data?.items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-[#86817A]">
+                <td colSpan={6} className="table-empty">
                   No shipments match.
                 </td>
               </tr>
@@ -244,7 +240,7 @@ function AssignCell({
     return (
       <div className="min-w-48 space-y-1">
         {candidates.data?.length === 0 && (
-          <p className="text-xs text-[#86817A]">No driver on shift with capacity.</p>
+          <p className="text-xs text-muted">No driver on shift with capacity.</p>
         )}
         {candidates.data?.map((c) => (
           <button
@@ -255,10 +251,7 @@ function AssignCell({
             {c.name} · {c.distanceKm} km · {c.load}/{c.capacity}
           </button>
         ))}
-        <button
-          onClick={() => setPicking(false)}
-          className="text-xs text-[#86817A] hover:underline"
-        >
+        <button onClick={() => setPicking(false)} className="text-xs text-muted hover:underline">
           cancel
         </button>
       </div>
@@ -269,7 +262,7 @@ function AssignCell({
       {driverName ? (
         <>
           <span>{driverName}</span>
-          <div className="text-xs text-[#86817A]">
+          <div className="text-xs text-muted">
             {current!.source} · {current!.plannedKm} km planned
           </div>
         </>
@@ -279,7 +272,7 @@ function AssignCell({
       {["booked", "assigned", "failed"].includes(shipment.status) && (
         <button
           onClick={() => setPicking(true)}
-          className="mt-1 block text-xs text-[#E84A8A] hover:underline"
+          className="mt-1 block text-xs text-brand-pink hover:underline"
         >
           {driverName ? "reassign" : "assign"}
         </button>
@@ -293,12 +286,12 @@ function Detail({ shipmentId }: { shipmentId: string }) {
     queryKey: ["admin", "dispatch", "settlement", shipmentId],
     queryFn: () => api<SettlementView>(`/v1/admin/dispatch/shipments/${shipmentId}/settlement`),
   });
-  if (!v.data) return <p className="text-sm text-[#86817A]">Loading…</p>;
+  if (!v.data) return <p className="text-sm text-muted">Loading…</p>;
   const { settlement, pod, files } = v.data;
   return (
     <div className="grid gap-6 text-sm md:grid-cols-2">
       <div>
-        <h3 className="font-semibold">Settlement</h3>
+        <h3 className="section-title">Settlement</h3>
         {settlement ? (
           <dl className="mt-2 space-y-1">
             <Row k="Revenue (ex VAT)" v={rands(settlement.revenueCents)} />
@@ -312,11 +305,11 @@ function Detail({ shipmentId }: { shipmentId: string }) {
             />
           </dl>
         ) : (
-          <p className="mt-2 text-[#86817A]">Not delivered yet.</p>
+          <p className="mt-2 text-muted">Not delivered yet.</p>
         )}
       </div>
       <div>
-        <h3 className="font-semibold">Proof of delivery</h3>
+        <h3 className="section-title">Proof of delivery</h3>
         {pod ? (
           <div className="mt-2 space-y-2">
             <p>Received by {pod.receivedBy}</p>
@@ -326,20 +319,20 @@ function Detail({ shipmentId }: { shipmentId: string }) {
                 <img
                   src={`/api/v1/admin/files/${files.photoFileId}`}
                   alt="Proof of delivery"
-                  className="h-28 rounded-lg border border-[#ECEAE6]"
+                  className="h-28 rounded-lg border border-line"
                 />
               )}
               {files.signatureFileId && (
                 <img
                   src={`/api/v1/admin/files/${files.signatureFileId}`}
                   alt="Signature"
-                  className="h-28 rounded-lg border border-[#ECEAE6] bg-white"
+                  className="h-28 panel"
                 />
               )}
             </div>
           </div>
         ) : (
-          <p className="mt-2 text-[#86817A]">None captured.</p>
+          <p className="mt-2 text-muted">None captured.</p>
         )}
       </div>
     </div>
@@ -349,7 +342,7 @@ function Detail({ shipmentId }: { shipmentId: string }) {
 function Row({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
   return (
     <div className="flex justify-between gap-6">
-      <dt className="text-[#86817A]">{k}</dt>
+      <dt className="text-muted">{k}</dt>
       <dd className={`font-mono ${strong ? "font-bold" : ""}`}>{v}</dd>
     </div>
   );

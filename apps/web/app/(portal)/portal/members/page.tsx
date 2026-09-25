@@ -43,23 +43,23 @@ export default function MembersPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <section className="rounded-lg border border-[#ECEAE6] bg-white p-6">
-        <h1 className="text-xl font-semibold">Members of {account.name}</h1>
+      <section className="panel p-6">
+        <h1 className="page-title">Members of {account.name}</h1>
         <ul className="mt-4 divide-y divide-[#F0EDE9] text-sm">
           {members.data?.map((m) => (
             <li key={m.userId} className="flex items-center justify-between py-2">
               <div>
                 <div>{m.fullName ?? m.email}</div>
-                <div className="text-[#86817A]">{m.email}</div>
+                <div className="text-muted">{m.email}</div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[#86817A]">
+                <span className="text-muted">
                   {m.role === "customer_owner" ? "Owner" : "Staff"}
                 </span>
                 {isOwner && (
                   <button
                     onClick={() => remove.mutate(m.userId)}
-                    className="text-red-600 hover:underline"
+                    className="text-[#C13B73] hover:underline"
                   >
                     Remove
                   </button>
@@ -76,10 +76,10 @@ export default function MembersPage() {
             e.preventDefault();
             add.mutate();
           }}
-          className="rounded-lg border border-[#ECEAE6] bg-white p-6 text-sm"
+          className="panel p-6 text-sm"
         >
-          <h2 className="font-semibold">Add a member</h2>
-          <p className="mt-1 text-[#86817A]">
+          <h2 className="section-title">Add a member</h2>
+          <p className="mt-1 text-muted">
             They need to have signed in to the portal at least once.
           </p>
           <div className="mt-4 flex gap-2">
@@ -101,12 +101,12 @@ export default function MembersPage() {
             </select>
             <button
               disabled={add.isPending}
-              className="rounded-xl bg-[#0A0A0A] px-4 text-white disabled:opacity-50"
+              className="rounded-xl bg-ink px-4 text-white disabled:opacity-50"
             >
               Add
             </button>
           </div>
-          {error && <p className="mt-3 text-red-600">{error}</p>}
+          {error && <p className="mt-3 text-[#C13B73]">{error}</p>}
         </form>
       )}
     </div>

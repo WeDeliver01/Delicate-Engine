@@ -78,7 +78,7 @@ function LoginForm() {
           />
           <button
             disabled={busy}
-            className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white disabled:opacity-50"
+            className="w-full rounded-xl bg-ink py-2 font-medium text-white disabled:opacity-50"
           >
             {busy ? "Signing in…" : "Sign in"}
           </button>
@@ -92,7 +92,7 @@ function LoginForm() {
         </form>
       ) : (
         <form onSubmit={useDevToken} className="mt-8 space-y-4">
-          <div className="rounded-xl border border-[#F7A8CE] bg-[#FCEEF4] p-3 text-sm text-[#0A0A0A]">
+          <div className="rounded-xl border border-[#F7A8CE] bg-[#FCEEF4] p-3 text-sm text-ink">
             Supabase is not configured. Local development uses a dev token from the API:
             <code className="mt-1 block text-xs">
               pnpm --filter @delicate/api run dev:token owner
@@ -107,13 +107,13 @@ function LoginForm() {
               className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2 font-mono text-xs"
             />
           </label>
-          <button className="w-full rounded-xl bg-[#0A0A0A] py-2 font-medium text-white">
+          <button className="w-full rounded-xl bg-ink py-2 font-medium text-white">
             Use token
           </button>
         </form>
       )}
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-4 text-sm text-[#C13B73]">{error}</p>}
     </main>
   );
 }

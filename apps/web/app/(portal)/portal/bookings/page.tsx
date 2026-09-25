@@ -19,12 +19,12 @@ export default function BookingsPage() {
   if (!account) return null;
   const items = list.data?.items.filter((b) => !b.status.startsWith("rejected")) ?? [];
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white">
-      <div className="flex items-center justify-between border-b border-[#ECEAE6] px-5 py-4">
-        <h1 className="text-xl font-bold">Bookings</h1>
+    <section className="panel">
+      <div className="panel-head">
+        <h2 className="section-title">Bookings</h2>
         <Link
           href="/portal/book"
-          className="rounded-full bg-[#0A0A0A] px-5 py-2 text-sm font-medium text-white hover:bg-[#E84A8A]"
+          className="rounded-full bg-ink px-5 py-2 text-sm font-medium text-white hover:bg-brand-pink"
         >
           New booking
         </Link>
@@ -38,7 +38,7 @@ export default function BookingsPage() {
             >
               <div>
                 <p className="font-mono font-semibold">{b.reference}</p>
-                <p className="text-xs text-[#86817A]">
+                <p className="text-xs text-muted">
                   {b.shipments.length} drop{b.shipments.length === 1 ? "" : "s"} ·{" "}
                   {b.serviceLevelCode.replace("_", " ")}
                   {b.slotDate && ` · ${b.slotDate}`} · {dateTime(b.createdAt)}
@@ -51,9 +51,7 @@ export default function BookingsPage() {
             </Link>
           </li>
         ))}
-        {items.length === 0 && (
-          <li className="px-5 py-8 text-center text-[#86817A]">No bookings yet.</li>
-        )}
+        {items.length === 0 && <li className="table-empty">No bookings yet.</li>}
       </ul>
     </section>
   );

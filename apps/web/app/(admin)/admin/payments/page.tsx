@@ -66,15 +66,11 @@ export default function AdminPayments() {
 
   return (
     <div className="space-y-6">
-      {error && (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
-        </p>
-      )}
+      {error && <p className="alert-error">{error}</p>}
 
       <header>
-        <h1 className="text-2xl font-semibold">Payments</h1>
-        <p className="text-sm text-[#86817A]">
+        <h1 className="page-title">Payments</h1>
+        <p className="text-sm text-muted">
           The engine proposes; you execute. A journal is posted only when you record that the money
           actually left.
         </p>
@@ -90,19 +86,19 @@ export default function AdminPayments() {
         </section>
       )}
 
-      <section className="flex flex-wrap items-center gap-2 rounded-xl border border-[#ECEAE6] bg-white p-4">
+      <section className="flex flex-wrap items-center gap-2 panel p-4">
         <span className="text-sm font-medium">Prepare a run:</span>
         {(Object.keys(KIND_LABEL) as ProposalKind[]).map((k) => (
           <button
             key={k}
             onClick={() => run.mutate(k)}
             disabled={run.isPending}
-            className="rounded-full border border-[#DAD6CF] px-4 py-1.5 text-sm hover:border-[#0A0A0A] disabled:opacity-50"
+            className="btn btn-secondary btn-sm disabled:opacity-50"
           >
             {KIND_LABEL[k]}
           </button>
         ))}
-        <span className="ml-auto text-xs text-[#86817A]">
+        <span className="ml-auto text-xs text-muted">
           Writes proposals only. Never contacts a bank.
         </span>
       </section>
@@ -115,13 +111,13 @@ export default function AdminPayments() {
         />
       )}
 
-      <section className="rounded-xl border border-[#ECEAE6] bg-white">
-        <div className="flex flex-wrap items-center gap-3 border-b border-[#ECEAE6] px-5 py-4">
-          <h2 className="font-semibold">Proposals</h2>
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="section-title">Proposals</h2>
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as ProposalStatus | "")}
-            className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+            className="input px-2 py-1 text-sm"
           >
             <option value="">all</option>
             {["proposed", "approved", "executed", "failed", "rejected", "cancelled"].map((s) => (
@@ -135,17 +131,15 @@ export default function AdminPayments() {
           {proposals.data?.map((row) => (
             <ProposalRow key={row.id} row={row} onDone={invalidate} onError={onError} />
           ))}
-          {proposals.data?.length === 0 && (
-            <li className="px-5 py-8 text-center text-[#86817A]">Nothing proposed.</li>
-          )}
+          {proposals.data?.length === 0 && <li className="table-empty">Nothing proposed.</li>}
         </ul>
       </section>
 
       {p && p.vendors.length > 0 && (
-        <section className="rounded-xl border border-[#ECEAE6] bg-white">
-          <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Vendor bills</h2>
+        <section className="panel">
+          <h2 className="panel-head section-title">Vendor bills</h2>
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase text-[#86817A]">
+            <thead className="label-mini">
               <tr>
                 <th className="px-5 py-2">Bill</th>
                 <th className="px-5 py-2">Due</th>
@@ -159,7 +153,7 @@ export default function AdminPayments() {
                 <tr key={v.walletSlug}>
                   <td className="px-5 py-2">
                     {v.name}
-                    <span className="ml-2 text-xs text-[#86817A]">{v.vendor}</span>
+                    <span className="ml-2 text-xs text-muted">{v.vendor}</span>
                   </td>
                   <td className="px-5 py-2">day {v.dueDay}</td>
                   <td className="px-5 py-2 text-right font-mono">{rands(v.amountCents)}</td>
@@ -168,7 +162,7 @@ export default function AdminPayments() {
                     {v.payable ? (
                       <span className="text-[#1B7F4B]">fully funded</span>
                     ) : (
-                      <span className="text-[#86817A]">
+                      <span className="text-muted">
                         short {rands(v.amountCents - v.fundedCents)}
                       </span>
                     )}
@@ -216,28 +210,28 @@ function ProposalRow({
           {row.reference}
         </button>
         <span className="text-sm">{KIND_LABEL[row.kind]}</span>
-        <span className="text-sm text-[#86817A]">{row.driverName ?? row.vendorName ?? "—"}</span>
+        <span className="text-sm text-muted">{row.driverName ?? row.vendorName ?? "—"}</span>
         <span className="font-mono text-sm">{rands(row.amountCents)}</span>
         <StatusPill status={row.status} />
-        <span className="ml-auto text-xs text-[#86817A]">{dateTime(row.createdAt)}</span>
+        <span className="ml-auto text-xs text-muted">{dateTime(row.createdAt)}</span>
       </div>
 
       {open && (
         <div className="mt-4 space-y-4 rounded-xl bg-[#FAFAF9] p-4 text-sm">
           <div>
-            <div className="text-xs uppercase text-[#86817A]">Why this amount</div>
+            <div className="label-mini">Why this amount</div>
             <p className="mt-1">
               The ledger says {rands(row.basis.payableBalanceCents)} is owed
               {row.basis.walletSlug && ` and the ${row.basis.walletSlug} wallet has funded it`}.
             </p>
-            {row.basis.note && <p className="mt-1 text-[#86817A]">{row.basis.note}</p>}
+            {row.basis.note && <p className="mt-1 text-muted">{row.basis.note}</p>}
             {row.basis.items.length > 0 && (
               <table className="mt-2 w-full text-xs">
                 <tbody>
                   {row.basis.items.map((i, n) => (
                     <tr key={n}>
                       <td className="py-0.5 font-mono">{i.waybill ?? "—"}</td>
-                      <td className="py-0.5 text-[#86817A]">
+                      <td className="py-0.5 text-muted">
                         {i.settledAt ? dateTime(i.settledAt) : ""}
                       </td>
                       <td className="py-0.5 text-right font-mono">{rands(i.amountCents)}</td>
@@ -249,8 +243,8 @@ function ProposalRow({
           </div>
 
           {fuel.data && (
-            <div className="rounded-lg border border-[#DAD6CF] bg-white p-3">
-              <div className="text-xs uppercase text-[#86817A]">
+            <div className="rounded-xl border border-[#DAD6CF] bg-white p-3">
+              <div className="label-mini">
                 How to load this card {fuel.data.instruction.automated ? "" : "(by hand)"}
               </div>
               <ol className="mt-2 list-decimal space-y-1 pl-5">
@@ -258,7 +252,7 @@ function ProposalRow({
                   <li key={i}>{s}</li>
                 ))}
               </ol>
-              <p className="mt-2 text-xs text-[#86817A]">
+              <p className="mt-2 text-xs text-muted">
                 Proof needed: {fuel.data.instruction.proofRequired}
               </p>
             </div>
@@ -275,24 +269,24 @@ function ProposalRow({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="note (optional)"
-                className="flex-1 rounded-lg border border-[#DAD6CF] px-3 py-1.5"
+                className="flex-1 input py-1.5"
               />
               <button
                 onClick={() => act.mutate({ path: "approve", json: { note: note || undefined } })}
-                className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-white hover:bg-[#E84A8A]"
+                className="btn btn-primary btn-sm"
               >
                 Approve
               </button>
               <button
                 onClick={() => act.mutate({ path: "reject", json: { note: note || undefined } })}
-                className="rounded-full border border-[#DAD6CF] px-4 py-1.5 hover:border-[#0A0A0A]"
+                className="btn btn-secondary btn-sm"
               >
                 Reject
               </button>
             </div>
           ) : row.status === "approved" || row.status === "failed" ? (
             <div className="space-y-2">
-              <p className="text-[#86817A]">
+              <p className="text-muted">
                 Pay it, then record the proof here. This is what posts the journal.
               </p>
               <div className="flex flex-wrap items-center gap-2">
@@ -300,14 +294,14 @@ function ProposalRow({
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
                   placeholder="EFT / PayCentral reference"
-                  className="flex-1 rounded-lg border border-[#DAD6CF] px-3 py-1.5 font-mono"
+                  className="flex-1 input py-1.5 font-mono"
                 />
                 <button
                   disabled={reference.trim().length < 2}
                   onClick={() =>
                     act.mutate({ path: "execute", json: { externalReference: reference.trim() } })
                   }
-                  className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+                  className="btn btn-primary btn-sm"
                 >
                   I paid this
                 </button>
@@ -318,20 +312,20 @@ function ProposalRow({
                       json: { reason: note || "payment did not go through" },
                     })
                   }
-                  className="rounded-full border border-[#DAD6CF] px-4 py-1.5 hover:border-[#0A0A0A]"
+                  className="btn btn-secondary btn-sm"
                 >
                   Payment failed
                 </button>
                 <button
                   onClick={() => act.mutate({ path: "cancel", json: { note: note || undefined } })}
-                  className="text-xs text-[#86817A] hover:underline"
+                  className="text-xs text-muted hover:underline"
                 >
                   cancel
                 </button>
               </div>
             </div>
           ) : (
-            <p className="text-[#86817A]">
+            <p className="text-muted">
               {row.status}
               {row.decisionNote ? ` — ${row.decisionNote}` : ""}
             </p>
@@ -353,9 +347,9 @@ function SweepCard({
 }) {
   const [reference, setReference] = useState("");
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white p-5">
-      <h2 className="font-semibold">Bank sweep</h2>
-      <p className="mt-1 text-sm text-[#86817A]">
+    <section className="panel p-5">
+      <h2 className="section-title">Bank sweep</h2>
+      <p className="mt-1 text-sm text-muted">
         {rands(clearingCents)} of customer money is recorded as received but not yet confirmed in
         the bank. Record the sweep once the provider has settled.
       </p>
@@ -364,12 +358,12 @@ function SweepCard({
           value={reference}
           onChange={(e) => setReference(e.target.value)}
           placeholder="bank statement reference"
-          className="flex-1 rounded-lg border border-[#DAD6CF] px-3 py-1.5 font-mono"
+          className="flex-1 input py-1.5 font-mono"
         />
         <button
           disabled={pending || reference.trim().length < 2}
           onClick={() => onSweep({ amountCents: clearingCents, reference: reference.trim() })}
-          className="rounded-full bg-[#0A0A0A] px-5 py-1.5 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+          className="btn btn-primary btn-sm"
         >
           Sweep {rands(clearingCents)}
         </button>
@@ -396,8 +390,8 @@ function StatusPill({ status }: { status: ProposalStatus }) {
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
   return (
-    <div className="rounded-xl border border-[#ECEAE6] bg-white p-4">
-      <div className="text-xs uppercase text-[#86817A]">{label}</div>
+    <div className="panel p-4">
+      <div className="label-mini">{label}</div>
       <div className={`mt-1 font-mono text-lg ${tone === "warn" ? "text-[#C13B73]" : ""}`}>
         {value}
       </div>

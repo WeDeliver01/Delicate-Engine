@@ -26,13 +26,13 @@ export default function AdminBookings() {
     refetchInterval: 15_000,
   });
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white">
-      <div className="flex items-center gap-3 border-b border-[#ECEAE6] px-5 py-4">
-        <h1 className="font-semibold">Bookings</h1>
+    <section className="panel">
+      <div className="flex items-center gap-3 border-b border-line px-5 py-4">
+        <h2 className="section-title">Bookings</h2>
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value as BookingStatus | "")}
-          className="rounded-lg border border-[#DAD6CF] px-2 py-1 text-sm"
+          className="input px-2 py-1 text-sm"
         >
           <option value="">all statuses</option>
           {STATUSES.map((s) => (
@@ -41,12 +41,12 @@ export default function AdminBookings() {
             </option>
           ))}
         </select>
-        <span className="text-xs text-[#86817A]">
+        <span className="text-xs text-muted">
           Rejected rows are demand we could not serve — watch them.
         </span>
       </div>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase text-[#86817A]">
+        <thead className="label-mini">
           <tr>
             <th className="px-5 py-2">Reference</th>
             <th className="px-5 py-2">Placed</th>
@@ -70,15 +70,13 @@ export default function AdminBookings() {
               <td className="px-5 py-2 font-mono">{rands(b.totalCents)}</td>
               <td className="px-5 py-2">
                 <StatusBadge status={b.status} />
-                {b.rejectionReason && (
-                  <div className="text-xs text-[#86817A]">{b.rejectionReason}</div>
-                )}
+                {b.rejectionReason && <div className="text-xs text-muted">{b.rejectionReason}</div>}
               </td>
             </tr>
           ))}
           {list.data?.items.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-5 py-8 text-center text-[#86817A]">
+              <td colSpan={7} className="table-empty">
                 No bookings.
               </td>
             </tr>

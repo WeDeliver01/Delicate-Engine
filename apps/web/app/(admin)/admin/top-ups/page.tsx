@@ -37,17 +37,17 @@ export default function AdminTopUps() {
   });
 
   return (
-    <section className="rounded-xl border border-[#ECEAE6] bg-white">
-      <div className="border-b border-[#ECEAE6] px-5 py-4">
-        <h1 className="font-semibold">Pending top-ups</h1>
-        <p className="text-sm text-[#86817A]">
+    <section className="panel">
+      <div className="border-b border-line px-5 py-4">
+        <h2 className="section-title">Pending top-ups</h2>
+        <p className="text-sm text-muted">
           Confirming credits the customer wallet immediately and is audited. Only confirm what you
           have matched on the bank statement.
         </p>
       </div>
-      {error && <p className="px-5 py-2 text-sm text-red-600">{error}</p>}
+      {error && <p className="px-5 py-2 text-sm text-[#C13B73]">{error}</p>}
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase text-[#86817A]">
+        <thead className="label-mini">
           <tr>
             <th className="px-5 py-2">Reference</th>
             <th className="px-5 py-2">Method</th>
@@ -69,14 +69,14 @@ export default function AdminTopUps() {
                   value={refs[t.id] ?? ""}
                   onChange={(e) => setRefs({ ...refs, [t.id]: e.target.value })}
                   placeholder="statement ref"
-                  className="w-36 rounded-lg border border-[#DAD6CF] px-2 py-1"
+                  className="w-36 input px-2 py-1"
                 />
               </td>
               <td className="px-5 py-2 text-right">
                 <button
                   onClick={() => confirm.mutate(t)}
                   disabled={t.provider !== "manual_eft"}
-                  className="rounded-full bg-[#0A0A0A] px-3 py-1 text-xs text-white disabled:opacity-30"
+                  className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-30"
                 >
                   Confirm
                 </button>
@@ -91,7 +91,7 @@ export default function AdminTopUps() {
           ))}
           {pending.data?.items.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-5 py-8 text-center text-[#86817A]">
+              <td colSpan={6} className="table-empty">
                 Nothing pending.
               </td>
             </tr>
