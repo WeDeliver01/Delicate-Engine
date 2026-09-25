@@ -34,6 +34,7 @@ const NAV: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "/admin/accounts", label: "Accounts" },
       { href: "/admin/catalog", label: "Pricing" },
       { href: "/admin/notifications", label: "Notifications" },
+      { href: "/admin/loyalty", label: "Rewards" },
       { href: "/admin/settings", label: "Settings" },
     ],
   },

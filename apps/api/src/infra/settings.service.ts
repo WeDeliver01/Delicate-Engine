@@ -5,6 +5,7 @@ import {
   Address,
   Bps,
   CompanyTaxProfile,
+  LoyaltyProgram,
   SettlementRules,
   SlotPolicy,
   TreasuryPolicy,
@@ -26,6 +27,7 @@ const SCHEMAS = {
   "settlement.rules": SettlementRules,
   "treasury.policy": TreasuryPolicy,
   "company.tax_profile": CompanyTaxProfile,
+  "loyalty.program": LoyaltyProgram,
 } satisfies Record<SettingKey, z.ZodTypeAny>;
 
 type Schemas = typeof SCHEMAS;

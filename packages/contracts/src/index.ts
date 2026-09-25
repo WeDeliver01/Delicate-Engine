@@ -20,4 +20,5 @@ export * from "./dto/billing.js";
 export * from "./dto/settings.js";
 export * from "./dto/notifications.js";
 export * from "./dto/address-book.js";
+export * from "./dto/loyalty.js";
 export * from "./allocation.js";

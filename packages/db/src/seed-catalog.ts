@@ -79,6 +79,22 @@ export const CATALOG_SEED = {
       phone: "0800 000 000",
       bank: { bankName: "", accountName: "", accountNumber: "", branchCode: "" },
     },
+    /**
+     * Starter cashback, switched OFF. The tiers are ready to go — 1% for everyone rising to 3%
+     * for the customers who send the most, earned on the charge excluding VAT — but cashback is
+     * a real cost and the rate is the owner's decision, so nothing pays out until someone turns
+     * it on in the console.
+     */
+    "loyalty.program": {
+      enabled: false,
+      windowDays: 90,
+      minAwardCents: 100,
+      tiers: [
+        { code: "bronze", name: "Bronze", minSpendCents: 0, cashbackBps: 100 },
+        { code: "silver", name: "Silver", minSpendCents: 500_000, cashbackBps: 200 },
+        { code: "gold", name: "Gold", minSpendCents: 2_000_000, cashbackBps: 300 },
+      ],
+    },
     "treasury.policy": {
       urgencyWindowDays: 10,
       urgencyMaxMultiplierBps: 25_000,

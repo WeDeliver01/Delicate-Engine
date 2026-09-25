@@ -13,6 +13,7 @@ const NAV = [
   { href: "/portal/wallet", label: "Wallet" },
   { href: "/portal/addresses", label: "Addresses" },
   { href: "/portal/invoices", label: "Invoices" },
+  { href: "/portal/rewards", label: "Rewards" },
   { href: "/portal/notifications", label: "Alerts" },
 ];
 

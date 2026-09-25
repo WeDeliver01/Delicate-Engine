@@ -11,3 +11,4 @@ export * from "./payments.js";
 export * from "./billing.js";
 export * from "./notifications.js";
 export * from "./address-book.js";
+export * from "./loyalty.js";
