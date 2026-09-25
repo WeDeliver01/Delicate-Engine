@@ -19,6 +19,7 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "saved_addresses",
   "notifications",
   "notification_preferences",
   "notification_templates",

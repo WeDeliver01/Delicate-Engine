@@ -69,6 +69,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             <Link href="/portal/wallet" className="text-[#6B6661] hover:text-[#0A0A0A]">
               Wallet
             </Link>
+            <Link href="/portal/addresses" className="text-[#6B6661] hover:text-[#0A0A0A]">
+              Addresses
+            </Link>
             <Link href="/portal/invoices" className="text-[#6B6661] hover:text-[#0A0A0A]">
               Invoices
             </Link>
