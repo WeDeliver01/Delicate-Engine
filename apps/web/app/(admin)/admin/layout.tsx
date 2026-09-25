@@ -18,6 +18,7 @@ const NAV = [
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/billing", label: "Billing" },
   { href: "/admin/ledger", label: "Ledger" },
+  { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/outbox", label: "Outbox" },
   { href: "/admin/audit", label: "Audit log" },
   { href: "/admin/settings", label: "Settings" },

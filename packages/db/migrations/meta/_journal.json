@@ -71,6 +71,13 @@
       "when": 1790273160042,
       "tag": "0009_wild_kinsey_walden",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790308835257,
+      "tag": "0010_mighty_jetstream",
+      "breakpoints": true
     }
   ]
 }

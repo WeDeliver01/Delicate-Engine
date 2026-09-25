@@ -19,6 +19,9 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "notifications",
+  "notification_preferences",
+  "notification_templates",
   "invoice_payments",
   "invoice_lines",
   "invoices",

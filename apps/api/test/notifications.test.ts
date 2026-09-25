@@ -1,0 +1,373 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { accounts, notifications as notificationsTable, users } from "@delicate/db";
+import type {
+  Booking,
+  CatalogResponse,
+  Driver,
+  Notification,
+  NotificationChannelStatus,
+  NotificationPreferences,
+  NotificationTemplate,
+  Quote,
+} from "@delicate/contracts";
+import { createHarness, USERS, type Harness } from "./harness.js";
+import { WalletService } from "../src/modules/wallet/wallet.service.js";
+import { NotificationService } from "../src/modules/notifications/notification.service.js";
+import { Clock } from "../src/infra/clock.js";
+
+const MENLYN = { lat: -25.7826, lng: 28.2755 };
+const CENTURION = { lat: -25.8603, lng: 28.1894 };
+const addr = (formatted: string, location: { lat: number; lng: number }, suburb: string) => ({
+  formatted,
+  line1: null,
+  suburb,
+  city: "Pretoria",
+  postalCode: null,
+  country: "ZA",
+  location,
+  placeId: null,
+});
+const PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+const DRIVER_USER = {
+  id: "10000000-0000-4000-8000-000000000024",
+  email: "kagiso@delicatecourier.local",
+};
+
+describe("notifications", () => {
+  let h: Harness;
+  let wallet: WalletService;
+  let service: NotificationService;
+  let owner: string;
+  let staff: string;
+  let driverToken: string;
+  let accountId: string;
+  let cakeId: string;
+  let driver: Driver;
+  const TODAY = "2026-09-23";
+
+  beforeAll(async () => {
+    h = await createHarness();
+    wallet = h.app.get(WalletService);
+    service = h.app.get(NotificationService);
+    h.app.get(Clock).now = () => new Date("2026-09-23T07:00:00Z");
+    owner = await h.tokenFor(USERS.alice);
+    staff = await h.tokenFor(USERS.admin);
+    driverToken = await h.tokenFor(DRIVER_USER);
+  });
+  afterAll(() => h.close());
+
+  beforeEach(async () => {
+    await h.reset();
+    await service.seedTemplates();
+    await h.db.db.insert(users).values({ ...USERS.admin, platformRole: "super_admin" });
+    const acc = await h
+      .http()
+      .post("/v1/accounts")
+      .set("Authorization", `Bearer ${owner}`)
+      .send({ name: "Honey Bee", type: "business", organization: { name: "Honey Bee Bakers" } });
+    accountId = acc.body.id;
+    // an email on file, otherwise everything is suppressed for lack of an address
+    await h.db.db
+      .update(accounts)
+      .set({ billingEmail: "orders@honeybee.local" })
+      .where(eq(accounts.id, accountId));
+    await wallet.adjust(accountId, 500_000, "test funds");
+    cakeId = ((await h.http().get("/v1/public/catalog")).body as CatalogResponse).packageTypes.find(
+      (p) => p.code === "cake_single",
+    )!.id;
+
+    const veh = await h.http().post("/v1/admin/fleet/vehicles").set(asStaff()).send({
+      registration: "DC 05 GP",
+      make: "Toyota",
+      model: "Quantum",
+      fuelType: "petrol",
+      litresPer100Km: 11,
+    });
+    driver = (
+      await h.http().post("/v1/admin/fleet/drivers").set(asStaff()).send({
+        email: DRIVER_USER.email,
+        fullName: "Kagiso Molefe",
+        phone: "0843332222",
+        vehicleId: veh.body.id,
+        dailyStopCapacity: 10,
+      })
+    ).body as Driver;
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asStaff())
+      .send({ driverId: driver.id, date: TODAY });
+  });
+
+  const asOwner = () => ({ Authorization: `Bearer ${owner}`, "X-Account-Id": accountId });
+  const asStaff = () => ({ Authorization: `Bearer ${staff}` });
+  const asDriver = () => ({ Authorization: `Bearer ${driverToken}` });
+
+  const sent = async () =>
+    (await h.http().get("/v1/admin/notifications?limit=100").set(asStaff())).body as Notification[];
+  const rawRows = () => h.db.db.select().from(notificationsTable);
+
+  async function book(): Promise<Booking> {
+    const q = (
+      await h
+        .http()
+        .post("/v1/account/quotes")
+        .set(asOwner())
+        .send({
+          serviceLevelCode: "on_demand",
+          collection: {
+            address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn"),
+            contact: { name: "Baker", phone: "0821111111", email: null },
+            instructions: null,
+          },
+          drops: [
+            {
+              address: addr("12 Oak St, Centurion", CENTURION, "Centurion"),
+              recipient: { name: "Jane", phone: "0821234567", email: null },
+              instructions: null,
+              parcels: [
+                { packageTypeId: cakeId, quantity: 1, weightKg: null, description: "Cake" },
+              ],
+            },
+          ],
+          options: {},
+        })
+    ).body as Quote;
+    const res = await h.http().post("/v1/account/bookings").set(asOwner()).send({ quoteId: q.id });
+    expect(res.status).toBe(201);
+    return res.body as Booking;
+  }
+
+  it("writes a message the moment a booking is confirmed, rendered from the template", async () => {
+    const b = await book();
+    expect(await rawRows()).toHaveLength(0); // nothing until the worker delivers the event
+    await h.dispatcher.tick();
+
+    const rows = await sent();
+    const confirm = rows.find((n) => n.kind === "booking.confirmed")!;
+    expect(confirm).toBeTruthy();
+    expect(confirm.channel).toBe("email");
+    expect(confirm.subject).toBe(`Booking ${b.reference} confirmed`);
+    expect(confirm.body).toContain(b.shipments[0]!.waybill);
+    expect(confirm.body).toContain("Honey Bee");
+    // no unrendered placeholders ever reach a customer
+    expect(confirm.body).not.toMatch(/\{\{|\}\}/);
+  });
+
+  it("redacts contact details in the admin list", async () => {
+    await book();
+    await h.dispatcher.tick();
+    const rows = await sent();
+    expect(rows[0]!.to).toBe("or••••@honeybee.local");
+    expect(rows[0]!.to).not.toContain("orders@");
+  });
+
+  it("tells the recipient their parcel is on the way, and the customer when it lands", async () => {
+    const b = await book();
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asStaff())
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/driver/shift/start")
+      .set(asDriver())
+      .send({ odometerKm: 900, fuelPct: 80, location: MENLYN })
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/driver/collect")
+      .set(asDriver())
+      .send({ bookingId: b.id, location: MENLYN })
+      .expect(201);
+    await h.dispatcher.tick();
+
+    let rows = await sent();
+    const toRecipient = rows.find((n) => n.kind === "shipment.out_for_delivery")!;
+    expect(toRecipient.audience).toBe("recipient");
+    expect(toRecipient.channel).toBe("sms");
+    expect(toRecipient.body).toContain("Jane");
+    expect(toRecipient.body).toContain("Kagiso Molefe");
+    // no SMS provider is configured yet, so it is recorded and suppressed rather than lost
+    expect(toRecipient.status).toBe("suppressed");
+    expect(toRecipient.detail).toContain("No sms provider is configured");
+
+    await h
+      .http()
+      .post("/v1/driver/deliver")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, receivedBy: "Jane", photoDataUrl: PNG, actualKm: 14 })
+      .expect(201);
+    await h.dispatcher.tick();
+
+    rows = await sent();
+    const delivered = rows.filter((n) => n.kind === "shipment.delivered");
+    expect(delivered.map((d) => d.audience).sort()).toEqual(["customer", "recipient"]);
+    expect(delivered.find((d) => d.audience === "customer")!.body).toContain("signed for by Jane");
+  });
+
+  it("never messages the same person twice for the same event", async () => {
+    await book();
+    await h.dispatcher.tick();
+    const first = (await rawRows()).length;
+    await h.dispatcher.tick();
+    await h.dispatcher.tick();
+    expect((await rawRows()).length).toBe(first);
+  });
+
+  it("suppresses with a reason instead of sending, when there is nowhere to send", async () => {
+    await h.db.db.update(accounts).set({ billingEmail: null }).where(eq(accounts.id, accountId));
+    await book();
+    await h.dispatcher.tick();
+    const confirm = (await sent()).find((n) => n.kind === "booking.confirmed")!;
+    expect(confirm.status).toBe("suppressed");
+    expect(confirm.detail).toBe("No email address on file for this recipient.");
+  });
+
+  it("honours an account that has opted out", async () => {
+    await h
+      .http()
+      .put("/v1/account/notifications/preferences")
+      .set(asOwner())
+      .send({ email: false })
+      .expect(200);
+    const prefs = (await h.http().get("/v1/account/notifications/preferences").set(asOwner()))
+      .body as NotificationPreferences;
+    expect(prefs.email).toBe(false);
+
+    await book();
+    await h.dispatcher.tick();
+    const confirm = (await sent()).find((n) => n.kind === "booking.confirmed")!;
+    expect(confirm.status).toBe("suppressed");
+    expect(confirm.detail).toBe("The account has opted out of email.");
+  });
+
+  it("does not contact recipients when the account asks us not to", async () => {
+    await h
+      .http()
+      .put("/v1/account/notifications/preferences")
+      .set(asOwner())
+      .send({ notifyRecipients: false })
+      .expect(200);
+    const b = await book();
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asStaff());
+    await h
+      .http()
+      .post("/v1/driver/shift/start")
+      .set(asDriver())
+      .send({ odometerKm: 900, fuelPct: 80, location: MENLYN });
+    await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id });
+    await h.dispatcher.tick();
+
+    const toRecipient = (await sent()).find((n) => n.kind === "shipment.out_for_delivery")!;
+    expect(toRecipient.status).toBe("suppressed");
+    expect(toRecipient.detail).toBe("The account has asked us not to contact their recipients.");
+  });
+
+  it("reports which channels are actually wired up", async () => {
+    await book();
+    await h.dispatcher.tick();
+    const channels = (await h.http().get("/v1/admin/notifications/channels").set(asStaff()))
+      .body as NotificationChannelStatus[];
+    const email = channels.find((c) => c.channel === "email")!;
+    const sms = channels.find((c) => c.channel === "sms")!;
+
+    expect(email.provider).toBe("smtp");
+    expect(email.configured).toBe(false); // no SMTP_HOST in tests
+    expect(email.detail).toContain("SMTP_HOST");
+    expect(sms.configured).toBe(false);
+    expect(sms.detail).toContain("Twilio");
+    expect(email.suppressed24h).toBeGreaterThan(0);
+  });
+
+  it("lets the operator rewrite the copy, and uses their words from then on", async () => {
+    const templates = (await h.http().get("/v1/admin/notifications/templates").set(asStaff()))
+      .body as NotificationTemplate[];
+    const t = templates.find((x) => x.kind === "booking.confirmed" && x.channel === "email")!;
+
+    await h
+      .http()
+      .put(`/v1/admin/notifications/templates/${t.id}`)
+      .set(asStaff())
+      .send({
+        subject: "Lekker! {{reference}} is booked",
+        body: "Hi {{customerName}}, all sorted.",
+      })
+      .expect(200);
+
+    await book();
+    await h.dispatcher.tick();
+    const confirm = (await sent()).find((n) => n.kind === "booking.confirmed")!;
+    expect(confirm.subject).toMatch(/^Lekker! BK-/);
+    expect(confirm.body).toBe("Hi Honey Bee, all sorted.");
+  });
+
+  it("stops sending a kind entirely when its template is switched off", async () => {
+    const templates = (await h.http().get("/v1/admin/notifications/templates").set(asStaff()))
+      .body as NotificationTemplate[];
+    const t = templates.find((x) => x.kind === "booking.confirmed" && x.channel === "email")!;
+    await h
+      .http()
+      .put(`/v1/admin/notifications/templates/${t.id}`)
+      .set(asStaff())
+      .send({ enabled: false })
+      .expect(200);
+
+    await book();
+    await h.dispatcher.tick();
+    const confirm = (await sent()).find((n) => n.kind === "booking.confirmed")!;
+    expect(confirm.status).toBe("suppressed");
+    expect(confirm.detail).toBe("This template is switched off.");
+  });
+
+  it("only a super admin may rewrite the copy customers receive", async () => {
+    const dispatcherToken = await h.tokenFor(USERS.carol);
+    await h.db.db
+      .insert(users)
+      .values({ ...USERS.carol, platformRole: "dispatcher" })
+      .onConflictDoUpdate({ target: users.id, set: { platformRole: "dispatcher" } });
+    const templates = (await h.http().get("/v1/admin/notifications/templates").set(asStaff()))
+      .body as NotificationTemplate[];
+    await h
+      .http()
+      .put(`/v1/admin/notifications/templates/${templates[0]!.id}`)
+      .set({ Authorization: `Bearer ${dispatcherToken}` })
+      .send({ body: "hi" })
+      .expect(403);
+  });
+
+  it("shows a customer their own message history and nobody else's", async () => {
+    await book();
+    await h.dispatcher.tick();
+    const mine = (await h.http().get("/v1/account/notifications").set(asOwner()))
+      .body as Notification[];
+    expect(mine.length).toBeGreaterThan(0);
+    expect(mine.every((n) => n.accountId === accountId)).toBe(true);
+  });
+
+  it("marks a message dead rather than retrying it forever", async () => {
+    // pretend email is configured so the dispatcher actually attempts a send
+    await book();
+    await h.dispatcher.tick();
+    const [row] = await rawRows();
+    await h.db.db
+      .update(notificationsTable)
+      .set({ status: "queued", maxAttempts: 1, detail: null })
+      .where(eq(notificationsTable.id, row!.id));
+
+    await service.dispatchDue();
+    const after = await h.db.db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.id, row!.id));
+    // no SMTP host in tests, so the attempt fails and the single attempt is exhausted
+    expect(after[0]!.status).toBe("dead");
+    expect(after[0]!.attempts).toBe(1);
+  });
+});

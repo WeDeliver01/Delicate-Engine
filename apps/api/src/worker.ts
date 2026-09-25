@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module.js";
 import { OutboxDispatcher } from "./worker/outbox-dispatcher.js";
+import { NotificationDispatcher } from "./modules/notifications/notification.dispatcher.js";
 
 /**
  * Worker entrypoint: same module graph as the API, no HTTP listener. Runs the outbox
@@ -18,8 +19,13 @@ async function main(): Promise<void> {
   await dispatcher.reclaimStale();
   dispatcher.start();
 
+  // Its own loop: reaching a mail host is slow and fails in ways the event stream must not inherit.
+  const notifications = app.get(NotificationDispatcher);
+  notifications.start();
+
   const shutdown = async (signal: string) => {
     app.get(Logger).log(`${signal} received; draining`);
+    notifications.stop();
     await dispatcher.stop();
     await app.close();
     process.exit(0);

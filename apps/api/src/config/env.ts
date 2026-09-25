@@ -53,6 +53,13 @@ const EnvSchema = z
       .optional()
       .transform((v) => v === "1" || v === "true"),
 
+    /** Outbound email over SMTP. Unset = email is recorded and suppressed, never sent. */
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    SMTP_FROM: z.string().email().optional(),
+
     /** Worker tuning */
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(25),
