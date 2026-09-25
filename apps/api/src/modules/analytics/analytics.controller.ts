@@ -6,6 +6,7 @@ import { IsoDate } from "@delicate/contracts";
 import { PlatformRoles } from "../../auth/decorators.js";
 import { Query } from "../../common/zod.js";
 import { AnalyticsService, type ExportKind } from "./analytics.service.js";
+import { ReconciliationService } from "./reconciliation.service.js";
 
 const Range = z.object({ from: IsoDate.optional(), to: IsoDate.optional() });
 const ExportQuery = Range.extend({
@@ -18,7 +19,19 @@ const ExportQuery = Range.extend({
 @Controller("v1/admin/analytics")
 @PlatformRoles("super_admin", "finance", "dispatcher")
 export class AdminAnalyticsController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly reconciliation: ReconciliationService,
+  ) {}
+
+  /**
+   * Prove the invariants against the data rather than against the code that wrote it.
+   * Read-only on purpose: a report that quietly repaired what it found would hide the bug.
+   */
+  @Get("reconciliation")
+  reconcile() {
+    return this.reconciliation.run();
+  }
 
   @Get("overview")
   overview(@Query(Range) q: { from?: string; to?: string }) {

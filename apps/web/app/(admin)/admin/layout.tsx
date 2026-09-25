@@ -27,6 +27,7 @@ const NAV: { group: string; items: { href: string; label: string }[] }[] = [
       { href: "/admin/top-ups", label: "Top-ups" },
       { href: "/admin/ledger", label: "Ledger" },
       { href: "/admin/reports", label: "Reports" },
+      { href: "/admin/reconciliation", label: "Reconciliation" },
     ],
   },
   {
