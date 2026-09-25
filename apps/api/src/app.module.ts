@@ -22,6 +22,7 @@ import { BillingModule } from "./modules/billing/billing.module.js";
 import { NotificationModule } from "./modules/notifications/notification.module.js";
 import { AddressBookModule } from "./modules/address-book/address-book.module.js";
 import { LoyaltyModule } from "./modules/loyalty/loyalty.module.js";
+import { AnalyticsModule } from "./modules/analytics/analytics.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -73,6 +74,7 @@ export class AppModule {
         NotificationModule,
         AddressBookModule,
         LoyaltyModule,
+        AnalyticsModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],

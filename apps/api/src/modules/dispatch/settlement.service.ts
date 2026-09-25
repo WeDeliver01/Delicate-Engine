@@ -8,6 +8,7 @@ import { SettingsService } from "../../infra/settings.service.js";
 import { AppError } from "../../common/errors.js";
 import { WalletService } from "../wallet/wallet.service.js";
 import { LedgerService, cr, dr } from "../ledger/ledger.service.js";
+import { Clock } from "../../infra/clock.js";
 
 export interface SettleInput {
   shipmentId: string;
@@ -48,6 +49,7 @@ export class SettlementService {
     private readonly settings: SettingsService,
     private readonly wallet: WalletService,
     private readonly ledger: LedgerService,
+    private readonly clock: Clock,
   ) {}
 
   async settle(tx: DbExecutor, input: SettleInput): Promise<Settlement> {
@@ -107,12 +109,14 @@ export class SettlementService {
         ),
       );
     }
+    const settledAt = this.clock.now();
     const journal = await this.ledger.post(tx, {
       kind: "settlement",
       refType: "shipment",
       refId: s.id,
       description: `Settle ${s.waybill} (${input.outcome})`,
       idempotencyKey: `settlement:${s.id}`,
+      occurredAt: settledAt,
       lines,
     });
 
@@ -132,6 +136,7 @@ export class SettlementService {
         plannedKm: String(input.plannedKm),
         actualKm: String(actualKm),
         journalId: journal.id,
+        settledAt,
         rulesSnapshot: { rules, share, outcome: input.outcome } satisfies {
           rules: SettlementRules;
           share: unknown;
