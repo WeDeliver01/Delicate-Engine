@@ -52,9 +52,10 @@ Seed identities: `admin`, `dispatch`, `finance` (staff) and `owner`, `staff` (Ho
 
 ## Quality gates
 
-Drive the whole chain against a running engine (quote → book → assign → deliver → settle →
-earmark the margin → propose a payout → execute it by hand → invoice), asserting the money at
-every step and that nothing pays itself:
+Drive the whole chain against a running engine — quote → book → assign → deliver → settle →
+earmark the margin → propose a payout → execute it by hand → invoice → notify → report →
+reconcile — asserting the money at every step, that nothing pays itself, and that every
+invariant still holds against the data:
 
 ```bash
 node scripts/verify.mjs

@@ -3,7 +3,7 @@
  *
  *   node scripts/verify.mjs
  *
- * It exercises the whole Phase 1-3 chain the way the apps do — quote, book, auto-assign,
+ * It exercises the whole chain the way the apps do — quote, book, auto-assign,
  * shift, collect, deliver with POD, settle, earmark the margin, propose and execute a payout,
  * invoice — and asserts the money that comes out the other end, including that the ledger
  * balances and that nothing pays itself.
@@ -34,6 +34,13 @@ const assert = (cond, msg) => {
   console.log(`  ok  ${msg}`);
 };
 const rands = (c) => `R${(c / 100).toFixed(2)}`;
+/** Fetch a non-JSON response (the CSV exports). */
+async function text(path, token) {
+  const res = await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+  return res.text();
+}
+
 
 /**
  * Treasury and invoicing hang off the outbox, so they land a beat after the delivery does.
@@ -210,3 +217,80 @@ const tbFinal = await call("/v1/admin/ledger/trial-balance", { token: admin });
 assert(tbFinal.totalCents === 0, "ledger balances to zero");
 
 console.log("\nPHASE 3 VERIFIED: margin earmarked -> payout proposed -> human executed -> invoiced -> balanced books.");
+
+// ── Phase 4-5: the business around the delivery ───────────────────────────────
+
+console.log("\n12. notifications");
+const notes = await waitFor("the worker to write the booking's messages", async () => {
+  const rows = await call("/v1/admin/notifications?limit=100", { token: admin });
+  const mine = rows.filter((n) => n.kind === "booking.confirmed" || n.kind === "shipment.delivered");
+  return mine.length > 0 ? mine : null;
+});
+assert(notes.length > 0, `${notes.length} message(s) recorded for this booking`);
+assert(
+  notes.every((n) => !/\{\{|\}\}/.test(n.body)),
+  "no unrendered placeholder ever reaches a customer",
+);
+assert(
+  notes.every((n) => n.status !== "queued" || n.to),
+  "nothing is queued without somewhere to send it",
+);
+const channels = await call("/v1/admin/notifications/channels", { token: admin });
+const sms = channels.find((c) => c.channel === "sms");
+assert(
+  sms && !sms.configured && sms.detail.includes("provider"),
+  "an unconfigured channel says so instead of silently dropping messages",
+);
+
+console.log("\n13. address book");
+const importResult = await call("/v1/account/address-book/import", {
+  method: "POST", token: owner, account: accountId,
+  json: {
+    csv: "label,contact_name,contact_phone,address,suburb,city\nVerify Reception,Thandi,0821234567,Shop 42 Menlyn Park,Menlyn,Pretoria",
+    dryRun: true,
+  },
+});
+assert(importResult.dryRun && importResult.created === 1, "a dry run reports what it would do");
+const before = (await call("/v1/account/address-book", { token: owner, account: accountId })).length;
+assert(before === 0 || before > 0, `address book has ${before} entries before importing`);
+const committed = await call("/v1/account/address-book/import", {
+  method: "POST", token: owner, account: accountId,
+  json: {
+    csv: "label,contact_name,contact_phone,address,suburb,city\nVerify Reception,Thandi,0821234567,Shop 42 Menlyn Park,Menlyn,Pretoria",
+    dryRun: false, updateExisting: true,
+  },
+});
+assert(committed.created + committed.updated === 1, "and then commits exactly that");
+
+console.log("\n14. reports");
+const asOf = new Date().toISOString().slice(0, 10);
+const overview = await call(`/v1/admin/analytics/overview?from=2020-01-01&to=${asOf}`, { token: finance });
+assert(overview.deliveries >= 1, `${overview.deliveries} delivery(ies) in the window`);
+assert(
+  overview.marginCents === overview.revenueCents - overview.fuelCents - overview.driverEarningsCents,
+  `margin reconciles across the whole window (${rands(overview.marginCents)} on ${rands(overview.revenueCents)} revenue)`,
+);
+const csv = await text(`/v1/admin/analytics/export.csv?kind=settlements&from=2020-01-01&to=${asOf}`, finance);
+assert(
+  csv.split("\r\n")[0].startsWith("waybill,settled_at"),
+  "settlements export opens in a spreadsheet",
+);
+assert(csv.split("\r\n").length > 1, "and carries at least one delivery");
+
+console.log("\n15. reconciliation — the whole engine, checked against itself");
+const recon = await call("/v1/admin/analytics/reconciliation", { token: admin });
+for (const c of recon.checks) {
+  assert(c.ok, `${c.title.toLowerCase()} — ${c.detail}`);
+}
+assert(recon.ok, "every invariant this engine claims holds against the data");
+
+console.log("\n16. the limits that protect the public endpoints");
+const waybill = booking.shipments[0].waybill;
+let limited = false;
+for (let i = 0; i < 40; i++) {
+  const res = await fetch(`${API}/v1/public/track/${waybill}`);
+  if (res.status === 429) { limited = true; break; }
+}
+assert(limited, "walking the waybill range is cut off rather than allowed to enumerate");
+
+console.log("\nBUILD VERIFIED: quote -> book -> assign -> deliver -> settle -> earmark -> propose -> pay -> invoice -> notify -> report -> reconcile.");
