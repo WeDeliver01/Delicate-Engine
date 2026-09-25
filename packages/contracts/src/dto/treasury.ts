@@ -42,8 +42,10 @@ export const AllocationWallet = z.object({
 });
 export type AllocationWallet = z.infer<typeof AllocationWallet>;
 
+/** The slug is the URL, not the body: two sources for one identifier can only disagree. */
 export const UpsertWalletRequest = AllocationWallet.omit({
   id: true,
+  slug: true,
   balanceCents: true,
   isRetainedEarnings: true,
 }).partial({

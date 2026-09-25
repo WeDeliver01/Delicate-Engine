@@ -20,6 +20,7 @@ const NAV = [
   { href: "/admin/ledger", label: "Ledger" },
   { href: "/admin/outbox", label: "Outbox" },
   { href: "/admin/audit", label: "Audit log" },
+  { href: "/admin/settings", label: "Settings" },
 ];
 
 /** Ops / finance console shell. Staff platform roles only; customers are bounced to the portal. */

@@ -17,4 +17,5 @@ export * from "./dto/ledger.js";
 export * from "./dto/treasury.js";
 export * from "./dto/payments.js";
 export * from "./dto/billing.js";
+export * from "./dto/settings.js";
 export * from "./allocation.js";

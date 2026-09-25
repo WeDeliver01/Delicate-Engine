@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AllocationWallet,
@@ -179,7 +179,13 @@ export default function AdminTreasury() {
         />
       )}
 
-      {wallets.data && <WalletTable wallets={wallets.data} />}
+      {wallets.data && (
+        <WalletEditor
+          wallets={wallets.data}
+          onDone={() => void qc.invalidateQueries({ queryKey: ["admin", "treasury"] })}
+          onError={onError}
+        />
+      )}
     </div>
   );
 }
@@ -319,49 +325,352 @@ function Field({
   );
 }
 
-function WalletTable({ wallets }: { wallets: AllocationWallet[] }) {
+/**
+ * The bills themselves. This is where the seeded placeholders get replaced with what the
+ * business actually pays — every allocation decision follows from these numbers, so they matter
+ * more than the rate card does.
+ */
+function WalletEditor({
+  wallets,
+  onDone,
+  onError,
+}: {
+  wallets: AllocationWallet[];
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const bills = wallets.filter((w) => w.category === "operating_expense");
+  const targets = wallets.filter((w) => w.category !== "operating_expense");
+
   return (
     <section className="rounded-xl border border-[#ECEAE6] bg-white">
-      <h2 className="border-b border-[#ECEAE6] px-5 py-4 font-semibold">Wallets</h2>
+      <div className="flex items-center justify-between border-b border-[#ECEAE6] px-5 py-4">
+        <div>
+          <h2 className="font-semibold">Monthly bills &amp; reserves</h2>
+          <p className="text-xs text-[#86817A]">
+            Earmarks, not bank accounts — the ledger remains the book of account.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            setAdding(!adding);
+            setEditing(null);
+          }}
+          className="rounded-full bg-[#0A0A0A] px-4 py-1.5 text-sm text-white hover:bg-[#E84A8A]"
+        >
+          {adding ? "Cancel" : "Add a bill"}
+        </button>
+      </div>
+
+      {adding && (
+        <div className="border-b border-[#ECEAE6] bg-[#FAFAF9] p-5">
+          <WalletForm
+            onDone={() => {
+              setAdding(false);
+              onDone();
+            }}
+            onError={onError}
+          />
+        </div>
+      )}
+
+      <WalletGroupRows
+        title="Monthly bills"
+        rows={bills}
+        editing={editing}
+        setEditing={setEditing}
+        onDone={onDone}
+        onError={onError}
+      />
+      <WalletGroupRows
+        title="Reserves & capital"
+        rows={targets}
+        editing={editing}
+        setEditing={setEditing}
+        onDone={onDone}
+        onError={onError}
+      />
+    </section>
+  );
+}
+
+function WalletGroupRows({
+  title,
+  rows,
+  editing,
+  setEditing,
+  onDone,
+  onError,
+}: {
+  title: string;
+  rows: AllocationWallet[];
+  editing: string | null;
+  setEditing: (v: string | null) => void;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h3 className="px-5 pt-4 text-xs uppercase text-[#86817A]">{title}</h3>
       <table className="w-full text-left text-sm">
         <thead className="text-xs uppercase text-[#86817A]">
           <tr>
-            <th className="px-5 py-2">Wallet</th>
-            <th className="px-5 py-2">Category</th>
-            <th className="px-5 py-2">Bill / target</th>
+            <th className="px-5 py-2">Name</th>
+            <th className="px-5 py-2">Paid to</th>
+            <th className="px-5 py-2 text-right">Amount</th>
             <th className="px-5 py-2">Due day</th>
-            <th className="px-5 py-2 text-right">Balance</th>
+            <th className="px-5 py-2 text-right">Saved</th>
+            <th className="px-5 py-2"></th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[#F0EDE9]">
-          {wallets.map((w) => (
-            <tr key={w.id}>
-              <td className="px-5 py-2">
-                {w.name}
-                {w.isRetainedEarnings && (
-                  <span className="ml-2 rounded-full bg-[#F0EDE9] px-2 py-0.5 text-xs text-[#6B6661]">
-                    sink
-                  </span>
-                )}
-                {!w.active && <span className="ml-2 text-xs text-[#86817A]">(inactive)</span>}
-              </td>
-              <td className="px-5 py-2 text-[#86817A]">{w.category.replace(/_/g, " ")}</td>
-              <td className="px-5 py-2 font-mono">
-                {w.obligation
-                  ? rands(w.obligation.monthlyAmountCents)
-                  : w.monthlyTargetCents !== null
-                    ? rands(w.monthlyTargetCents)
-                    : "—"}
-              </td>
-              <td className="px-5 py-2">{w.obligation?.dueDay ?? "—"}</td>
-              <td className="px-5 py-2 text-right font-mono">{rands(w.balanceCents)}</td>
-            </tr>
+          {rows.map((w) => (
+            <Fragment key={w.id}>
+              <tr className={w.active ? "" : "opacity-50"}>
+                <td className="px-5 py-2">
+                  {w.name}
+                  {w.isRetainedEarnings && (
+                    <span className="ml-2 rounded-full bg-[#F0EDE9] px-2 py-0.5 text-xs text-[#6B6661]">
+                      sink
+                    </span>
+                  )}
+                  {!w.active && <span className="ml-2 text-xs">(inactive)</span>}
+                  <div className="font-mono text-xs text-[#86817A]">{w.slug}</div>
+                </td>
+                <td className="px-5 py-2 text-[#86817A]">{w.obligation?.vendor || "—"}</td>
+                <td className="px-5 py-2 text-right font-mono">
+                  {w.obligation
+                    ? rands(w.obligation.monthlyAmountCents)
+                    : w.monthlyTargetCents !== null
+                      ? rands(w.monthlyTargetCents)
+                      : "unbounded"}
+                </td>
+                <td className="px-5 py-2">{w.obligation?.dueDay ?? "—"}</td>
+                <td className="px-5 py-2 text-right font-mono">{rands(w.balanceCents)}</td>
+                <td className="px-5 py-2 text-right">
+                  {!w.isRetainedEarnings && (
+                    <button
+                      onClick={() => setEditing(editing === w.id ? null : w.id)}
+                      className="text-xs text-[#E84A8A] hover:underline"
+                    >
+                      {editing === w.id ? "close" : "edit"}
+                    </button>
+                  )}
+                </td>
+              </tr>
+              {editing === w.id && (
+                <tr>
+                  <td colSpan={6} className="bg-[#FAFAF9] p-5">
+                    <WalletForm
+                      wallet={w}
+                      onDone={() => {
+                        setEditing(null);
+                        onDone();
+                      }}
+                      onError={onError}
+                    />
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
-      <p className="border-t border-[#ECEAE6] px-5 py-3 text-xs text-[#86817A]">
-        These balances are earmarks, not bank accounts. The ledger remains the book of account.
-      </p>
-    </section>
+    </>
   );
+}
+
+function WalletForm({
+  wallet,
+  onDone,
+  onError,
+}: {
+  wallet?: AllocationWallet;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [slug, setSlug] = useState(wallet?.slug ?? "");
+  const [name, setName] = useState(wallet?.name ?? "");
+  const [category, setCategory] = useState<AllocationWallet["category"]>(
+    wallet?.category ?? "operating_expense",
+  );
+  const [priority, setPriority] = useState(wallet?.priority ?? 10);
+  const [active, setActive] = useState(wallet?.active ?? true);
+  const [vendor, setVendor] = useState(wallet?.obligation?.vendor ?? "");
+  const [amount, setAmount] = useState(
+    wallet?.obligation ? String(wallet.obligation.monthlyAmountCents / 100) : "",
+  );
+  const [dueDay, setDueDay] = useState(wallet?.obligation?.dueDay ?? 1);
+  const [target, setTarget] = useState(
+    wallet?.monthlyTargetCents !== null && wallet?.monthlyTargetCents !== undefined
+      ? String(wallet.monthlyTargetCents / 100)
+      : "",
+  );
+
+  const isBill = category === "operating_expense";
+  const cents = (v: string) => (v.trim() === "" ? null : Math.round(Number(v) * 100));
+
+  const save = useMutation({
+    mutationFn: () =>
+      api(`/v1/admin/treasury/wallets/${slug.trim()}`, {
+        method: "PUT",
+        json: {
+          name: name.trim(),
+          category,
+          priority,
+          active,
+          obligation: isBill
+            ? { vendor: vendor.trim(), monthlyAmountCents: cents(amount) ?? 0, dueDay }
+            : null,
+          monthlyTargetCents: isBill ? null : cents(target),
+        },
+      }),
+    onSuccess: onDone,
+    onError,
+  });
+
+  const valid =
+    /^[a-z0-9-]{2,60}$/.test(slug.trim()) &&
+    name.trim().length >= 2 &&
+    (!isBill || (cents(amount) ?? 0) > 0);
+
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Labelled label="Name">
+          <input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!wallet && !slug) setSlug(slugify(e.target.value));
+            }}
+            placeholder="Premises rent"
+            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+          />
+        </Labelled>
+        <Labelled label="Slug" hint={wallet ? "cannot be changed" : "lowercase, dashes"}>
+          <input
+            value={slug}
+            disabled={!!wallet}
+            onChange={(e) => setSlug(slugify(e.target.value))}
+            placeholder="premises"
+            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono disabled:bg-[#F0EDE9]"
+          />
+        </Labelled>
+        <Labelled label="Kind">
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as AllocationWallet["category"])}
+            className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+          >
+            <option value="operating_expense">Monthly bill</option>
+            <option value="reserve">Reserve</option>
+            <option value="capital">Capital</option>
+          </select>
+        </Labelled>
+      </div>
+
+      {isBill ? (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Labelled label="Paid to">
+            <input
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+              placeholder="Landlord"
+              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2"
+            />
+          </Labelled>
+          <Labelled label="Amount per month (rands)">
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="9500"
+              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+            />
+          </Labelled>
+          <Labelled label="Debit order day" hint="1–28; urgency climbs as it approaches">
+            <input
+              type="number"
+              min={1}
+              max={28}
+              value={dueDay}
+              onChange={(e) => setDueDay(Number(e.target.value))}
+              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+            />
+          </Labelled>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Labelled label="Monthly target (rands)" hint="blank = unbounded">
+            <input
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="15000"
+              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+            />
+          </Labelled>
+          <Labelled label="Priority" hint="lower fills first">
+            <input
+              type="number"
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+              className="w-full rounded-lg border border-[#DAD6CF] px-3 py-2 font-mono"
+            />
+          </Labelled>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={active}
+            onChange={(e) => setActive(e.target.checked)}
+            className="h-4 w-4"
+          />
+          Active
+          <span className="text-xs text-[#86817A]">
+            (an inactive wallet keeps its balance and history, it just stops receiving margin)
+          </span>
+        </label>
+        <button
+          onClick={() => save.mutate()}
+          disabled={!valid || save.isPending}
+          className="ml-auto rounded-full bg-[#0A0A0A] px-5 py-2 text-white hover:bg-[#E84A8A] disabled:opacity-40"
+        >
+          {wallet ? "Save changes" : "Add bill"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Labelled({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs uppercase text-[#86817A]">{label}</span>
+      <div className="mt-1">{children}</div>
+      {hint && <span className="mt-1 block text-xs text-[#86817A]">{hint}</span>}
+    </label>
+  );
+}
+
+function slugify(v: string): string {
+  return v
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
 }
