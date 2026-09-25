@@ -53,6 +53,13 @@ const EnvSchema = z
       .optional()
       .transform((v) => v === "1" || v === "true"),
 
+    /** Yoco online checkout. Both required: the wallet is credited only from a verified webhook. */
+    YOCO_SECRET_KEY: z.string().min(10).optional(),
+    YOCO_WEBHOOK_SECRET: z.string().min(10).optional(),
+
+    /** BobPay. Present for completeness; the integration needs its API documentation first. */
+    BOBPAY_MERCHANT_ID: z.string().optional(),
+
     /** Outbound email over SMTP. Unset = email is recorded and suppressed, never sent. */
     SMTP_HOST: z.string().min(1).optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(587),

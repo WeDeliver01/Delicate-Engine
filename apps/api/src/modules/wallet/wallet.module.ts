@@ -10,6 +10,8 @@ import {
 } from "./wallet.controller.js";
 import { PAYMENT_PROVIDERS } from "./payments/payment.provider.js";
 import { ManualEftProvider } from "./payments/manual-eft.provider.js";
+import { YocoProvider } from "./payments/yoco.provider.js";
+import { BobPayProvider } from "./payments/bobpay.provider.js";
 import { PayFastProvider } from "./payments/payfast.provider.js";
 
 @Module({
@@ -23,6 +25,8 @@ import { PayFastProvider } from "./payments/payfast.provider.js";
       useFactory: (env: Env, settings: SettingsService) => [
         new ManualEftProvider(env, settings),
         new PayFastProvider(env),
+        new YocoProvider(env),
+        new BobPayProvider(env),
       ],
     },
   ],

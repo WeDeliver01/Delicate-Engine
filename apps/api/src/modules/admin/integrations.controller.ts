@@ -97,6 +97,29 @@ export class AdminIntegrationsController {
         : "Set PAYFAST_MERCHANT_ID, PAYFAST_MERCHANT_KEY and PAYFAST_PASSPHRASE.",
     });
 
+    out.push({
+      key: "yoco",
+      name: "Yoco",
+      purpose: "Card top-ups that credit the wallet automatically once the webhook is verified.",
+      configured: providers.includes("yoco"),
+      using: providers.includes("yoco") ? "Live" : "Off",
+      changeIn: "environment",
+      action: providers.includes("yoco")
+        ? null
+        : "Set YOCO_SECRET_KEY and YOCO_WEBHOOK_SECRET, then make one sandbox payment to confirm the webhook signature before taking real money.",
+    });
+
+    out.push({
+      key: "bobpay",
+      name: "BobPay",
+      purpose: "A further card and EFT option for customers topping up.",
+      configured: false,
+      using: "Off",
+      changeIn: "environment",
+      action:
+        "Not built: money coming in is where a guessed API is silently dangerous, so this needs BobPay's merchant documentation and a sandbox payment before it can credit a wallet.",
+    });
+
     for (const c of channels) {
       out.push({
         key: `notify.${c.channel}`,
