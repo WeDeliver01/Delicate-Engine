@@ -1,0 +1,47 @@
+# dev.delicatecourier.co.za — one hostname for the whole environment.
+#
+# /api goes straight to the engine rather than through the web app. Two reasons: a webhook
+# signature is computed over the exact bytes sent, so the fewer things that touch the body the
+# better; and it keeps the browser on a single origin, which means no CORS and no third-party
+# cookie problems.
+#
+# Automatic HTTPS from Let's Encrypt. Port 80 must be reachable for the challenge.
+
+{$DEV_HOST} {
+	encode zstd gzip
+
+	# This is a development environment. If you want it closed to the public, generate a hash
+	# with `docker run --rm caddy:2-alpine caddy hash-password --plaintext 'your-password'`
+	# and uncomment:
+	#
+	# basic_auth {
+	# 	delicate $2a$14$replace-with-the-generated-hash
+	# }
+
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy api:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		# Belt and braces alongside the headers the API sets for itself.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# It is a dev site; keep it out of search results.
+		X-Robots-Tag "noindex, nofollow"
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+	}
+}

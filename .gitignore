@@ -7,6 +7,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# Deployment templates carry no secrets and must ship with the repo.
+!.env.*.example
 .DS_Store
 Thumbs.db
 # prior attempts are context, not part of the build

@@ -38,6 +38,81 @@ waits for the API to be healthy. Roll back by pinning `IMAGE_API`/`IMAGE_WEB` to
   touches money tables, take a manual backup in the Supabase dashboard.
 - Secrets rotate in `/opt/delicate/.env`, then `docker compose up -d` (containers restart).
 
+## The dev environment (dev.delicatecourier.co.za)
+
+One Ubuntu 24 VPS running the whole stack: Caddy, the engine, the worker, the web app and
+Postgres in a container. One hostname, one certificate; Caddy sends `/api` straight to the engine
+so webhook bodies reach it untouched, and everything else to the web app.
+
+Auth is Supabase even here. The runtime image is a production build and refuses development
+tokens: a public host with dev tokens would be a real hole, and the login your customers will use
+is the one worth testing. A free Supabase project is enough.
+
+### Once, on a new machine
+
+```bash
+# 1. Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker "$USER" && newgrp docker
+
+# 2. A 2 GB swapfile. The Next build needs headroom on a 4 GB box.
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 3. Only 22, 80 and 443 open. Postgres is not published to the host at all.
+sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw --force enable
+
+# 4. The code
+sudo mkdir -p /opt/delicate && sudo chown "$USER" /opt/delicate
+git clone <your-repo> /opt/delicate   # or rsync the working tree up
+```
+
+Point an **A record** for `dev.delicatecourier.co.za` at the VPS IP before deploying — Let's
+Encrypt validates over port 80 and will not issue a certificate until DNS resolves here.
+
+### Deploy
+
+```bash
+cd /opt/delicate
+cp infra/docker/.env.dev.example infra/docker/.env
+$EDITOR infra/docker/.env          # host, database password, Supabase keys
+infra/scripts/deploy-dev.sh --seed # first run; drop --seed afterwards
+```
+
+The script checks the machine before it starts, warns if DNS does not point here or memory is
+tight, builds both images, applies migrations on boot, waits for health, and then proves the site
+answers from the outside. It is safe to run again.
+
+### First sign-in
+
+Create your user in Supabase, sign in once at `https://dev.delicatecourier.co.za/portal` so the
+engine mirrors the account, then grant yourself a role:
+
+```bash
+docker compose -f infra/docker/compose.dev-host.yml exec -T postgres   psql -U delicate -d delicate   -c "update users set platform_role = 'super_admin' where email = 'you@example.co.za';"
+```
+
+Then open **Settings → What is switched on** and fill in the company tax identity and the real
+monthly bills. Until the VAT number is set, documents issue as plain invoices.
+
+### Afterwards
+
+```bash
+git pull && infra/scripts/deploy-dev.sh          # update
+infra/scripts/deploy-dev.sh --no-build           # just restart
+docker compose -f infra/docker/compose.dev-host.yml logs -f api worker web
+KEEP_DAYS=30 BACKUP_DIR=/srv/backups infra/scripts/backup.sh
+```
+
+After any deploy, open **Reconciliation** in the console. Every check should pass.
+
+### Going to production later
+
+Two changes: point `DATABASE_URL` at Supabase and drop the `postgres` service, and use
+`compose.prod.yml` with images from a registry rather than building on the box. Everything else
+is the same file with a different hostname.
+
 ## Backups
 
 Supabase takes daily backups (and point-in-time recovery on the paid tier), but this is an

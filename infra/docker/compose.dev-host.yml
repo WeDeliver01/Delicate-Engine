@@ -1,0 +1,117 @@
+# The dev environment on the VPS: dev.delicatecourier.co.za
+#
+# One host, one certificate, one hostname. Caddy serves the web app and routes /api straight to
+# the engine, so webhooks reach the API with their bytes untouched — a signature is computed over
+# exactly what was sent, and a proxy that re-encodes the body breaks it.
+#
+# Differences from compose.prod.yml, on purpose:
+#   - Postgres runs here in a container. Production uses Supabase; a dev environment does not
+#     need to share a database with anything, and a container is one less thing to configure.
+#   - Images are built on this machine from the checked-out source, because there is no registry
+#     yet. Swap `build:` for `image:` once CI is pushing to one.
+#
+# Auth is still Supabase. The runtime image is a production build, which refuses development
+# tokens — a public host with dev tokens would be a real hole, and testing the login your
+# customers will use is most of the point of having a dev environment.
+#
+# Deploy: infra/scripts/deploy-dev.sh   ·   Runbook: docs/RUNBOOK.md
+name: delicate-dev
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DEV_HOST: ${DEV_HOST:?set DEV_HOST, e.g. dev.delicatecourier.co.za}
+    depends_on: [api, web]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-delicate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-delicate}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published to the host: the only things that need it are on this network. Reach it for
+    # a backup with `docker compose exec postgres pg_dump`.
+    expose: ["5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-delicate} -d ${POSTGRES_DB:-delicate}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    image: delicate/engine-api:dev
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      API_PORT: 8080
+      RUN_MIGRATIONS: "1"
+    expose: ["8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  worker:
+    image: delicate/engine-api:dev
+    command: ["node", "--enable-source-maps", "dist/worker.js"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: "0"
+    depends_on:
+      api: { condition: service_healthy }
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        # Baked in at build time, because Next inlines anything NEXT_PUBLIC_ into the bundle.
+        # "/api" keeps the browser on one origin; Caddy routes it to the engine.
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    image: delicate/engine-web:dev
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8080
+    expose: ["3000"]
+    depends_on:
+      api: { condition: service_healthy }
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pgdata:
