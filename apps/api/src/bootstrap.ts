@@ -1,12 +1,14 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import express from "express";
+import helmet from "helmet";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module.js";
 import { ENV, type Env } from "./config/env.js";
 import { requestContextMiddleware } from "./common/request-context.js";
+import { rateLimitMiddleware } from "./common/rate-limit.js";
 import { APP_VERSION } from "./version.js";
 
 /**
@@ -29,7 +31,19 @@ export async function createHttpApp(overrides: Partial<Env> = {}): Promise<NestE
   app.useLogger(app.get(Logger));
   app.set("trust proxy", 1);
   app.disable("x-powered-by");
+  // This is a JSON API: it renders nothing, so the strictest headers cost nothing. No CSP,
+  // because there is no document to protect; the web app sets its own.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      hsts: env.NODE_ENV === "production" ? undefined : false,
+    }),
+  );
   app.use(requestContextMiddleware);
+  // Public endpoints only; webhooks are never limited, because a provider that gets a 429 may
+  // stop retrying and a payment we refuse to hear about is worse than one we hear twice.
+  app.use(rateLimitMiddleware());
   app.enableCors({
     origin: env.CORS_ORIGINS,
     credentials: true,

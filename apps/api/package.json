@@ -23,6 +23,7 @@
     "@nestjs/swagger": "^11.2.0",
     "drizzle-orm": "catalog:",
     "express": "^5.1.0",
+    "helmet": "^8.3.0",
     "jose": "catalog:",
     "nestjs-pino": "^4.4.0",
     "nodemailer": "^10.0.10",
