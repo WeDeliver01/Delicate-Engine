@@ -31,6 +31,10 @@ export default function AdminSettings() {
     queryKey: ["admin", "settings"],
     queryFn: () => api<SettingsBundle>("/v1/admin/settings"),
   });
+  const integrations = useQuery({
+    queryKey: ["admin", "integrations"],
+    queryFn: () => api<Integration[]>("/v1/admin/integrations"),
+  });
 
   const canWrite = me.data?.user.platformRole === "super_admin";
 
@@ -106,7 +110,60 @@ export default function AdminSettings() {
         disabled={!canWrite || settlement.isPending}
         onSave={(v) => settlement.mutate(v)}
       />
+
+      {integrations.data && <Integrations rows={integrations.data} />}
     </div>
+  );
+}
+
+interface Integration {
+  key: string;
+  name: string;
+  purpose: string;
+  configured: boolean;
+  using: string;
+  changeIn: "console" | "environment";
+  action: string | null;
+}
+
+/**
+ * Everything the engine depends on outside itself. Secrets stay in the environment — an API key
+ * typed into a web form ends up in a database backup — so this says which is which.
+ */
+function Integrations({ rows }: { rows: Integration[] }) {
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2 className="section-title">What is switched on</h2>
+          <p className="mt-0.5 text-xs text-muted">
+            Business details are changed here; credentials live in the environment, because an API
+            key typed into a web form ends up in a backup.
+          </p>
+        </div>
+        <span className={rows.every((r) => r.configured) ? "chip chip-good" : "chip chip-warn"}>
+          {rows.filter((r) => r.configured).length} of {rows.length} live
+        </span>
+      </div>
+      <ul className="divide-y divide-[#F0EDE9]">
+        {rows.map((r) => (
+          <li key={r.key} className="px-5 py-4 sm:px-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{r.name}</span>
+              <span className={r.configured ? "chip chip-good" : "chip chip-warn"}>
+                {r.configured ? "live" : "off"}
+              </span>
+              <span className="chip chip-outline">
+                {r.changeIn === "console" ? "set here" : "set in environment"}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-[#6B6661]">{r.purpose}</p>
+            <p className="mt-1 text-xs text-muted">Currently: {r.using}</p>
+            {r.action && <p className="mt-1 text-xs text-[#8A5A12]">{r.action}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

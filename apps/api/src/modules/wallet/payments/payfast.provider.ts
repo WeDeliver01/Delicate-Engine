@@ -15,7 +15,7 @@ export class PayFastProvider implements PaymentProvider {
 
   constructor(private readonly env: Env) {}
 
-  isEnabled(): boolean {
+  async isEnabled(): Promise<boolean> {
     return Boolean(
       this.env.PAYFAST_MERCHANT_ID && this.env.PAYFAST_MERCHANT_KEY && this.env.PAYFAST_PASSPHRASE,
     );

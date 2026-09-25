@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ENV, type Env } from "../../config/env.js";
+import { SettingsService } from "../../infra/settings.service.js";
 import { WalletService } from "./wallet.service.js";
 import { TopUpService } from "./topup.service.js";
 import {
@@ -18,8 +19,11 @@ import { PayFastProvider } from "./payments/payfast.provider.js";
     TopUpService,
     {
       provide: PAYMENT_PROVIDERS,
-      inject: [ENV],
-      useFactory: (env: Env) => [new ManualEftProvider(env), new PayFastProvider(env)],
+      inject: [ENV, SettingsService],
+      useFactory: (env: Env, settings: SettingsService) => [
+        new ManualEftProvider(env, settings),
+        new PayFastProvider(env),
+      ],
     },
   ],
   exports: [WalletService, TopUpService],

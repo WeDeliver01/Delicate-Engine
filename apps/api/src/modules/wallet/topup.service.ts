@@ -39,8 +39,10 @@ export class TopUpService {
     this.providers = new Map(providers.map((p) => [p.name, p]));
   }
 
-  availableProviders(): PaymentProviderName[] {
-    return [...this.providers.values()].filter((p) => p.isEnabled()).map((p) => p.name);
+  async availableProviders(): Promise<PaymentProviderName[]> {
+    const all = [...this.providers.values()];
+    const enabled = await Promise.all(all.map((p) => p.isEnabled()));
+    return all.filter((_p, i) => enabled[i]).map((p) => p.name);
   }
 
   async create(
@@ -49,7 +51,7 @@ export class TopUpService {
     input: CreateTopUpRequest,
   ): Promise<CreateTopUpResponse> {
     const provider = this.providers.get(input.provider);
-    if (!provider || !provider.isEnabled()) {
+    if (!provider || !(await provider.isEnabled())) {
       throw new AppError("provider_unavailable", `${input.provider} is not available`, 400, {
         available: this.availableProviders(),
       });

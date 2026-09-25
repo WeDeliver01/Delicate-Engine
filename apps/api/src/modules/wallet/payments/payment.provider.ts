@@ -8,8 +8,11 @@ import type { PaymentProviderName, TopUp, TopUpInstructions } from "@delicate/co
  */
 export interface PaymentProvider {
   readonly name: PaymentProviderName;
-  /** Is the provider configured well enough to accept top-ups? */
-  isEnabled(): boolean;
+  /**
+   * Is the provider configured well enough to accept top-ups? Async because a provider may be
+   * configured from the admin console rather than the environment.
+   */
+  isEnabled(): Promise<boolean>;
   initiate(
     topUp: TopUp,
     ctx: { returnUrl: string; cancelUrl: string; notifyUrl: string; payerEmail: string | null },
