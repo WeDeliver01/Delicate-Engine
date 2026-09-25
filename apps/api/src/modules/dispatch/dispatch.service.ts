@@ -11,6 +11,7 @@ import {
   Shipment,
   ShipmentStatus,
 } from "@delicate/contracts";
+import { optimiseRoute } from "@delicate/contracts";
 import {
   assignments,
   bookings,
@@ -21,6 +22,7 @@ import {
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
+import { SettingsService } from "../../infra/settings.service.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
@@ -43,6 +45,7 @@ export class DispatchService {
     private readonly assignment: AssignmentService,
     private readonly settlement: SettlementService,
     private readonly bookingsSvc: BookingService,
+    private readonly settings: SettingsService,
   ) {}
 
   /** Today's work for a driver: one collection stop per booking, then one drop per shipment. */
@@ -122,12 +125,62 @@ export class DispatchService {
         });
       }
     }
+    // Put the day in a sensible order. The stops arrive in the order the bookings happened to
+    // be made, which has nothing to do with geography; reordering them costs nothing and comes
+    // straight off fuel and hours. A parcel is never delivered before it has been collected.
+    const ordered = await this.orderStops(stops);
+
     return {
       date,
       shift: shift
         ? { id: shift.id, status: shift.status, startedAt: shift.startedAt?.toISOString() ?? null }
         : null,
-      stops,
+      stops: ordered.stops,
+      route: ordered.route,
+    };
+  }
+
+  /**
+   * Sequence a driver's stops from the depot and back. Stops with no coordinates are left in
+   * their original position rather than being guessed at — an address we could not place is a
+   * data problem to fix, not one to paper over by inventing a location.
+   */
+  private async orderStops(
+    stops: DriverStop[],
+  ): Promise<{ stops: DriverStop[]; route: DriverDay["route"] }> {
+    if (stops.length < 2) return { stops, route: null };
+    const depot = await this.settings.get("company.depot_address");
+
+    const key = (s: DriverStop) =>
+      s.kind === "collection" ? `collect:${s.bookingId}` : `drop:${s.shipmentId}`;
+    const placed = stops.filter((s) => s.address?.location);
+    if (placed.length < 2) return { stops, route: null };
+
+    const result = optimiseRoute({
+      depot: depot.location,
+      // A drop waits for its own booking's collection, when that collection is still on the run.
+      stops: placed.map((s) => ({
+        id: key(s),
+        location: s.address.location,
+        afterStopId: s.kind === "drop" ? `collect:${s.bookingId}` : null,
+      })),
+      roadFactorBps: 13_000,
+    });
+
+    const position = new Map(result.order.map((id, i) => [id, i]));
+    const sorted = [...stops].sort((a, b) => {
+      const pa = position.get(key(a));
+      const pb = position.get(key(b));
+      if (pa === undefined || pb === undefined) return 0;
+      return pa - pb;
+    });
+    return {
+      stops: sorted,
+      route: {
+        totalKm: result.totalKm,
+        originalKm: result.originalKm,
+        savedKm: result.savedKm,
+      },
     };
   }
 

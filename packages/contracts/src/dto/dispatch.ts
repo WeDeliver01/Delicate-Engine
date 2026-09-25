@@ -60,6 +60,11 @@ export const DriverDay = z.object({
     })
     .nullable(),
   stops: z.array(DriverStop),
+  /** What the ordering saved, when there were enough placed stops to order. */
+  route: z
+    .object({ totalKm: z.number(), originalKm: z.number(), savedKm: z.number() })
+    .nullable()
+    .default(null),
 });
 export type DriverDay = z.infer<typeof DriverDay>;
 

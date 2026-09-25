@@ -184,15 +184,25 @@ export default function Today() {
           </Text>
         </Card>
       ) : (
-        stops.map((stop, i) => (
-          <StopCard
-            key={`${stop.kind}-${stop.shipmentId ?? stop.bookingId}-${i}`}
-            stop={stop}
-            disabled={!open}
-            onCollect={() => collect.mutate(stop.bookingId)}
-            busy={collect.isPending}
-          />
-        ))
+        <>
+          {day.data?.route && day.data.route.savedKm > 0 && (
+            <Card>
+              <Text style={s.body}>
+                {stops.length} stops · about {day.data.route.totalKm} km, ordered to save{" "}
+                {day.data.route.savedKm} km on the run.
+              </Text>
+            </Card>
+          )}
+          {stops.map((stop, i) => (
+            <StopCard
+              key={`${stop.kind}-${stop.shipmentId ?? stop.bookingId}-${i}`}
+              stop={stop}
+              disabled={!open}
+              onCollect={() => collect.mutate(stop.bookingId)}
+              busy={collect.isPending}
+            />
+          ))}
+        </>
       )}
 
       <Link href="/earnings" asChild>
