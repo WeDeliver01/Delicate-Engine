@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets images be rebuilt without a code change — needed whenever a NEXT_PUBLIC_* repo variable
+  # changes, because those are compiled into the browser bundle rather than read at run time.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
