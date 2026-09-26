@@ -11,7 +11,7 @@ import {
   type Shipment,
   type ShipmentStatus,
 } from "@delicate/contracts";
-import { api, ApiRequestError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { StatusBadge } from "@/components/booking/status-badge";
 import { ChangeRequestForm } from "@/components/shipments/change-request-form";
 
@@ -340,8 +340,4 @@ function ChangeStatus({ status }: { status: ChangeRequest["status"] }) {
   };
   const [cls, label] = map[status];
   return <span className={`chip ${cls}`}>{label}</span>;
-}
-
-export function describeChangeError(err: unknown): string {
-  return err instanceof ApiRequestError ? err.message : String(err);
 }
