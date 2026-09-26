@@ -92,9 +92,23 @@ $EDITOR infra/docker/.env          # host, database password, Supabase keys
 infra/scripts/deploy-dev.sh --seed # first run; drop --seed afterwards
 ```
 
-The script checks the machine before it starts — Docker, a filled-in env, no placeholder
-password, DNS, free memory — builds both images, applies migrations on boot, waits for health
+The script checks the machine first — Docker, a filled-in env, no placeholder password, DNS,
+free memory — then **pulls the images CI built**, applies migrations on boot, waits for health
 and proves the engine answers. It is safe to run again.
+
+It pulls rather than builds on purpose. This box has two cores and runs live services; compiling
+a Next.js app on it would starve them for minutes, while a pull takes seconds. `--build` still
+compiles locally if you ever need it.
+
+When the repository is made private the images become private with it, and the box will need a
+token once:
+
+```bash
+echo <github-token-with-read:packages> | docker login ghcr.io -u <username> --password-stdin
+```
+
+To pin a deploy to a known-good build rather than `latest`, set `IMAGE_TAG` in `.env` to a commit
+SHA. Rolling back is then the same command with the previous SHA.
 
 Then put nginx in front, once:
 

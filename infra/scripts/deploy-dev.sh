@@ -4,10 +4,13 @@
 #
 # Run it on the VPS, from the repository root:
 #
-#   infra/scripts/deploy-dev.sh            # build, migrate, start, check
+#   infra/scripts/deploy-dev.sh            # pull the images CI built, migrate, start, check
 #   infra/scripts/deploy-dev.sh --seed     # ...and seed the catalog (first run)
-#   infra/scripts/deploy-dev.sh --no-build # restart without rebuilding
+#   infra/scripts/deploy-dev.sh --build    # build here instead of pulling (slow on 2 vCPU)
 #   infra/scripts/deploy-dev.sh --edge     # also run Caddy on 80/443 (dedicated machine only)
+#
+# Images come from CI. This machine runs live services on two cores, so compiling a Next.js app
+# on it would starve them for minutes; pulling takes seconds.
 #
 # By default this touches nothing on ports 80 or 443. The stack binds to loopback and whatever
 # already serves the web on this box proxies to it — this VPS also hosts a live client site, and
@@ -24,12 +27,13 @@ COMPOSE_FILE="$COMPOSE_DIR/compose.dev-host.yml"
 ENV_FILE="$COMPOSE_DIR/.env"
 
 SEED=0
-BUILD=1
+BUILD=0
 EDGE=0
 for arg in "$@"; do
   case "$arg" in
     --seed) SEED=1 ;;
-    --no-build) BUILD=0 ;;
+    --build) BUILD=1 ;;
+    --no-build) BUILD=0 ;;   # accepted for habit; pulling is already the default
     --edge) EDGE=1 ;;
     *) echo "unknown option: $arg" >&2; exit 1 ;;
   esac
@@ -85,8 +89,21 @@ elif [[ -z "$RESOLVED" ]]; then
 fi
 
 # ── build ────────────────────────────────────────────────────────────────────
-if [[ "$BUILD" == "1" ]]; then
-  say "Building images (first run takes a few minutes)"
+if [[ "$BUILD" == "0" ]]; then
+  say "Pulling the images CI built"
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${PROFILE[@]}" pull --quiet api web; then
+    cat >&2 <<'MSG'
+
+  Could not pull. If the repository has been made private, the images are private too:
+
+    echo <a-github-token-with-read:packages> | docker login ghcr.io -u <your-github-username> --password-stdin
+
+  Or build on this machine instead with --build (slower, and it competes with live services).
+MSG
+    exit 1
+  fi
+else
+  say "Building images here (a few minutes on two cores)"
   # Available memory matters: the Next build is the hungry one.
   FREE_MB="$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 9999)"
   if [[ "$FREE_MB" -lt 1500 ]]; then

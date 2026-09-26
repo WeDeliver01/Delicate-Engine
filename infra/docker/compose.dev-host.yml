@@ -2,6 +2,10 @@
 #
 # TWO MODES, because this VPS is shared with other sites.
 #
+# Images come from CI (ghcr.io/wedeliver01/...), so this machine never compiles anything. That
+# matters here: the box has 2 vCPU and runs live services, and a Next.js build would peg both
+# cores for minutes. `deploy-dev.sh --build` still builds locally when you need it.
+#
 #   default          Nothing touches ports 80 or 443. The web app and the engine bind to
 #                    127.0.0.1 only, and whatever web server already owns the edge on this box
 #                    (nginx, in our case, serving a live client site) proxies to them. This is
@@ -65,12 +69,13 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   api:
+    image: ${IMAGE_API:-ghcr.io/wedeliver01/engine-api:${IMAGE_TAG:-latest}}
+    # Only used by `--build`; normally the image above is pulled.
     build:
       context: ../..
       dockerfile: infra/docker/api.Dockerfile
       args:
         APP_VERSION: ${APP_VERSION:-dev}
-    image: delicate/engine-api:dev
     restart: unless-stopped
     env_file: .env
     environment:
@@ -96,7 +101,8 @@ services:
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
   worker:
-    image: delicate/engine-api:dev
+    # The same image as the engine, with a different command.
+    image: ${IMAGE_API:-ghcr.io/wedeliver01/engine-api:${IMAGE_TAG:-latest}}
     command: ["node", "--enable-source-maps", "dist/worker.js"]
     restart: unless-stopped
     env_file: .env
@@ -108,16 +114,16 @@ services:
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
   web:
+    image: ${IMAGE_WEB:-ghcr.io/wedeliver01/engine-web:${IMAGE_TAG:-latest}}
+    # Only used by `--build`. Anything NEXT_PUBLIC_ is inlined into the browser bundle at build
+    # time, so it is set here rather than at run time; "/api" keeps the browser on one origin.
     build:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
       args:
-        # Baked in at build time, because Next inlines anything NEXT_PUBLIC_ into the bundle.
-        # "/api" keeps the browser on one origin; Caddy routes it to the engine.
         NEXT_PUBLIC_API_URL: /api
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
-    image: delicate/engine-web:dev
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:8080
