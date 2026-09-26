@@ -71,6 +71,18 @@ git clone <your-repo> /opt/delicate   # or rsync the working tree up
 Point an **A record** for `dev.delicatecourier.co.za` at the VPS IP before deploying — Let's
 Encrypt validates over port 80 and will not issue a certificate until DNS resolves here.
 
+### This VPS is shared
+
+It already runs other things — a Next.js app on :3000 and nginx serving a WordPress site that
+redirects to melindaskitchen.operandis.co.za. So the engine **does not take ports 80 and 443**.
+It binds to loopback and the existing nginx proxies to it. The worst a mistake can then do is
+break this stack, never a client's live site.
+
+```
+  browser ──► nginx :443 ──► 127.0.0.1:8090  web
+                        └──► 127.0.0.1:8091  engine (/api)
+```
+
 ### Deploy
 
 ```bash
@@ -80,9 +92,25 @@ $EDITOR infra/docker/.env          # host, database password, Supabase keys
 infra/scripts/deploy-dev.sh --seed # first run; drop --seed afterwards
 ```
 
-The script checks the machine before it starts, warns if DNS does not point here or memory is
-tight, builds both images, applies migrations on boot, waits for health, and then proves the site
-answers from the outside. It is safe to run again.
+The script checks the machine before it starts — Docker, a filled-in env, no placeholder
+password, DNS, free memory — builds both images, applies migrations on boot, waits for health
+and proves the engine answers. It is safe to run again.
+
+Then put nginx in front, once:
+
+```bash
+sudo cp infra/docker/nginx-dev.conf /etc/nginx/sites-available/dev.delicatecourier.co.za
+sudo ln -s /etc/nginx/sites-available/dev.delicatecourier.co.za /etc/nginx/sites-enabled/
+sudo nginx -t                      # parses every site: catches anything that would break the others
+sudo systemctl reload nginx
+sudo certbot --nginx -d dev.delicatecourier.co.za
+```
+
+`nginx -t` before every reload, without exception. It validates the whole configuration, so it
+also catches a mistake that would have taken the other sites down with it.
+
+On a machine where nothing else serves the web, `deploy-dev.sh --edge` runs Caddy on 80/443 and
+handles TLS itself instead. It refuses to start if either port is already in use.
 
 ### First sign-in
 

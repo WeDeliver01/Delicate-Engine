@@ -1,8 +1,19 @@
 # The dev environment on the VPS: dev.delicatecourier.co.za
 #
-# One host, one certificate, one hostname. Caddy serves the web app and routes /api straight to
-# the engine, so webhooks reach the API with their bytes untouched — a signature is computed over
-# exactly what was sent, and a proxy that re-encodes the body breaks it.
+# TWO MODES, because this VPS is shared with other sites.
+#
+#   default          Nothing touches ports 80 or 443. The web app and the engine bind to
+#                    127.0.0.1 only, and whatever web server already owns the edge on this box
+#                    (nginx, in our case, serving a live client site) proxies to them. This is
+#                    the safe mode for a shared machine: the worst a mistake can do is break
+#                    this stack, never someone else's site.
+#
+#   --profile edge   Caddy takes 80 and 443 and gets its own certificate. Only for a machine
+#                    where nothing else serves the web.
+#
+# Either way /api goes straight to the engine rather than through the web app, so webhooks reach
+# it with their bytes untouched — a signature is computed over exactly what was sent, and a proxy
+# that re-encodes the body breaks it.
 #
 # Differences from compose.prod.yml, on purpose:
 #   - Postgres runs here in a container. Production uses Supabase; a dev environment does not
@@ -18,7 +29,10 @@
 name: delicate-dev
 
 services:
+  # Opt-in only: `docker compose --profile edge up -d`. On a shared box, leave it off and let
+  # the existing web server proxy to the ports below.
   caddy:
+    profiles: ["edge"]
     image: caddy:2-alpine
     restart: unless-stopped
     ports: ["80:80", "443:443"]
@@ -63,7 +77,8 @@ services:
       NODE_ENV: production
       API_PORT: 8080
       RUN_MIGRATIONS: "1"
-    expose: ["8080"]
+    # Loopback only. The edge proxy on this host reaches it; nothing outside can.
+    ports: ["127.0.0.1:${API_BIND_PORT:-8091}:8080"]
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:
@@ -106,7 +121,8 @@ services:
     restart: unless-stopped
     environment:
       API_INTERNAL_URL: http://api:8080
-    expose: ["3000"]
+    # Loopback only, same reasoning as the engine.
+    ports: ["127.0.0.1:${WEB_BIND_PORT:-8090}:3000"]
     depends_on:
       api: { condition: service_healthy }
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }

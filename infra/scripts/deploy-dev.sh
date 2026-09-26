@@ -5,8 +5,13 @@
 # Run it on the VPS, from the repository root:
 #
 #   infra/scripts/deploy-dev.sh            # build, migrate, start, check
-#   infra/scripts/deploy-dev.sh --seed     # ...and seed the catalog and demo data (first run)
+#   infra/scripts/deploy-dev.sh --seed     # ...and seed the catalog (first run)
 #   infra/scripts/deploy-dev.sh --no-build # restart without rebuilding
+#   infra/scripts/deploy-dev.sh --edge     # also run Caddy on 80/443 (dedicated machine only)
+#
+# By default this touches nothing on ports 80 or 443. The stack binds to loopback and whatever
+# already serves the web on this box proxies to it — this VPS also hosts a live client site, and
+# a deploy that fights for the edge would take that down rather than just failing.
 #
 # It is safe to run again: images rebuild only what changed, migrations are idempotent, and the
 # database volume is never touched.
@@ -20,13 +25,17 @@ ENV_FILE="$COMPOSE_DIR/.env"
 
 SEED=0
 BUILD=1
+EDGE=0
 for arg in "$@"; do
   case "$arg" in
     --seed) SEED=1 ;;
     --no-build) BUILD=0 ;;
+    --edge) EDGE=1 ;;
     *) echo "unknown option: $arg" >&2; exit 1 ;;
   esac
 done
+PROFILE=()
+[[ "$EDGE" == "1" ]] && PROFILE=(--profile edge)
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
@@ -49,8 +58,22 @@ fi
 echo "  host      $DEV_HOST"
 echo "  database  container postgres"
 echo "  auth      ${SUPABASE_URL}"
+if [[ "$EDGE" == "1" ]]; then
+  echo "  edge      Caddy on 80/443"
+  # Refuse rather than race: something already on the edge is probably another site.
+  for port in 80 443; do
+    if ss -ltn "sport = :$port" 2>/dev/null | grep -q LISTEN; then
+      die "port $port is already in use on this machine. Run without --edge and let the existing web server proxy to ${WEB_BIND_PORT:-8090}; see infra/docker/nginx-dev.conf."
+    fi
+  done
+else
+  echo "  edge      none — nginx (or whatever serves this box) proxies to 127.0.0.1"
+  echo "  web       127.0.0.1:${WEB_BIND_PORT:-8090}"
+  echo "  api       127.0.0.1:${API_BIND_PORT:-8091}"
+fi
 
-# DNS has to resolve here before Let's Encrypt will issue anything.
+# DNS has to resolve here before Let's Encrypt will issue anything. In proxy mode the existing
+# web server owns the certificate, so this is informational.
 RESOLVED="$(getent hosts "$DEV_HOST" | awk '{print $1}' | head -1 || true)"
 PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
 if [[ -n "$RESOLVED" && -n "$PUBLIC_IP" && "$RESOLVED" != "$PUBLIC_IP" ]]; then
@@ -70,13 +93,13 @@ if [[ "$BUILD" == "1" ]]; then
     echo "  warning: only ${FREE_MB}MB available. If the web build is killed, add swap:"
     echo "    fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
   fi
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build
+  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${PROFILE[@]}" build
 fi
 
 # ── start ────────────────────────────────────────────────────────────────────
 say "Starting the stack"
 # The API applies migrations on boot; the worker waits for it to be healthy.
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "${PROFILE[@]}" up -d
 
 say "Waiting for the engine"
 for i in $(seq 1 60); do
@@ -104,14 +127,23 @@ if [[ "$SEED" == "1" ]]; then
 fi
 
 # ── prove it ─────────────────────────────────────────────────────────────────
-say "Checking from the outside"
+say "Checking it answers"
 sleep 3
-if curl -fsS --max-time 15 "https://$DEV_HOST/api/healthz" > /tmp/dev-health.json 2>/dev/null; then
-  echo "  https://$DEV_HOST/api/healthz → $(cat /tmp/dev-health.json)"
+LOCAL_API="http://127.0.0.1:${API_BIND_PORT:-8091}/healthz"
+if curl -fsS --max-time 10 "$LOCAL_API" > /tmp/dev-health.json 2>/dev/null; then
+  echo "  $LOCAL_API → $(cat /tmp/dev-health.json)"
   rm -f /tmp/dev-health.json
 else
-  echo "  could not reach https://$DEV_HOST/api/healthz yet."
-  echo "  A new certificate can take a minute. Watch it: docker compose -f $COMPOSE_FILE logs -f caddy"
+  die "the engine is not answering on $LOCAL_API. Logs: docker compose -f $COMPOSE_FILE logs api"
+fi
+if curl -fsS --max-time 10 -o /dev/null "http://127.0.0.1:${WEB_BIND_PORT:-8090}/" 2>/dev/null; then
+  echo "  http://127.0.0.1:${WEB_BIND_PORT:-8090}/ → the site is up"
+fi
+if curl -fsS --max-time 15 "https://$DEV_HOST/api/healthz" >/dev/null 2>&1; then
+  echo "  https://$DEV_HOST/api/healthz → reachable from outside"
+else
+  echo "  https://$DEV_HOST is not answering yet — expected until DNS points here and the"
+  echo "  proxy vhost is in place (infra/docker/nginx-dev.conf)."
 fi
 
 say "Done"
@@ -120,6 +152,8 @@ cat <<SUMMARY
   Portal     https://$DEV_HOST/portal
   Console    https://$DEV_HOST/admin
   Health     https://$DEV_HOST/api/healthz
+
+  Local      http://127.0.0.1:${WEB_BIND_PORT:-8090}  (before the proxy is wired up)
 
   Logs       docker compose -f $COMPOSE_FILE logs -f api worker web
   Backup     KEEP_DAYS=30 BACKUP_DIR=/srv/backups infra/scripts/backup.sh
