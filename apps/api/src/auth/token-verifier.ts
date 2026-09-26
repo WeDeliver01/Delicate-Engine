@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { PinoLogger } from "nestjs-pino";
 import {
   createRemoteJWKSet,
   decodeProtectedHeader,
@@ -21,8 +22,9 @@ export interface VerifiedToken {
 
 /**
  * Verifies bearer tokens from two issuers:
- *  - Supabase Auth (production identity): HS256 with the project JWT secret when configured,
- *    otherwise the project's JWKS (newer projects sign with asymmetric keys).
+ *  - Supabase Auth (production identity): HS256 against the project's legacy shared secret,
+ *    anything else against its published JWKS. Both are kept available at once, because a
+ *    project migrating to asymmetric keys issues tokens of both kinds for a while.
  *  - Dev issuer (never in production): HS256 with AUTH_DEV_SECRET so local development and
  *    integration tests do not need a Supabase project.
  */
@@ -33,17 +35,25 @@ export class TokenVerifier {
   private readonly devSecret: Uint8Array | null;
   private readonly supabaseIssuer: string | null;
 
-  constructor(@Inject(ENV) private readonly env: Env) {
+  constructor(
+    @Inject(ENV) private readonly env: Env,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(TokenVerifier.name);
     this.supabaseIssuer = env.SUPABASE_URL
       ? `${env.SUPABASE_URL.replace(/\/$/, "")}/auth/v1`
       : null;
     this.supabaseSecret = env.SUPABASE_JWT_SECRET
       ? new TextEncoder().encode(env.SUPABASE_JWT_SECRET)
       : null;
-    this.jwks =
-      this.supabaseIssuer && !this.supabaseSecret
-        ? createRemoteJWKSet(new URL(`${this.supabaseIssuer}/.well-known/jwks.json`))
-        : null;
+    // Always available when we know the project, even alongside a shared secret. Supabase can
+    // sign with the legacy HS256 secret today and with an asymmetric key after the project
+    // migrates — and during that migration it issues both. Treating them as either/or means
+    // configuring the secret silently stops asymmetric tokens working, which is a confusing
+    // way to lose every login.
+    this.jwks = this.supabaseIssuer
+      ? createRemoteJWKSet(new URL(`${this.supabaseIssuer}/.well-known/jwks.json`))
+      : null;
     this.devSecret =
       env.NODE_ENV !== "production" && env.AUTH_DEV_SECRET
         ? new TextEncoder().encode(env.AUTH_DEV_SECRET)
@@ -68,7 +78,13 @@ export class TokenVerifier {
 
       if (this.supabaseIssuer) {
         const options = { issuer: this.supabaseIssuer, audience: SUPABASE_AUDIENCE };
-        if (this.supabaseSecret && header.alg === "HS256") {
+        // HS256 can only be the shared secret; anything else is signed with a published key.
+        if (header.alg === "HS256") {
+          if (!this.supabaseSecret) {
+            throw AppError.unauthorized(
+              "this project signs tokens with its legacy JWT secret; set SUPABASE_JWT_SECRET",
+            );
+          }
           const { payload } = await jwtVerify(token, this.supabaseSecret, options);
           return toVerified(payload, "supabase");
         }
@@ -79,9 +95,35 @@ export class TokenVerifier {
       }
     } catch (err) {
       if (err instanceof AppError) throw err;
+      // The caller gets a deliberately vague message — a rejected token should not explain
+      // itself to whoever sent it. The operator gets the real reason, because "invalid or
+      // expired" is useless when the actual cause is a signing algorithm nobody configured.
+      this.logger.warn(
+        {
+          reason: err instanceof Error ? err.message : String(err),
+          code: (err as { code?: string }).code,
+          alg: header.alg,
+          tokenIssuer: unverifiedIssuer,
+          expectedIssuer: this.supabaseIssuer,
+          verifying: this.supabaseSecret ? "shared secret (HS256)" : this.jwks ? "JWKS" : "nothing",
+        },
+        "rejected a bearer token",
+      );
       throw AppError.unauthorized("invalid or expired token");
     }
 
+    // Nothing could even attempt it: usually a token signed with an algorithm we are not set
+    // up for, which is a configuration problem rather than a bad token.
+    this.logger.warn(
+      {
+        alg: header.alg,
+        tokenIssuer: unverifiedIssuer,
+        expectedIssuer: this.supabaseIssuer,
+        hasSharedSecret: Boolean(this.supabaseSecret),
+        hasJwks: Boolean(this.jwks),
+      },
+      "no verifier configured for this token",
+    );
     throw AppError.unauthorized("no verifier configured for this token");
   }
 
