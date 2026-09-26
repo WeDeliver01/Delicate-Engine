@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseEnabled } from "@/lib/env";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabase, supabaseMisconfigured } from "@/lib/supabase";
 import { setDevToken } from "@/lib/session";
 
 export default function LoginPage() {
@@ -22,12 +22,15 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [devToken, setDev] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Say it up front: this is wrong before anyone types a password, not after.
+  const misconfigured = supabaseMisconfigured();
   const [busy, setBusy] = useState(false);
 
   async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    if (misconfigured) return setError(misconfigured);
     const supabase = getSupabase();
     if (!supabase) return;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -37,6 +40,7 @@ function LoginForm() {
   }
 
   async function signInWithGoogle() {
+    if (misconfigured) return setError(misconfigured);
     const supabase = getSupabase();
     if (!supabase) return;
     await supabase.auth.signInWithOAuth({
