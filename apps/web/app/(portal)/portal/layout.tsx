@@ -24,6 +24,7 @@ const NAV: NavSection[] = [
   {
     group: "Money",
     items: [
+      { href: "/portal/money", label: "Overview", icon: "payments" },
       { href: "/portal/wallet", label: "Wallet", icon: "account_balance_wallet" },
       { href: "/portal/invoices", label: "Invoices", icon: "description" },
       { href: "/portal/quotes", label: "Quotes", icon: "request_quote" },

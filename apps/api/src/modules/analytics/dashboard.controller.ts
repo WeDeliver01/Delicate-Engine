@@ -5,6 +5,7 @@ import { IsoDate, PERIOD_KEYS, type PeriodKey } from "@delicate/contracts";
 import { ActiveAccountId, RequireAccount } from "../../auth/decorators.js";
 import { Query } from "../../common/zod.js";
 import { DashboardService } from "./dashboard.service.js";
+import { MoneyTimelineService } from "./money-timeline.service.js";
 
 const DashboardQuery = z.object({
   period: z.enum(PERIOD_KEYS).default("last28"),
@@ -24,7 +25,10 @@ const DashboardQuery = z.object({
 @Controller("v1/account/dashboard")
 @RequireAccount()
 export class DashboardController {
-  constructor(private readonly svc: DashboardService) {}
+  constructor(
+    private readonly svc: DashboardService,
+    private readonly timeline: MoneyTimelineService,
+  ) {}
 
   @Get()
   get(
@@ -32,5 +36,14 @@ export class DashboardController {
     @Query(DashboardQuery) q: { period: PeriodKey; from?: string; to?: string },
   ) {
     return this.svc.forAccount(accountId, q.period, q.from, q.to);
+  }
+
+  /** Every time money moved, in date order: the account's own financial statement. */
+  @Get("money")
+  money(
+    @ActiveAccountId() accountId: string,
+    @Query(DashboardQuery) q: { period: PeriodKey; from?: string; to?: string },
+  ) {
+    return this.timeline.forAccount(accountId, q.period, q.from, q.to);
   }
 }
