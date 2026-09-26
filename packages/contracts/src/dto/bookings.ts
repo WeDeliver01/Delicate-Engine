@@ -50,6 +50,8 @@ export const CreateBookingRequest = z.object({
   slot: SlotRef.optional(),
   /** Client-generated key so a retried submit cannot double-book. Defaults to the quote id. */
   idempotencyKey: z.string().min(8).max(120).optional(),
+  /** The customer's own identifier for this job, searchable and printed on their invoice. */
+  customerReference: z.string().trim().max(60).optional(),
 });
 export type CreateBookingRequest = z.infer<typeof CreateBookingRequest>;
 
@@ -86,6 +88,7 @@ export const Booking = z.object({
   accountId: Uuid,
   quoteId: Uuid,
   reference: z.string(),
+  customerReference: z.string().nullable(),
   status: BookingStatus,
   serviceLevelCode: z.string(),
   slotDate: IsoDate.nullable(),

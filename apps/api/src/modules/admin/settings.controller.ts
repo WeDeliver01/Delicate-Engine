@@ -1,7 +1,9 @@
 import { Controller, Get, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { and, eq, isNotNull } from "drizzle-orm";
+import { z } from "zod";
 import {
+  AdminCopySettings,
   CompanyTaxProfile,
   OperationsSettings,
   SettlementRules,
@@ -45,6 +47,8 @@ export class AdminSettingsController {
       sameDayCutoffMinutes,
       settlement,
       slots,
+      waybillTerms,
+      adminCopy,
     ] = await Promise.all([
       this.settings.get("company.tax_profile"),
       this.settings.get("company.vat_registered"),
@@ -54,9 +58,13 @@ export class AdminSettingsController {
       this.settings.get("booking.same_day_cutoff_minutes"),
       this.settings.get("settlement.rules"),
       this.settings.get("scheduling.policy"),
+      this.settings.get("company.waybill_terms"),
+      this.settings.get("notifications.admin_copy"),
     ]);
     return {
       company,
+      waybillTerms,
+      adminCopy,
       vat: { registered, bps },
       operations: { depotAddress, timezone, sameDayCutoffMinutes },
       settlement,
@@ -69,6 +77,25 @@ export class AdminSettingsController {
   @PlatformRoles("super_admin")
   async company(@Body(CompanyTaxProfile) body: CompanyTaxProfile) {
     await this.settings.set("company.tax_profile", body);
+    return body;
+  }
+
+  @Put("waybill-terms")
+  @PlatformRoles("super_admin")
+  async waybillTerms(@Body(z.object({ terms: z.string().max(4000) })) body: { terms: string }) {
+    await this.settings.set("company.waybill_terms", body.terms);
+    return body;
+  }
+
+  /**
+   * Who inside the business is copied on outbound mail. Super-admin only: it decides where
+   * copies of every customer's messages land, which is a privacy decision as much as an
+   * operational one.
+   */
+  @Put("admin-copy")
+  @PlatformRoles("super_admin")
+  async adminCopy(@Body(AdminCopySettings) body: AdminCopySettings) {
+    await this.settings.set("notifications.admin_copy", body);
     return body;
   }
 

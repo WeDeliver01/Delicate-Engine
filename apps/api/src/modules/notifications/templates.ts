@@ -23,6 +23,22 @@ export interface TemplateSeed {
 
 export const TEMPLATE_SEEDS: TemplateSeed[] = [
   {
+    kind: "account.created",
+    channel: "email",
+    audience: "customer",
+    subject: "Welcome to {{companyName}}",
+    body: `Hi {{customerName}},
+
+Your account {{accountName}} is open and ready to book.
+
+Deliveries are paid from your wallet: top it up, book, and the amount is held until the parcel
+is delivered. Nothing is charged for a booking you cancel before collection.
+
+Book your first delivery at {{portalUrl}}.
+
+— {{companyName}}`,
+  },
+  {
     kind: "booking.confirmed",
     channel: "email",
     audience: "customer",
@@ -157,6 +173,104 @@ Invoice {{number}} for {{outstanding}} was due on {{dueDate}} and is still outst
 
 If you have already paid, please ignore this and send us the reference.
 
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.assigned",
+    channel: "email",
+    audience: "customer",
+    subject: "{{waybill}} is scheduled with a driver",
+    body: `Hi {{customerName}},
+
+{{waybill}} is assigned to {{driverName}} for {{slot}}.
+
+We will message {{recipientName}} when the driver sets off.
+
+Track it at {{trackUrl}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "booking.cancelled",
+    channel: "email",
+    audience: "customer",
+    subject: "Booking {{reference}} cancelled",
+    body: `Hi {{customerName}},
+
+Booking {{reference}} has been cancelled{{reason}}.
+
+Anything held against your wallet for it has been released and is available to spend again.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.change_applied",
+    channel: "email",
+    audience: "customer",
+    subject: "{{waybill}} updated",
+    body: `Hi {{customerName}},
+
+We have updated the {{changeKind}} on {{waybill}}. The driver sees the new details.
+
+If this was not you, reply to this email straight away.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.change_requested",
+    channel: "email",
+    audience: "customer",
+    subject: "We are checking your change to {{waybill}}",
+    body: `Hi {{customerName}},
+
+You asked us to change the {{changeKind}} on {{waybill}}. Our team is checking it, because
+{{heldBecause}}.
+
+We will email you as soon as it is confirmed. Until then the delivery is unchanged.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.change_approved",
+    channel: "email",
+    audience: "customer",
+    subject: "Your change to {{waybill}} is confirmed",
+    body: `Hi {{customerName}},
+
+The {{changeKind}} on {{waybill}} has been updated as you asked.{{note}}
+
+See the delivery at {{trackUrl}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.change_rejected",
+    channel: "email",
+    audience: "customer",
+    subject: "We could not change {{waybill}}",
+    body: `Hi {{customerName}},
+
+We were not able to change the {{changeKind}} on {{waybill}}.{{note}}
+
+The delivery goes ahead as originally booked. Call us if you would like to talk it through.
+
+— {{companyName}}`,
+  },
+  {
+    /**
+     * WhatsApp to the person waiting at the door. Nothing sends until a provider is connected
+     * and this exact wording has been approved by Meta, so the copy is written to pass that
+     * review: a utility message about a delivery the recipient is expecting, and no marketing.
+     */
+    kind: "shipment.out_for_delivery",
+    channel: "whatsapp",
+    audience: "recipient",
+    subject: null,
+    body: `Hi {{recipientName}}, your delivery from {{customerName}} is on the way with {{driverName}} and should reach you {{eta}}.
+
+Please let us know if someone can receive it, or reply here to make other arrangements.
+
+Track it: {{trackUrl}}
 — {{companyName}}`,
   },
 ];

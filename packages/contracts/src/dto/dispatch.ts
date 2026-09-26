@@ -47,6 +47,19 @@ export const DriverStop = z.object({
   serviceLevelCode: z.string(),
   /** Shipments that belong to this booking (for a collection stop, what to pick up). */
   shipments: z.array(z.object({ shipmentId: Uuid, waybill: z.string(), status: ShipmentStatus })),
+  /**
+   * Set when something about this stop was changed after the driver was assigned to it, e.g.
+   * an address the customer corrected mid-morning. The day list refreshes every minute, so
+   * the driver already *has* the new details — this is so they notice, rather than driving to
+   * the address they memorised at the depot.
+   */
+  changed: z
+    .object({
+      what: z.array(z.string()),
+      at: z.string().datetime(),
+    })
+    .nullable()
+    .default(null),
 });
 export type DriverStop = z.infer<typeof DriverStop>;
 

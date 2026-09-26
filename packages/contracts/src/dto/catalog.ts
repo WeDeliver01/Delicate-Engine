@@ -112,6 +112,8 @@ export const SettingKey = z.enum([
   "settlement.rules",
   "treasury.policy",
   "company.tax_profile",
+  "company.waybill_terms",
+  "notifications.admin_copy",
   "loyalty.program",
 ]);
 

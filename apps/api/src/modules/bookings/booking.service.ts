@@ -22,6 +22,7 @@ import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
+import { Clock } from "../../infra/clock.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
 import { WalletService } from "../wallet/wallet.service.js";
@@ -45,6 +46,7 @@ export class BookingService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly settings: SettingsService,
+    private readonly clock: Clock,
     private readonly wallet: WalletService,
     private readonly quotes: QuoteService,
     private readonly catalog: CatalogService,
@@ -69,7 +71,10 @@ export class BookingService {
         { path: ["slot"], message: `${serviceLevel.name} deliveries need a delivery slot` },
       ]);
     }
-    if (new Date(quote.expiresAt).getTime() < Date.now()) {
+    // From the injected clock, because the quote's expiry was stamped from it too. Two
+    // sources of "now" in one comparison is how a freshly priced quote ends up rejected as
+    // expired.
+    if (new Date(quote.expiresAt).getTime() < this.clock.now().getTime()) {
       await this.recordRejection(
         accountId,
         quote,
@@ -101,6 +106,7 @@ export class BookingService {
             accountId,
             quoteId: quote.id,
             reference,
+            customerReference: input.customerReference ?? null,
             status: "confirmed",
             serviceLevelCode: quote.serviceLevelCode,
             slotDate: slot?.date ?? null,
@@ -593,6 +599,7 @@ export function toBooking(r: typeof bookings.$inferSelect, ships: Shipment[]): B
     accountId: r.accountId,
     quoteId: r.quoteId,
     reference: r.reference,
+    customerReference: r.customerReference,
     status: r.status,
     serviceLevelCode: r.serviceLevelCode,
     slotDate: r.slotDate,

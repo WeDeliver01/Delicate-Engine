@@ -3,6 +3,7 @@ import { defineEvent } from "./envelope.js";
 import { Cents } from "../money.js";
 import { AccountRole, AccountType, BillingMode } from "../enums.js";
 import { ShipmentStatus } from "../dto/bookings.js";
+import { ChangeRequestKind } from "../dto/change-requests.js";
 
 /**
  * The event catalog. Every event the engine emits is declared here so producers (API) and
@@ -295,6 +296,38 @@ export const PaymentExecuted = defineEvent(
   }),
 );
 
+/**
+ * A customer asked for something about a booked shipment to change. Emitted whether or not the
+ * engine could apply it itself, because both outcomes are things the customer is told about
+ * and both are things ops may want to see.
+ */
+export const ShipmentChangeRequested = defineEvent(
+  "shipment.change_requested",
+  z.object({
+    changeRequestId: z.string().uuid(),
+    shipmentId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    waybill: z.string(),
+    kind: ChangeRequestKind,
+    autoApplied: z.boolean(),
+    heldBecause: z.string().nullable(),
+  }),
+);
+
+/** Ops ruled on a held change. */
+export const ShipmentChangeDecided = defineEvent(
+  "shipment.change_decided",
+  z.object({
+    changeRequestId: z.string().uuid(),
+    shipmentId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    waybill: z.string(),
+    kind: ChangeRequestKind,
+    approved: z.boolean(),
+    note: z.string().nullable(),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -321,6 +354,8 @@ export const DomainEvent = z.discriminatedUnion("type", [
   PaymentProposed,
   PaymentApproved,
   PaymentExecuted,
+  ShipmentChangeRequested,
+  ShipmentChangeDecided,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

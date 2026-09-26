@@ -23,3 +23,7 @@ export * from "./dto/address-book.js";
 export * from "./dto/loyalty.js";
 export * from "./routing.js";
 export * from "./allocation.js";
+export * from "./period.js";
+export * from "./dto/shipment-filter.js";
+export * from "./dto/change-requests.js";
+export * from "./dto/waybill.js";

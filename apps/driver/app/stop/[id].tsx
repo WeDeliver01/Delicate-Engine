@@ -84,6 +84,18 @@ export default function StopScreen() {
         contentContainerStyle={s.content}
         keyboardShouldPersistTaps="handled"
       >
+        {stop.changed && (
+          /* Loud on purpose. The driver read this address at the depot and is steering from
+             memory; a quiet grey line is exactly what gets skipped past. */
+          <Card style={{ borderColor: C.pink, borderWidth: 2, backgroundColor: "#FCEEF4" }}>
+            <Text style={[s.h2, { color: "#C13B73" }]}>Changed since you were assigned</Text>
+            <Text style={[s.body, { marginTop: 4 }]}>
+              The {stop.changed.what.join(" and ")} {stop.changed.what.length > 1 ? "have" : "has"}{" "}
+              been updated. What is shown below is current — check it before you set off.
+            </Text>
+          </Card>
+        )}
+
         <Card>
           <View style={s.row}>
             <Badge label={stop.status ?? "drop"} />

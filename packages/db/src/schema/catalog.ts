@@ -117,6 +117,14 @@ export const quotes = pgTable(
     rateCardId: uuid("rate_card_id")
       .notNull()
       .references(() => rateCards.id, { onDelete: "restrict" }),
+    /**
+     * Human reference, QT-YYMMDD-NNNN. A quote a customer saves is a document they may email
+     * to a colleague or read out on the phone, and a uuid is neither of those things.
+     * Nullable because every quote priced before this existed has none.
+     */
+    reference: text("reference"),
+    /** What the customer called it, e.g. "Saturday market run". */
+    label: text("label"),
     status: quoteStatusEnum("status").notNull().default("priced"),
     request: jsonb("request").notNull(),
     snapshot: jsonb("snapshot").notNull(), // { rateCard, serviceLevel, packageTypes, vatBps }
@@ -125,5 +133,8 @@ export const quotes = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
     ...timestamps(),
   },
-  (t) => [index("quotes_account_idx").on(t.accountId, t.createdAt)],
+  (t) => [
+    index("quotes_account_idx").on(t.accountId, t.createdAt),
+    uniqueIndex("quotes_reference_uq").on(t.reference),
+  ],
 );

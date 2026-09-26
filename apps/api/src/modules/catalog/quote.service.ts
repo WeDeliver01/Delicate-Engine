@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import {
   priceQuote,
   type EstimateRequest,
@@ -9,12 +9,13 @@ import {
   type Quote,
   type QuoteRequest,
 } from "@delicate/contracts";
-import { quotes, type DbExecutor } from "@delicate/db";
+import { quotes, waybillCounters, type DbExecutor } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { GEO_PROVIDER, type GeoProvider } from "../../infra/geo/geo.provider.js";
 import { AppError } from "../../common/errors.js";
 import { CatalogService } from "./catalog.service.js";
+import { Clock } from "../../infra/clock.js";
 
 const QUOTE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,7 @@ export class QuoteService {
     private readonly catalog: CatalogService,
     private readonly settings: SettingsService,
     @Inject(GEO_PROVIDER) private readonly geo: GeoProvider,
+    private readonly clock: Clock,
   ) {}
 
   /** Public, unsaved estimate for the marketing site. Uses the default rate card. */
@@ -106,10 +108,13 @@ export class QuoteService {
       vatBps,
     });
 
+    const reference = await this.nextReference();
     const [row] = await this.dbs.db
       .insert(quotes)
       .values({
         accountId,
+        reference,
+        label: input.label ?? null,
         serviceLevelCode: serviceLevel.code,
         rateCardId: rateCard.id,
         request: { ...input, accountId },
@@ -122,7 +127,7 @@ export class QuoteService {
         },
         breakdown,
         distanceProvider: this.geo.name,
-        expiresAt: new Date(Date.now() + QUOTE_TTL_MS),
+        expiresAt: new Date(this.clock.now().getTime() + QUOTE_TTL_MS),
       })
       .returning();
     return toQuote(row!);
@@ -132,6 +137,70 @@ export class QuoteService {
     const row = await (tx ?? this.dbs.db).query.quotes.findFirst({ where: eq(quotes.id, id) });
     if (!row || row.accountId !== accountId) throw AppError.notFound("quote");
     return toQuote(row);
+  }
+
+  /**
+   * The customer's saved quotes.
+   *
+   * Expiry is computed on read rather than swept by a job: a quote is expired the moment its
+   * time passes, and a background task that has not run yet would show a stale "valid" badge
+   * on something the booking endpoint is about to refuse.
+   */
+  async list(accountId: string, limit = 50): Promise<{ items: Quote[] }> {
+    const rows = await this.dbs.db
+      .select()
+      .from(quotes)
+      .where(eq(quotes.accountId, accountId))
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit);
+    const now = this.clock.now();
+    return {
+      items: rows.map((r) =>
+        toQuote(r.status === "priced" && r.expiresAt < now ? { ...r, status: "expired" } : r),
+      ),
+    };
+  }
+
+  /** Name a quote so it can be found again. */
+  async rename(id: string, accountId: string, label: string | null): Promise<Quote> {
+    const [row] = await this.dbs.db
+      .update(quotes)
+      .set({ label })
+      .where(and(eq(quotes.id, id), eq(quotes.accountId, accountId)))
+      .returning();
+    if (!row) throw AppError.notFound("quote");
+    return toQuote(row);
+  }
+
+  /**
+   * Price the same request again, as a new quote.
+   *
+   * An expired quote is never revived in place: it was priced on a rate card and a distance
+   * that may both have moved, and quietly extending it would mean charging today's delivery at
+   * a price we no longer offer. The old row stays exactly as it was.
+   */
+  async reprice(id: string, accountId: string): Promise<Quote> {
+    const row = await this.dbs.db.query.quotes.findFirst({ where: eq(quotes.id, id) });
+    if (!row || row.accountId !== accountId) throw AppError.notFound("quote");
+    const request = row.request as QuoteRequest;
+    return this.create(accountId, { ...request, label: row.label ?? undefined });
+  }
+
+  /** QT-YYMMDD-NNNN, from the same gap-free counter the waybills use. */
+  private async nextReference(): Promise<string> {
+    const tz = await this.settings.get("company.timezone");
+    const day = new Date(this.clock.now().toLocaleString("en-US", { timeZone: tz }))
+      .toISOString()
+      .slice(2, 10)
+      .replace(/-/g, "");
+    const key = `QT:${day}`;
+    await this.dbs.db.insert(waybillCounters).values({ day: key }).onConflictDoNothing();
+    const [counter] = await this.dbs.db
+      .update(waybillCounters)
+      .set({ next: sql`${waybillCounters.next} + 1` })
+      .where(eq(waybillCounters.day, key))
+      .returning({ next: waybillCounters.next });
+    return `QT-${day}-${String(counter!.next - 1).padStart(4, "0")}`;
   }
 
   /** Called inside the booking transaction: marks the quote consumed (once). */
@@ -154,6 +223,8 @@ export function toQuote(r: typeof quotes.$inferSelect): Quote {
   return {
     id: r.id,
     accountId: r.accountId,
+    reference: r.reference,
+    label: r.label,
     serviceLevelCode: r.serviceLevelCode,
     rateCardId: r.rateCardId,
     status: r.status,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Bps } from "../money.js";
 import { CompanyTaxProfile } from "./billing.js";
+import { AdminCopySettings } from "./notifications.js";
 import { SettlementRules } from "./catalog.js";
 import { Address } from "./geo.js";
 import { SlotPolicy } from "./slots.js";
@@ -55,6 +56,9 @@ export type SettingsReadiness = z.infer<typeof SettingsReadiness>;
 
 export const SettingsBundle = z.object({
   company: CompanyTaxProfile,
+  /** Printed at the foot of every waybill. */
+  waybillTerms: z.string(),
+  adminCopy: AdminCopySettings,
   vat: VatSettings,
   operations: OperationsSettings,
   settlement: SettlementRules,

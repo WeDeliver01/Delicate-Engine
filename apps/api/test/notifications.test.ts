@@ -211,11 +211,55 @@ describe("notifications", () => {
 
   it("never messages the same person twice for the same event", async () => {
     await book();
+
+    // Drain first. One booking now sets several events going — the account it was placed on,
+    // the booking itself, the driver it was assigned to — and the outbox hands them over a few
+    // at a time, so a single tick is not the whole story. Ticking until it goes quiet is what
+    // "everything has been delivered" actually means.
+    let previous = -1;
+    for (let i = 0; i < 10 && (await rawRows()).length !== previous; i++) {
+      previous = (await rawRows()).length;
+      await h.dispatcher.tick();
+    }
+
+    const settled = await rawRows();
+    expect(settled.length).toBeGreaterThan(0);
+
+    // The guarantee: one message per person per thing that happened. Redelivering every event
+    // must not add a row, and no two rows may address the same audience on the same channel
+    // about the same event.
     await h.dispatcher.tick();
-    const first = (await rawRows()).length;
     await h.dispatcher.tick();
-    await h.dispatcher.tick();
-    expect((await rawRows()).length).toBe(first);
+    const after = await rawRows();
+    expect(after.length).toBe(settled.length);
+
+    const addressed = after.map((r) => `${r.kind}/${r.audience}/${r.channel}`);
+    expect(new Set(addressed).size).toBe(addressed.length);
+  });
+
+  it("does not send a recipient both an SMS and a WhatsApp saying the same thing", async () => {
+    // Two instant messages about one parcel is the same person being told twice, and the
+    // person it lands on is a recipient who never asked us for either.
+    const templates = (await h.http().get("/v1/admin/notifications/templates").set(asStaff()))
+      .body as NotificationTemplate[];
+    const both = templates.filter(
+      (t) => t.kind === "shipment.out_for_delivery" && t.audience === "recipient",
+    );
+    expect(both.map((t) => t.channel).sort()).toEqual(["sms", "whatsapp"]);
+
+    await book();
+    for (let i = 0; i < 6; i++) await h.dispatcher.tick();
+
+    const instant = (await rawRows()).filter(
+      (r) => r.audience === "recipient" && (r.channel === "sms" || r.channel === "whatsapp"),
+    );
+    const perEvent = new Map<string, number>();
+    for (const row of instant) {
+      perEvent.set(row.kind, (perEvent.get(row.kind) ?? 0) + 1);
+    }
+    for (const [kind, count] of perEvent) {
+      expect(count, `${kind} reached the recipient ${count} times`).toBe(1);
+    }
   });
 
   it("suppresses with a reason instead of sending, when there is nowhere to send", async () => {

@@ -51,6 +51,12 @@ export const bookings = pgTable(
       .notNull()
       .references(() => quotes.id, { onDelete: "restrict" }),
     reference: text("reference").notNull(),
+    /**
+     * The customer's own identifier for this job — their order number, their patient ref,
+     * whatever they file it under. Ours means nothing to them when they are trying to find
+     * a delivery in their own system, so theirs is searchable alongside it.
+     */
+    customerReference: text("customer_reference"),
     status: bookingStatusEnum("status").notNull(),
     serviceLevelCode: text("service_level_code").notNull(),
     slotDate: date("slot_date", { mode: "string" }),
@@ -75,6 +81,7 @@ export const bookings = pgTable(
     index("bookings_account_idx").on(t.accountId, t.createdAt),
     index("bookings_slot_idx").on(t.slotDate, t.slotWindowKey),
     index("bookings_status_idx").on(t.status, t.createdAt),
+    index("bookings_customer_ref_idx").on(t.accountId, t.customerReference),
   ],
 );
 

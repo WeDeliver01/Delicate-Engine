@@ -32,17 +32,68 @@ export type NotificationStatus = z.infer<typeof NotificationStatus>;
  * does not exist cannot be enqueued.
  */
 export const NotificationKind = z.enum([
+  "account.created",
   "booking.confirmed",
   "booking.rejected",
+  "booking.cancelled",
+  "shipment.assigned",
   "shipment.collected",
   "shipment.out_for_delivery",
   "shipment.delivered",
   "shipment.failed",
+  "shipment.change_applied",
+  "shipment.change_requested",
+  "shipment.change_approved",
+  "shipment.change_rejected",
   "wallet.topped_up",
   "wallet.low_balance",
   "invoice.issued",
   "invoice.overdue",
 ]);
+
+/** Grouped for the console, so a screen of toggles reads as a few decisions rather than 17. */
+export const NOTIFICATION_GROUPS: { group: string; kinds: string[] }[] = [
+  { group: "Sign-ups", kinds: ["account.created"] },
+  { group: "Bookings", kinds: ["booking.confirmed", "booking.rejected", "booking.cancelled"] },
+  {
+    group: "Tracking",
+    kinds: [
+      "shipment.assigned",
+      "shipment.collected",
+      "shipment.out_for_delivery",
+      "shipment.delivered",
+      "shipment.failed",
+    ],
+  },
+  {
+    group: "Changes",
+    kinds: [
+      "shipment.change_applied",
+      "shipment.change_requested",
+      "shipment.change_approved",
+      "shipment.change_rejected",
+    ],
+  },
+  {
+    group: "Money",
+    kinds: ["wallet.topped_up", "wallet.low_balance", "invoice.issued", "invoice.overdue"],
+  },
+];
+
+/**
+ * Who inside the business gets a copy of what goes out.
+ *
+ * Every message can be copied to one internal address. `kinds: "all"` does exactly that —
+ * which is a lot of mail, and the reason the list can be narrowed instead without touching
+ * code. Every message is recorded and searchable in the console regardless of this setting,
+ * so narrowing it loses nothing but inbox volume.
+ */
+export const AdminCopySettings = z.object({
+  enabled: z.boolean(),
+  address: z.string().email(),
+  kinds: z.union([z.literal("all"), z.array(NotificationKind)]),
+});
+export type AdminCopySettings = z.infer<typeof AdminCopySettings>;
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /** Who a message is aimed at: the account that booked, or the person receiving the parcel. */

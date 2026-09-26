@@ -40,6 +40,7 @@ export class EmailTransport implements NotificationTransport {
     const info = await this.transporter.sendMail({
       from: `"${message.fromName}" <${this.env.SMTP_FROM}>`,
       to: message.to,
+      bcc: message.bcc ?? undefined,
       subject: message.subject ?? message.fromName,
       text: message.body,
     });

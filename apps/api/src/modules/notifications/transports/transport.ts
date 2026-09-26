@@ -24,6 +24,11 @@ export interface OutboundMessage {
   body: string;
   /** For an email "from" line and an SMS sender id. */
   fromName: string;
+  /**
+   * An internal address copied on this message. Blind, so a customer never sees where their
+   * mail is also going, and ignored by channels that have no such concept.
+   */
+  bcc?: string | null;
 }
 
 export interface SendResult {

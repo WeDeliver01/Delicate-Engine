@@ -50,6 +50,12 @@ export default function AdminSettings() {
     onSuccess: saved_("Company identity"),
     onError,
   });
+  const terms = useMutation({
+    mutationFn: (body: { terms: string }) =>
+      api("/v1/admin/settings/waybill-terms", { method: "PUT", json: body }),
+    onSuccess: saved_("Waybill terms"),
+    onError,
+  });
   const vat = useMutation({
     mutationFn: (body: VatSettings) => api("/v1/admin/settings/vat", { method: "PUT", json: body }),
     onSuccess: saved_("VAT"),
@@ -109,6 +115,12 @@ export default function AdminSettings() {
         initial={s.data.settlement}
         disabled={!canWrite || settlement.isPending}
         onSave={(v) => settlement.mutate(v)}
+      />
+
+      <WaybillTermsCard
+        initial={s.data.waybillTerms}
+        disabled={!canWrite || terms.isPending}
+        onSave={(v) => terms.mutate({ terms: v })}
       />
 
       {integrations.data && <Integrations rows={integrations.data} />}
@@ -546,4 +558,45 @@ function Num({
 
 function clock(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The small print at the foot of every waybill.
+ *
+ * A signed waybill is evidence in a dispute about what was handed over, so the wording is the
+ * operator's, not ours. Changing it affects waybills printed from now on; one already printed
+ * and signed carries whatever it was printed with, which is the point of it being paper.
+ */
+function WaybillTermsCard({
+  initial,
+  disabled,
+  onSave,
+}: {
+  initial: string;
+  disabled: boolean;
+  onSave: (v: string) => void;
+}) {
+  const [text, setText] = useState(initial);
+  return (
+    <Card
+      title="Waybill terms"
+      hint="Printed at the foot of every waybill, above the signature blocks."
+      disabled={disabled}
+      onSave={() => onSave(text)}
+    >
+      <label className="block">
+        <span className="field-label">Conditions of carriage</span>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={7}
+          maxLength={4000}
+          className="input mt-1 font-sans"
+        />
+        <span className="field-hint">
+          {text.length} of 4000 characters. Keep it short enough to be read on a doorstep.
+        </span>
+      </label>
+    </Card>
+  );
 }

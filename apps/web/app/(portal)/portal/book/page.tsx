@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Address,
@@ -45,9 +45,25 @@ const emptyDrop = (): Drop => ({
  * New booking: details → quote (persisted, on the account's rate card) → slot (Standard only)
  * → confirm. The confirm step is one engine call that reserves the slot and holds the funds
  * atomically, so the customer sees exactly one of: confirmed, insufficient funds, slot taken.
+ *
+ * Laid out across the full width rather than as a narrow column with a mostly-empty margin.
+ * The form is long, most of it is short fields, and stacking them one per row means scrolling
+ * past a screen of whitespace to reach the button. Collection and options are settings you set
+ * once and leave; drops are the part that grows. So those get their own columns, and the price
+ * stays in view beside them instead of arriving at the bottom.
  */
 export default function BookPage() {
+  return (
+    <Suspense fallback={<p className="lede">Loading…</p>}>
+      <Book />
+    </Suspense>
+  );
+}
+
+function Book() {
   const me = useMe();
+  const params = useSearchParams();
+  const resumeQuoteId = params.get("quote");
   const router = useRouter();
   const qc = useQueryClient();
   const account = me.activeAccount;
@@ -67,6 +83,7 @@ export default function BookPage() {
   const [collectionName, setCollectionName] = useState("");
   const [collectionPhone, setCollectionPhone] = useState("");
   const [collectionNotes, setCollectionNotes] = useState("");
+  const [customerReference, setCustomerReference] = useState("");
   const [drops, setDrops] = useState<Drop[]>([emptyDrop()]);
   const [opts, setOpts] = useState({
     liabilityCover: false,
@@ -81,6 +98,50 @@ export default function BookPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [idempotencyKey] = useState(() => `web-${crypto.randomUUID()}`);
+
+  /**
+   * Arriving from a saved quote: fill the form back in from the request it was priced on, and
+   * show its price straight away. Booking still goes through the same confirm step, because a
+   * quote that expired while it sat in the list must be refused the same way as any other.
+   */
+  const resumed = useQuery({
+    queryKey: ["quote", resumeQuoteId],
+    queryFn: () => api<Quote>(`/v1/account/quotes/${resumeQuoteId}`),
+    enabled: !!resumeQuoteId,
+  });
+
+  useEffect(() => {
+    const q = resumed.data;
+    if (!q) return;
+    const r = q.request;
+    setServiceLevel(q.serviceLevelCode);
+    setCollection(r.collection.address);
+    setCollectionName(r.collection.contact?.name ?? "");
+    setCollectionPhone(r.collection.contact?.phone ?? "");
+    setCollectionNotes(r.collection.instructions ?? "");
+    setDrops(
+      r.drops.map((d) => ({
+        address: d.address,
+        name: d.recipient.name,
+        phone: d.recipient.phone,
+        email: d.recipient.email ?? "",
+        instructions: d.instructions ?? "",
+        packageTypeId: d.parcels[0]?.packageTypeId ?? "",
+        quantity: d.parcels[0]?.quantity ?? 1,
+        weightKg: d.parcels[0]?.weightKg != null ? String(d.parcels[0].weightKg) : "",
+        description: d.parcels[0]?.description ?? "",
+      })),
+    );
+    setOpts({
+      liabilityCover: r.options.liabilityCover ?? false,
+      declaredValue: r.options.declaredValueCents ? String(r.options.declaredValueCents / 100) : "",
+      earlyCollection: r.options.earlyCollection ?? false,
+      signatureOnDelivery: r.options.signatureOnDelivery ?? false,
+      weddingVenue: r.options.weddingVenue ?? false,
+    });
+    // Only offer to book it if the price is still live.
+    if (q.status === "priced" && Date.parse(q.expiresAt) > Date.now()) setQuote(q);
+  }, [resumed.data]);
 
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
   const needsSlot = sl?.requiresSlot ?? true;
@@ -103,6 +164,9 @@ export default function BookPage() {
   function setDrop(i: number, patch: Partial<Drop>) {
     setDrops((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
   }
+
+  /** Any edit invalidates the price, so the customer can never confirm a stale one. */
+  const clearQuote = () => setQuote(null);
 
   async function getQuote() {
     setBusy(true);
@@ -159,7 +223,12 @@ export default function BookPage() {
     try {
       const b = await api<Booking>("/v1/account/bookings", {
         method: "POST",
-        json: { quoteId: quote.id, slot: needsSlot ? slot : undefined, idempotencyKey },
+        json: {
+          quoteId: quote.id,
+          slot: needsSlot ? slot : undefined,
+          idempotencyKey,
+          customerReference: customerReference.trim() || undefined,
+        },
       });
       await qc.invalidateQueries({ queryKey: ["account", account?.id] });
       router.replace(`/portal/bookings/${b.id}?new=1`);
@@ -179,113 +248,229 @@ export default function BookPage() {
   const short = quote ? Math.max(0, quote.breakdown.totalCents - available) : 0;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-5">
-      <div className="space-y-6 lg:col-span-3">
-        <h1 className="page-title">New booking</h1>
+    <div className="space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">{account.name}</p>
+          <h1 className="page-title mt-1">New booking</h1>
+        </div>
+        <div className="text-right text-sm">
+          <span className="label-mini block">Available to spend</span>
+          <span className="figure text-lg font-semibold">
+            {wallet.data ? rands(available) : "…"}
+          </span>
+          {wallet.data?.billingMode === "postpaid" && (
+            <span className="block text-xs text-muted">includes your credit limit</span>
+          )}
+        </div>
+      </header>
 
-        <Section title="1 · Service">
-          <div className="grid grid-cols-2 gap-3">
-            {catalog.data?.serviceLevels.map((s) => (
-              <label
-                key={s.code}
-                className={`cursor-pointer rounded-xl border p-4 ${serviceLevel === s.code ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-line"}`}
-              >
-                <input
-                  type="radio"
-                  className="sr-only"
-                  checked={serviceLevel === s.code}
-                  onChange={() => {
-                    setServiceLevel(s.code);
-                    setQuote(null);
-                  }}
-                />
-                <span className="block font-semibold">{s.name}</span>
-                <span className="mt-1 block text-xs text-[#6B6661]">{s.description}</span>
-              </label>
-            ))}
-          </div>
-        </Section>
+      {/* ── Service level: one row across the top, because it is one choice ── */}
+      <section className="panel p-4">
+        <p className="field-label mb-2">Service level</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {catalog.data?.serviceLevels.map((s) => (
+            <label
+              key={s.code}
+              className={`cursor-pointer rounded-xl border p-3 transition-colors ${
+                serviceLevel === s.code
+                  ? "border-ink bg-[#FAFAF9]"
+                  : "border-line hover:border-[#DAD6CF]"
+              }`}
+            >
+              <input
+                type="radio"
+                className="sr-only"
+                checked={serviceLevel === s.code}
+                onChange={() => {
+                  setServiceLevel(s.code);
+                  clearQuote();
+                }}
+              />
+              <span className="block text-[14px] font-semibold">{s.name}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-[#6B6661]">
+                {s.description}
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
 
-        <Section title="2 · Collection">
-          <AddressInput
-            label="Collect from"
-            value={collection}
-            onChange={(a) => {
-              setCollection(a);
-              setQuote(null);
-            }}
-          />
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Input
-              label="Contact name (optional)"
-              value={collectionName}
-              onChange={setCollectionName}
+      {/* ── The body: settings · drops · price, side by side on a wide screen ── */}
+      <div className="grid gap-5 xl:grid-cols-12">
+        {/* Collection and options: set once, then left alone. */}
+        <div className="space-y-5 xl:col-span-4">
+          <section className="panel p-5">
+            <h2 className="section-title mb-3">Collection</h2>
+            <AddressInput
+              label="Collect from"
+              value={collection}
+              onChange={(a) => {
+                setCollection(a);
+                clearQuote();
+              }}
             />
-            <Input label="Contact phone" value={collectionPhone} onChange={setCollectionPhone} />
-          </div>
-          <Input
-            label="Collection notes (optional)"
-            value={collectionNotes}
-            onChange={setCollectionNotes}
-            className="mt-3"
-          />
-        </Section>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Contact name"
+                optional
+                value={collectionName}
+                onChange={setCollectionName}
+              />
+              <Field label="Contact phone" value={collectionPhone} onChange={setCollectionPhone} />
+            </div>
+            <Field
+              label="Collection notes"
+              optional
+              value={collectionNotes}
+              onChange={setCollectionNotes}
+              className="mt-3"
+              placeholder="Ring the bell at the side gate…"
+            />
+            <Field
+              label="Your reference"
+              optional
+              value={customerReference}
+              onChange={setCustomerReference}
+              className="mt-3"
+              placeholder="Your own order number"
+              hint="Shown on your invoice and searchable in your shipment list."
+            />
+          </section>
 
-        <Section title="3 · Drops">
+          <section className="panel p-5">
+            <h2 className="section-title mb-3">Options</h2>
+            <div className="space-y-1">
+              <Check
+                label="Liability cover"
+                checked={opts.liabilityCover}
+                onChange={(v) => {
+                  setOpts({ ...opts, liabilityCover: v });
+                  clearQuote();
+                }}
+              />
+              {opts.liabilityCover && (
+                <Field
+                  label="Declared value (R)"
+                  type="number"
+                  value={opts.declaredValue}
+                  onChange={(v) => {
+                    setOpts({ ...opts, declaredValue: v });
+                    clearQuote();
+                  }}
+                  className="pb-1 pl-6"
+                />
+              )}
+              <Check
+                label="Early collection"
+                checked={opts.earlyCollection}
+                onChange={(v) => {
+                  setOpts({ ...opts, earlyCollection: v });
+                  clearQuote();
+                }}
+              />
+              <Check
+                label="Signature on delivery"
+                checked={opts.signatureOnDelivery}
+                onChange={(v) => {
+                  setOpts({ ...opts, signatureOnDelivery: v });
+                  clearQuote();
+                }}
+              />
+              <Check
+                label="Wedding venue"
+                checked={opts.weddingVenue}
+                onChange={(v) => {
+                  setOpts({ ...opts, weddingVenue: v });
+                  clearQuote();
+                }}
+              />
+            </div>
+          </section>
+        </div>
+
+        {/* Drops: the part that grows, so it gets the most room. */}
+        <div className="space-y-4 xl:col-span-5">
+          <div className="flex items-center justify-between">
+            <h2 className="section-title">
+              {drops.length === 1 ? "Delivery" : `${drops.length} deliveries`}
+            </h2>
+            {drops.length < 20 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDrops((ds) => [...ds, emptyDrop()]);
+                  clearQuote();
+                }}
+                className="btn btn-secondary btn-sm"
+              >
+                + Add a drop
+              </button>
+            )}
+          </div>
+
           {drops.map((d, i) => (
-            <div key={i} className="mb-4 panel p-4 last:mb-0">
+            <section key={i} className="panel p-5">
               <div className="flex items-center justify-between">
-                <p className="font-semibold">Drop {i + 1}</p>
+                <p className="eyebrow">Drop {i + 1}</p>
                 {drops.length > 1 && (
                   <button
                     type="button"
                     onClick={() => {
                       setDrops((ds) => ds.filter((_, j) => j !== i));
-                      setQuote(null);
+                      clearQuote();
                     }}
-                    className="text-sm text-muted hover:text-[#C13B73]"
+                    className="text-xs text-muted transition-colors hover:text-[#C13B73]"
                   >
                     Remove
                   </button>
                 )}
               </div>
+
               <div className="mt-3">
                 <AddressInput
                   label="Deliver to"
                   value={d.address}
                   onChange={(a) => {
                     setDrop(i, { address: a });
-                    setQuote(null);
+                    clearQuote();
                   }}
                 />
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                <Input
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field
                   label="Recipient name"
                   value={d.name}
                   onChange={(v) => setDrop(i, { name: v })}
                 />
-                <Input
+                <Field
                   label="Recipient phone"
                   value={d.phone}
                   onChange={(v) => setDrop(i, { phone: v })}
-                />
-                <Input
-                  label="Recipient email (optional)"
-                  value={d.email}
-                  onChange={(v) => setDrop(i, { email: v })}
+                  hint="We message this number when the driver is on the way."
                 />
               </div>
+
+              <Field
+                label="Recipient email"
+                optional
+                type="email"
+                value={d.email}
+                onChange={(v) => setDrop(i, { email: v })}
+                className="mt-3"
+              />
+
               <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                <label className="block text-sm sm:col-span-2">
-                  <span className="font-medium">Package</span>
+                <label className="block sm:col-span-2">
+                  <span className="field-label">Package</span>
                   <select
                     value={d.packageTypeId}
                     onChange={(e) => {
                       setDrop(i, { packageTypeId: e.target.value });
-                      setQuote(null);
+                      clearQuote();
                     }}
-                    className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-3 bg-white"
+                    className="input mt-1"
                   >
                     <option value="">Select…</option>
                     {catalog.data?.packageTypes.map((p) => (
@@ -296,181 +481,117 @@ export default function BookPage() {
                     ))}
                   </select>
                 </label>
-                <Input
+                <Field
                   label="Qty"
                   type="number"
                   value={String(d.quantity)}
                   onChange={(v) => {
                     setDrop(i, { quantity: Math.max(1, Number(v) || 1) });
-                    setQuote(null);
+                    clearQuote();
                   }}
                 />
-                <Input
-                  label="Weight kg (optional)"
+                <Field
+                  label="Weight kg"
+                  optional
                   type="number"
                   value={d.weightKg}
                   onChange={(v) => {
                     setDrop(i, { weightKg: v });
-                    setQuote(null);
+                    clearQuote();
                   }}
                 />
               </div>
-              <Input
-                label="Delivery instructions (optional)"
+
+              <Field
+                label="Delivery instructions"
+                optional
                 value={d.instructions}
                 onChange={(v) => setDrop(i, { instructions: v })}
                 className="mt-3"
                 placeholder="Gate code, leave with reception…"
               />
-            </div>
+            </section>
           ))}
-          {drops.length < 20 && (
-            <button
-              type="button"
-              onClick={() => {
-                setDrops((ds) => [...ds, emptyDrop()]);
-                setQuote(null);
-              }}
-              className="mt-3 text-sm font-medium text-brand-pink hover:text-ink"
-            >
-              + Add another drop
-            </button>
-          )}
-        </Section>
-
-        <Section title="4 · Options">
-          <div className="grid gap-2 text-sm sm:grid-cols-2">
-            <Check
-              label="Liability cover"
-              checked={opts.liabilityCover}
-              onChange={(v) => {
-                setOpts({ ...opts, liabilityCover: v });
-                setQuote(null);
-              }}
-            />
-            {opts.liabilityCover && (
-              <Input
-                label="Declared value (R)"
-                type="number"
-                value={opts.declaredValue}
-                onChange={(v) => {
-                  setOpts({ ...opts, declaredValue: v });
-                  setQuote(null);
-                }}
-              />
-            )}
-            <Check
-              label="Early collection"
-              checked={opts.earlyCollection}
-              onChange={(v) => {
-                setOpts({ ...opts, earlyCollection: v });
-                setQuote(null);
-              }}
-            />
-            <Check
-              label="Signature on delivery"
-              checked={opts.signatureOnDelivery}
-              onChange={(v) => {
-                setOpts({ ...opts, signatureOnDelivery: v });
-                setQuote(null);
-              }}
-            />
-            <Check
-              label="Wedding venue"
-              checked={opts.weddingVenue}
-              onChange={(v) => {
-                setOpts({ ...opts, weddingVenue: v });
-                setQuote(null);
-              }}
-            />
-          </div>
-        </Section>
-
-        {!quote && (
-          <button
-            disabled={!detailsComplete || busy}
-            onClick={getQuote}
-            className="w-full rounded-2xl bg-ink py-3 font-medium text-white hover:bg-brand-pink transition-colors disabled:opacity-40"
-          >
-            {busy ? "Pricing…" : "Get my price"}
-          </button>
-        )}
-      </div>
-
-      <aside className="space-y-4 lg:col-span-2">
-        <div className="sticky top-6 space-y-4">
-          <div className="panel p-5">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-[#6B6661]">Available to spend</span>
-              <span className="font-mono font-semibold">
-                {wallet.data ? rands(available) : "…"}
-              </span>
-            </div>
-            {wallet.data?.billingMode === "postpaid" && (
-              <p className="mt-1 text-xs text-muted">Includes your account credit limit.</p>
-            )}
-          </div>
-
-          {quote && (
-            <div className="panel p-5">
-              <h2 className="section-title">Your price</h2>
-              <div className="mt-3">
-                <Breakdown b={quote.breakdown} />
-              </div>
-              {quote.distanceProvider === "haversine" && (
-                <p className="mt-2 text-xs text-muted">
-                  Distance estimated; live routing arrives with the maps key.
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => setQuote(null)}
-                className="mt-3 text-xs text-muted hover:underline"
-              >
-                Edit details
-              </button>
-            </div>
-          )}
-
-          {quote && needsSlot && (
-            <div className="panel p-5">
-              <h2 className="section-title">Pick a delivery slot</h2>
-              <SlotPicker slots={slots.data ?? []} value={slot} onChange={setSlot} />
-            </div>
-          )}
-
-          {quote && (
-            <div className="panel p-5">
-              {short > 0 ? (
-                <>
-                  <p className="text-sm text-[#C13B73]">
-                    You are {rands(short)} short for this booking.
-                  </p>
-                  <a
-                    href="/portal/wallet"
-                    className="mt-3 block rounded-2xl bg-ink py-3 text-center text-sm font-medium text-white hover:bg-brand-pink"
-                  >
-                    Top up your wallet
-                  </a>
-                </>
-              ) : (
-                <button
-                  disabled={busy || (needsSlot && !slot)}
-                  onClick={confirm}
-                  className="w-full rounded-2xl bg-brand-pink py-3 font-medium text-white hover:bg-ink transition-colors disabled:opacity-40"
-                >
-                  {busy ? "Booking…" : `Confirm booking · ${rands(quote.breakdown.totalCents)}`}
-                </button>
-              )}
-              <p className="mt-2 text-xs text-muted">
-                The amount is reserved from your wallet now and charged when delivered. Cancel free
-                of charge before collection.
-              </p>
-            </div>
-          )}
-          {error && <p className="alert-error">{error}</p>}
         </div>
-      </aside>
+
+        {/* Price: in view the whole time, not waiting at the bottom. */}
+        <aside className="xl:col-span-3">
+          <div className="space-y-4 xl:sticky xl:top-6">
+            {!quote ? (
+              <section className="panel p-5">
+                <h2 className="section-title">Your price</h2>
+                <p className="lede mt-1">
+                  Fill in the collection address and each drop, then we will price it on your rate
+                  card.
+                </p>
+                <button
+                  disabled={!detailsComplete || busy}
+                  onClick={getQuote}
+                  className="btn btn-primary mt-4 w-full"
+                >
+                  {busy ? "Pricing…" : "Get my price"}
+                </button>
+                {!detailsComplete && (
+                  <p className="mt-2 text-xs text-muted">
+                    Each drop needs an address, a recipient name and phone, and a package type.
+                  </p>
+                )}
+              </section>
+            ) : (
+              <>
+                <section className="panel p-5">
+                  <h2 className="section-title">Your price</h2>
+                  <div className="mt-3">
+                    <Breakdown b={quote.breakdown} />
+                  </div>
+                  {quote.distanceProvider === "haversine" && (
+                    <p className="mt-2 text-xs text-muted">
+                      Distance estimated; live routing arrives with the maps key.
+                    </p>
+                  )}
+                  <button type="button" onClick={clearQuote} className="link-quiet mt-3 text-xs">
+                    Edit details
+                  </button>
+                </section>
+
+                {needsSlot && (
+                  <section className="panel p-5">
+                    <h2 className="section-title">Delivery slot</h2>
+                    <SlotPicker slots={slots.data ?? []} value={slot} onChange={setSlot} />
+                  </section>
+                )}
+
+                <section className="panel p-5">
+                  {short > 0 ? (
+                    <>
+                      <p className="text-sm text-[#C13B73]">
+                        You are {rands(short)} short for this booking.
+                      </p>
+                      <a href="/portal/wallet" className="btn btn-primary mt-3 w-full">
+                        Top up your wallet
+                      </a>
+                    </>
+                  ) : (
+                    <button
+                      disabled={busy || (needsSlot && !slot)}
+                      onClick={confirm}
+                      className="btn w-full bg-brand-pink text-white hover:bg-ink"
+                    >
+                      {busy ? "Booking…" : `Confirm · ${rands(quote.breakdown.totalCents)}`}
+                    </button>
+                  )}
+                  <p className="mt-2 text-xs text-muted">
+                    The amount is reserved from your wallet now and charged when delivered. Cancel
+                    free of charge before collection.
+                  </p>
+                </section>
+              </>
+            )}
+
+            {error && <p className="alert-error">{error}</p>}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -490,7 +611,7 @@ function SlotPicker({
     day ?? days.find((d) => slots.some((s) => s.date === d && s.bookable)) ?? days[0] ?? null;
   return (
     <div className="mt-3 space-y-3 text-sm">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {days.map((d) => {
           const any = slots.some((s) => s.date === d && s.bookable);
           return (
@@ -499,7 +620,9 @@ function SlotPicker({
               type="button"
               disabled={!any}
               onClick={() => setDay(d)}
-              className={`rounded-full border px-3 py-1 ${activeDay === d ? "border-[#0A0A0A] bg-ink text-white" : "border-[#DAD6CF]"} disabled:opacity-40`}
+              className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-40 ${
+                activeDay === d ? "border-ink bg-ink text-white" : "border-[#DAD6CF]"
+              }`}
             >
               {new Date(`${d}T00:00:00`).toLocaleDateString("en-ZA", {
                 weekday: "short",
@@ -521,7 +644,9 @@ function SlotPicker({
                 type="button"
                 disabled={!s.bookable}
                 onClick={() => onChange({ date: s.date, windowKey: s.windowKey })}
-                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${selected ? "border-[#0A0A0A] bg-[#FAFAF9]" : "border-line"} disabled:opacity-40`}
+                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition-colors disabled:opacity-40 ${
+                  selected ? "border-ink bg-[#FAFAF9]" : "border-line"
+                }`}
               >
                 <span>{s.label}</span>
                 <span className="text-xs text-muted">
@@ -535,33 +660,30 @@ function SlotPicker({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="panel p-5">
-      <h2 className="mb-3 section-title">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function Input(props: {
+function Field(props: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
   className?: string;
   placeholder?: string;
+  hint?: string;
+  optional?: boolean;
 }) {
   return (
-    <label className={`block text-sm ${props.className ?? ""}`}>
-      <span className="font-medium">{props.label}</span>
+    <label className={`block ${props.className ?? ""}`}>
+      <span className="field-label">
+        {props.label}
+        {props.optional && <span className="ml-1 normal-case text-[#B5AFA7]">optional</span>}
+      </span>
       <input
         type={props.type ?? "text"}
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder={props.placeholder}
-        className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-3"
+        className="input mt-1"
       />
+      {props.hint && <span className="field-hint">{props.hint}</span>}
     </label>
   );
 }
@@ -576,8 +698,13 @@ function Check({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 py-2">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="flex cursor-pointer items-center gap-2.5 py-1.5 text-sm">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="checkbox"
+      />
       <span>{label}</span>
     </label>
   );

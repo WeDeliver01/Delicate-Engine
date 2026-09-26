@@ -33,8 +33,15 @@ export const QuoteRequest = z.object({
   options: QuoteOptions.default({}),
   /** Optional: the account whose rate card applies. Public estimates omit it. */
   accountId: Uuid.optional(),
+  /** A name the customer gives a quote they mean to keep, e.g. "Saturday market run". */
+  label: z.string().trim().max(80).optional(),
 });
 export type QuoteRequest = z.infer<typeof QuoteRequest>;
+
+export const RenameQuoteRequest = z.object({
+  label: z.string().trim().max(80).nullable(),
+});
+export type RenameQuoteRequest = z.infer<typeof RenameQuoteRequest>;
 
 /** Public estimator: no contacts/parcels needed, just where and how. */
 export const EstimateRequest = z.object({
@@ -51,6 +58,10 @@ export const QuoteStatus = z.enum(["priced", "booked", "expired"]);
 export const Quote = z.object({
   id: Uuid,
   accountId: Uuid.nullable(),
+  /** QT-YYMMDD-NNNN. Null on quotes priced before references existed. */
+  reference: z.string().nullable(),
+  /** What the customer called it, if they saved it. */
+  label: z.string().nullable(),
   serviceLevelCode: z.string(),
   rateCardId: Uuid,
   status: QuoteStatus,

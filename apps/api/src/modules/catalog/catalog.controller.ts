@@ -1,10 +1,11 @@
-import { Controller, Get, Inject, Post, Put } from "@nestjs/common";
+import { Controller, Get, Inject, Patch, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
   EstimateRequest,
   GeocodeRequest,
   QuoteRequest,
+  RenameQuoteRequest,
   UpsertPackageTypeRequest,
   UpsertRateCardRequest,
   UpsertServiceLevelRequest,
@@ -13,6 +14,7 @@ import {
 import { ActiveAccountId, PlatformRoles, Public, RequireAccount } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { GEO_PROVIDER, type GeoProvider } from "../../infra/geo/geo.provider.js";
+import { SettingsService } from "../../infra/settings.service.js";
 import { CatalogService } from "./catalog.service.js";
 import { QuoteService } from "./quote.service.js";
 
@@ -23,8 +25,21 @@ export class PublicCatalogController {
   constructor(
     private readonly catalog: CatalogService,
     private readonly quotesSvc: QuoteService,
+    private readonly settings: SettingsService,
     @Inject(GEO_PROVIDER) private readonly geo: GeoProvider,
   ) {}
+
+  /**
+   * Who the carrier is, for the letterheads on quotes and waybills. Public because it is the
+   * same information already printed on every document we hand out, and the bank details are
+   * stripped: those belong on an invoice we issue, not on an open endpoint.
+   */
+  @Public()
+  @Get("company")
+  async company() {
+    const { bank: _bank, ...profile } = await this.settings.get("company.tax_profile");
+    return profile;
+  }
 
   @Public()
   @Get("catalog")
@@ -59,9 +74,28 @@ export class QuotesController {
     return this.quotesSvc.create(accountId, body);
   }
 
+  @Get()
+  list(@ActiveAccountId() accountId: string) {
+    return this.quotesSvc.list(accountId);
+  }
+
   @Get(":id")
   get(@ActiveAccountId() accountId: string, @Params(z.object({ id: Uuid })) p: { id: string }) {
     return this.quotesSvc.get(p.id, accountId);
+  }
+
+  @Patch(":id")
+  rename(
+    @ActiveAccountId() accountId: string,
+    @Params(z.object({ id: Uuid })) p: { id: string },
+    @Body(RenameQuoteRequest) body: RenameQuoteRequest,
+  ) {
+    return this.quotesSvc.rename(p.id, accountId, body.label);
+  }
+
+  @Post(":id/reprice")
+  reprice(@ActiveAccountId() accountId: string, @Params(z.object({ id: Uuid })) p: { id: string }) {
+    return this.quotesSvc.reprice(p.id, accountId);
   }
 }
 

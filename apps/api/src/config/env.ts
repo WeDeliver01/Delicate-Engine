@@ -67,6 +67,26 @@ const EnvSchema = z
     SMTP_PASSWORD: z.string().optional(),
     SMTP_FROM: z.string().email().optional(),
 
+    /**
+     * Twilio, for SMS and WhatsApp. Unset = those messages are recorded and suppressed.
+     *
+     * The auth token is a secret and stays in the environment: an API key typed into a web
+     * form ends up in a database backup. The two "from" numbers are separate because Twilio
+     * treats them as different senders — WhatsApp addresses are prefixed `whatsapp:` and a
+     * WhatsApp sender cannot send SMS.
+     */
+    TWILIO_ACCOUNT_SID: z.string().startsWith("AC").optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(8).optional(),
+    /** E.164, e.g. +27600000000. */
+    TWILIO_SMS_FROM: z.string().optional(),
+    /** E.164 of the WhatsApp sender, without the `whatsapp:` prefix. */
+    TWILIO_WHATSAPP_FROM: z.string().optional(),
+    /**
+     * Messaging Service SID, used in place of a from number when set. Twilio recommends it for
+     * WhatsApp because template approval and sender rotation hang off the service.
+     */
+    TWILIO_MESSAGING_SERVICE_SID: z.string().startsWith("MG").optional(),
+
     /** Worker tuning */
     OUTBOX_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(1000),
     OUTBOX_BATCH_SIZE: z.coerce.number().int().positive().default(25),

@@ -15,6 +15,7 @@ import {
 import { NOTIFICATION_TRANSPORTS } from "./transports/transport.js";
 import { EmailTransport } from "./transports/email.transport.js";
 import { SmsTransport, WhatsAppTransport } from "./transports/sms.transport.js";
+import { TwilioTransport } from "./transports/twilio.transport.js";
 
 /**
  * Telling people what happened. Every handler enqueues inside its own transaction, so a message
@@ -28,11 +29,17 @@ import { SmsTransport, WhatsAppTransport } from "./transports/sms.transport.js";
     NotificationDispatcher,
     {
       provide: NOTIFICATION_TRANSPORTS,
-      useFactory: (env: Env) => [
-        new EmailTransport(env),
-        new SmsTransport(),
-        new WhatsAppTransport(),
-      ],
+      // Twilio when it has credentials, the recording stub otherwise. Chosen here rather
+      // than inside one transport so the console's "not configured" text keeps naming the
+      // exact variable to set, instead of a live transport failing on every send.
+      useFactory: (env: Env) => {
+        const twilio = Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN);
+        return [
+          new EmailTransport(env),
+          twilio ? new TwilioTransport("sms", env) : new SmsTransport(),
+          twilio ? new TwilioTransport("whatsapp", env) : new WhatsAppTransport(),
+        ];
+      },
       inject: [ENV],
     },
   ],
@@ -210,6 +217,113 @@ export class NotificationModule implements OnModuleInit {
       });
     });
 
+    this.registry.register("account.created", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const account = await this.account(tx, e.payload.accountId);
+        await this.notifications.enqueue(tx, {
+          kind: "account.created",
+          audience: "customer",
+          to: account.email,
+          accountId: e.payload.accountId,
+          dedupeKey: `account:${e.payload.accountId}:created`,
+          payload: {
+            customerName: account.name,
+            accountName: e.payload.name,
+            portalUrl: `${this.webUrl()}/portal/book`,
+          },
+        });
+      });
+    });
+
+    this.registry.register("booking.cancelled", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const account = await this.account(tx, e.payload.accountId);
+        await this.notifications.enqueue(tx, {
+          kind: "booking.cancelled",
+          audience: "customer",
+          to: account.email,
+          accountId: e.payload.accountId,
+          dedupeKey: `booking:${e.payload.bookingId}:cancelled`,
+          payload: {
+            customerName: account.name,
+            reference: e.payload.reference,
+            // Rendered straight into the sentence, so it carries its own punctuation or
+            // disappears entirely rather than leaving a dangling " because ".
+            reason: e.payload.reason ? `: ${humanise(e.payload.reason)}` : "",
+          },
+        });
+      });
+    });
+
+    this.registry.register("shipment.assigned", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        if (!ctx) return;
+        const shipment = await tx.query.shipments.findFirst({
+          where: eq(shipments.id, e.payload.shipmentId),
+        });
+        await this.notifications.enqueue(tx, {
+          kind: "shipment.assigned",
+          audience: "customer",
+          to: ctx.accountEmail,
+          accountId: ctx.accountId,
+          shipmentId: e.payload.shipmentId,
+          // Keyed on the driver as well as the shipment: a redelivered event must not
+          // message twice, but a genuine reassignment to a different driver is new news and
+          // should reach the customer.
+          dedupeKey: `shipment:${e.payload.shipmentId}:assigned:${e.payload.driverId}`,
+          payload: {
+            ...ctx.payload,
+            driverName: await this.driverName(tx, e.payload.driverId),
+            slot: shipment?.slotDate
+              ? `${shipment.slotDate} ${shipment.slotWindowKey ?? ""}`.trim()
+              : "today",
+          },
+        });
+      });
+    });
+
+    this.registry.register("shipment.change_requested", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        if (!ctx) return;
+        await this.notifications.enqueue(tx, {
+          // Applied straight away, or waiting for us — two different things to say.
+          kind: e.payload.autoApplied ? "shipment.change_applied" : "shipment.change_requested",
+          audience: "customer",
+          to: ctx.accountEmail,
+          accountId: ctx.accountId,
+          shipmentId: e.payload.shipmentId,
+          dedupeKey: `change:${e.payload.changeRequestId}:requested`,
+          payload: {
+            ...ctx.payload,
+            changeKind: CHANGE_KIND_WORDS[e.payload.kind],
+            heldBecause: e.payload.heldBecause ?? "we are checking it",
+          },
+        });
+      });
+    });
+
+    this.registry.register("shipment.change_decided", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        if (!ctx) return;
+        await this.notifications.enqueue(tx, {
+          kind: e.payload.approved ? "shipment.change_approved" : "shipment.change_rejected",
+          audience: "customer",
+          to: ctx.accountEmail,
+          accountId: ctx.accountId,
+          shipmentId: e.payload.shipmentId,
+          dedupeKey: `change:${e.payload.changeRequestId}:decided`,
+          payload: {
+            ...ctx.payload,
+            changeKind: CHANGE_KIND_WORDS[e.payload.kind],
+            note: e.payload.note ? ` ${e.payload.note}` : "",
+          },
+        });
+      });
+    });
+
     this.logger.info("notification handlers registered");
   }
 
@@ -248,6 +362,14 @@ export class NotificationModule implements OnModuleInit {
     return process.env["WEB_PUBLIC_URL"] ?? "http://localhost:3000";
   }
 }
+
+/** The change kinds in the words a customer used when they asked for it. */
+const CHANGE_KIND_WORDS: Record<string, string> = {
+  recipient_contact: "recipient details",
+  delivery_address: "delivery address",
+  instructions: "delivery instructions",
+  reschedule: "delivery date",
+};
 
 /** Turn an internal reason code into something a customer can read. */
 function humanise(reason: string): string {

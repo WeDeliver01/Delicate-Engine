@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type {
+  AdminCopySettings,
   Notification,
   NotificationAudience,
   NotificationChannel,
@@ -95,10 +96,11 @@ export class NotificationService {
     if (templates.length === 0) return; // nothing configured to say for this event
 
     const prefs = input.accountId ? await this.preferencesFor(tx, input.accountId) : null;
+    const chosen = this.oneInstantChannel(templates, prefs);
     const company = await this.settings.get("company.tax_profile", tx);
     const payload = { companyName: company.tradingName ?? company.legalName, ...input.payload };
 
-    for (const template of templates) {
+    for (const template of chosen) {
       const suppression = this.suppressionReason(template, input, prefs);
       const body = render(template.body, payload);
       const subject = template.subject ? render(template.subject, payload) : null;
@@ -126,6 +128,35 @@ export class NotificationService {
     }
   }
 
+  /**
+   * At most one instant message per person per event.
+   *
+   * Email and a text are different enough to be worth both — one is a record, one is a nudge.
+   * An SMS *and* a WhatsApp saying the identical thing is just the same person being told
+   * twice, and the person it happens to is the recipient waiting at a door, who did not ask us
+   * for either. So when both exist for the same audience, WhatsApp wins where it can actually
+   * send and the account allows it, and the SMS is dropped before it is ever written down.
+   */
+  private oneInstantChannel(
+    templates: (typeof notificationTemplates.$inferSelect)[],
+    prefs: NotificationPreferences | null,
+  ) {
+    const instant = templates.filter((t) => t.channel === "sms" || t.channel === "whatsapp");
+    if (instant.length < 2) return templates;
+
+    const whatsapp = instant.find((t) => t.channel === "whatsapp");
+    const usable =
+      whatsapp?.enabled &&
+      prefs?.whatsapp !== false &&
+      this.transports.find((t) => t.channel === "whatsapp")?.status().configured;
+
+    const drop = usable ? "sms" : "whatsapp";
+    // Only the losing instant channel is removed, per audience: a customer's email and a
+    // recipient's message are separate decisions.
+    const losers = new Set(instant.filter((t) => t.channel === drop).map((t) => t.id));
+    return templates.filter((t) => !losers.has(t.id));
+  }
+
   /** Why this message will not be sent, or null to send it. */
   private suppressionReason(
     template: typeof notificationTemplates.$inferSelect,
@@ -151,6 +182,24 @@ export class NotificationService {
     if (!transport) return `No ${template.channel} transport exists.`;
     const status = transport.status();
     return status.configured ? null : status.detail;
+  }
+
+  /**
+   * The internal address to copy on a message, or null.
+   *
+   * Only email, because a copy of an SMS is not a thing, and never when the office is already
+   * the recipient — a mail addressed to admin@ and blind-copied to admin@ arrives twice.
+   */
+  private adminCopyFor(
+    kind: string,
+    channel: NotificationChannel,
+    to: string,
+    settings: AdminCopySettings | null,
+  ): string | null {
+    if (!settings?.enabled || channel !== "email") return null;
+    if (to.toLowerCase() === settings.address.toLowerCase()) return null;
+    const wanted = settings.kinds === "all" || settings.kinds.includes(kind as NotificationKind);
+    return wanted ? settings.address : null;
   }
 
   // ── sending ───────────────────────────────────────────────────────────────────
@@ -185,6 +234,7 @@ export class NotificationService {
 
     const company = await this.settings.get("company.tax_profile");
     const fromName = company.tradingName ?? company.legalName;
+    const adminCopy = await this.settings.get("notifications.admin_copy").catch(() => null);
 
     for (const id of claimed) {
       const row = await this.dbs.db.query.notifications.findFirst({
@@ -199,6 +249,7 @@ export class NotificationService {
           subject: row.subject,
           body: row.body,
           fromName,
+          bcc: this.adminCopyFor(row.kind, row.channel, row.toAddress, adminCopy),
         });
         await this.dbs.db
           .update(notifications)

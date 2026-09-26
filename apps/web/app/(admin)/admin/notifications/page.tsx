@@ -2,11 +2,15 @@
 
 import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  Notification,
-  NotificationChannelStatus,
-  NotificationStatus,
-  NotificationTemplate,
+import {
+  NOTIFICATION_GROUPS,
+  type AdminCopySettings,
+  type Notification,
+  type NotificationChannelStatus,
+  type NotificationKind,
+  type NotificationStatus,
+  type NotificationTemplate,
+  type SettingsBundle,
 } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { dateTime } from "@/lib/money";
@@ -37,6 +41,10 @@ export default function AdminNotifications() {
   const templates = useQuery({
     queryKey: ["admin", "notifications", "templates"],
     queryFn: () => api<NotificationTemplate[]>("/v1/admin/notifications/templates"),
+  });
+  const settings = useQuery({
+    queryKey: ["admin", "settings"],
+    queryFn: () => api<SettingsBundle>("/v1/admin/settings"),
   });
   const requeue = useMutation({
     mutationFn: (id: string) =>
@@ -177,6 +185,14 @@ export default function AdminNotifications() {
         </table>
       </section>
 
+      {settings.data && (
+        <AdminCopyPanel
+          value={settings.data.adminCopy}
+          onSaved={() => void qc.invalidateQueries({ queryKey: ["admin", "settings"] })}
+          onError={onError}
+        />
+      )}
+
       {templates.data && (
         <Templates templates={templates.data} onDone={invalidate} onError={onError} />
       )}
@@ -310,4 +326,147 @@ function StatusPill({ status }: { status: NotificationStatus }) {
     suppressed: "bg-[#F0EDE9] text-[#6B6661]",
   };
   return <span className={`rounded-full px-2 py-0.5 text-xs ${tone[status]}`}>{status}</span>;
+}
+
+/**
+ * Who inside the business is copied on outbound mail.
+ *
+ * The default copies everything, which is what was asked for and is a great deal of mail. The
+ * count is shown honestly next to the choice, and narrowing it costs nothing: every message is
+ * recorded and searchable in the list below whether or not a copy was posted to anyone.
+ */
+function AdminCopyPanel({
+  value,
+  onSaved,
+  onError,
+}: {
+  value: AdminCopySettings;
+  onSaved: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [draft, setDraft] = useState<AdminCopySettings>(value);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(value);
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<AdminCopySettings>("/v1/admin/settings/admin-copy", { method: "PUT", json: draft }),
+    onSuccess: onSaved,
+    onError,
+  });
+
+  const all = draft.kinds === "all";
+  // Narrowed into a local, because `draft.kinds` reads as the union again on every access.
+  const selected: NotificationKind[] = draft.kinds === "all" ? [] : draft.kinds;
+  const everyKind = NOTIFICATION_GROUPS.flatMap((g) => g.kinds) as NotificationKind[];
+
+  const toggle = (kind: NotificationKind) => {
+    const current = all ? everyKind : selected;
+    const next = current.includes(kind) ? current.filter((k) => k !== kind) : [...current, kind];
+    setDraft({ ...draft, kinds: next });
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <div>
+          <h2 className="section-title">Copy to the office</h2>
+          <p className="lede">A blind copy of outbound email to one internal address.</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
+            className="checkbox"
+          />
+          Enabled
+        </label>
+      </div>
+
+      <div className="panel-body space-y-4">
+        <label className="block max-w-sm">
+          <span className="field-label">Address</span>
+          <input
+            value={draft.address}
+            onChange={(e) => setDraft({ ...draft, address: e.target.value })}
+            className="input mt-1"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setDraft({ ...draft, kinds: "all" })}
+            className={`chip ${all ? "bg-ink text-white" : "chip-outline hover:border-ink"}`}
+          >
+            Everything
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setDraft({
+                ...draft,
+                // The ones with a human decision behind them: a failed booking needs chasing,
+                // a sign-up may need a call, money arriving should be seen.
+                kinds: [
+                  "account.created",
+                  "booking.rejected",
+                  "booking.cancelled",
+                  "shipment.failed",
+                  "shipment.change_requested",
+                  "wallet.topped_up",
+                ],
+              })
+            }
+            className="chip chip-outline hover:border-ink"
+          >
+            Only what needs a person
+          </button>
+        </div>
+
+        {all && (
+          <p className="alert-info">
+            Copying everything means a message for every status change on every shipment. At a few
+            hundred shipments a month that is thousands of emails, and the handful that need acting
+            on get lost among them. Everything is recorded below either way.
+          </p>
+        )}
+
+        {!all && (
+          <div className="space-y-3">
+            {NOTIFICATION_GROUPS.map((g) => (
+              <div key={g.group}>
+                <p className="label-mini">{g.group}</p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {(g.kinds as NotificationKind[]).map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => toggle(k)}
+                      className={`chip ${
+                        selected.includes(k)
+                          ? "bg-brand-pink text-white"
+                          : "chip-outline hover:border-ink"
+                      }`}
+                    >
+                      {k.split(".")[1]?.replace(/_/g, " ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={!dirty || save.isPending}
+          onClick={() => save.mutate()}
+          className="btn btn-primary btn-sm"
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </section>
+  );
 }

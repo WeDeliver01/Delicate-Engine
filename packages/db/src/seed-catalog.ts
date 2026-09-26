@@ -80,6 +80,32 @@ export const CATALOG_SEED = {
       bank: { bankName: "", accountName: "", accountNumber: "", branchCode: "" },
     },
     /**
+     * Printed at the foot of every waybill. Deliberately short: small print nobody reads
+     * protects nobody, and this has to survive being photographed on a doorstep. The operator
+     * edits it in the console, and a signed waybill is evidence, so the wording is theirs.
+     */
+    "company.waybill_terms":
+      "Goods are accepted for carriage subject to our standard terms and conditions of " +
+      "carriage, available on request and at delicatecourier.co.za. The sender warrants that " +
+      "the contents are correctly described and lawfully carried. Our liability is limited to " +
+      "the declared value stated on this waybill where liability cover has been purchased, and " +
+      "is otherwise limited in terms of our standard conditions. Signature below acknowledges " +
+      "that the parcels listed were received in apparent good order and condition.",
+    /**
+     * Every outbound message is copied to the office by default, which is what was asked for.
+     * It is a lot of mail: at a few hundred shipments a month with an email per status change,
+     * this mailbox receives thousands of messages nobody needs to read, and the ones that do
+     * need a human — a failed booking, a new sign-up — get buried among them.
+     *
+     * Everything is logged and searchable in the console either way, so narrowing `kinds` to
+     * the handful that need acting on costs nothing and is a one-line change in Settings.
+     */
+    "notifications.admin_copy": {
+      enabled: true,
+      address: "admin@delicatecourier.co.za",
+      kinds: "all",
+    },
+    /**
      * Starter cashback, switched OFF. The tiers are ready to go — 1% for everyone rising to 3%
      * for the customers who send the most, earned on the charge excluding VAT — but cashback is
      * a real cost and the rate is the owner's decision, so nothing pays out until someone turns

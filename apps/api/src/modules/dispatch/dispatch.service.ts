@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import {
   SHIPMENT_TRANSITIONS,
   type DeliverRequest,
@@ -16,6 +16,7 @@ import {
   assignments,
   bookings,
   proofsOfDelivery,
+  shipmentChangeRequests,
   shipmentEvents,
   shipments,
   type DbExecutor,
@@ -76,6 +77,53 @@ export class DispatchService {
       byBooking.set(r.b.id, g);
     }
 
+    /**
+     * Changes applied to these shipments after the driver was assigned to them.
+     *
+     * The day list refreshes every minute, so the driver's app already holds the new address —
+     * but a driver who read the address at the depot is driving to the old one from memory.
+     * This is what lets the app say so.
+     */
+    const changedByShipment = new Map<string, { what: string[]; at: Date }>();
+    const shipmentIds = rows.map((r) => r.s.id);
+    if (shipmentIds.length) {
+      const applied = await this.dbs.db
+        .select({
+          shipmentId: shipmentChangeRequests.shipmentId,
+          kind: shipmentChangeRequests.kind,
+          decidedAt: shipmentChangeRequests.decidedAt,
+          assignedAt: assignments.createdAt,
+        })
+        .from(shipmentChangeRequests)
+        .innerJoin(
+          assignments,
+          and(
+            eq(assignments.shipmentId, shipmentChangeRequests.shipmentId),
+            eq(assignments.active, true),
+          ),
+        )
+        .where(
+          and(
+            inArray(shipmentChangeRequests.shipmentId, shipmentIds),
+            inArray(shipmentChangeRequests.status, ["approved", "auto_applied"]),
+            isNotNull(shipmentChangeRequests.decidedAt),
+          ),
+        );
+
+      for (const row of applied) {
+        // Only what changed after this driver picked it up. A correction made the day before
+        // they were assigned is just what the job is.
+        if (!row.decidedAt || row.decidedAt <= row.assignedAt) continue;
+        const existing = changedByShipment.get(row.shipmentId) ?? { what: [], at: row.decidedAt };
+        // An unknown kind means a kind added without a word for it; the driver gets the raw
+        // name rather than nothing, which is ugly but never silently hides a change.
+        const word = CHANGE_WORDS[row.kind] ?? row.kind.replace(/_/g, " ");
+        if (!existing.what.includes(word)) existing.what.push(word);
+        if (row.decidedAt > existing.at) existing.at = row.decidedAt;
+        changedByShipment.set(row.shipmentId, existing);
+      }
+    }
+
     const stops: DriverStop[] = [];
     for (const { b, ships } of byBooking.values()) {
       const collection = b.collection as {
@@ -104,6 +152,18 @@ export class DispatchService {
           slotWindowKey: b.slotWindowKey,
           serviceLevelCode: b.serviceLevelCode,
           shipments: summary,
+          // A collection stop covers every shipment on the booking, so it is flagged if any
+          // of them changed — the driver is loading all of them into the van at once.
+          changed: toChangedFlag(
+            ships
+              .map((s) => changedByShipment.get(s.id))
+              .filter((c): c is { what: string[]; at: Date } => !!c)
+              .reduce<{ what: string[]; at: Date } | undefined>((acc, c) => {
+                if (!acc) return { what: [...c.what], at: c.at };
+                for (const w of c.what) if (!acc.what.includes(w)) acc.what.push(w);
+                return { what: acc.what, at: c.at > acc.at ? c.at : acc.at };
+              }, undefined),
+          ),
         });
       }
       for (const s of ships) {
@@ -122,6 +182,7 @@ export class DispatchService {
           slotWindowKey: s.slotWindowKey,
           serviceLevelCode: s.serviceLevelCode,
           shipments: summary,
+          changed: toChangedFlag(changedByShipment.get(s.id)),
         });
       }
     }
@@ -493,4 +554,16 @@ export function toPod(r: typeof proofsOfDelivery.$inferSelect): ProofOfDelivery 
     note: r.note,
     capturedAt: r.capturedAt.toISOString(),
   };
+}
+
+/** The change kinds in words a driver reads at a glance, standing next to their van. */
+const CHANGE_WORDS: Record<string, string> = {
+  recipient_contact: "recipient details",
+  delivery_address: "delivery address",
+  instructions: "instructions",
+  reschedule: "delivery date",
+};
+
+function toChangedFlag(change: { what: string[]; at: Date } | undefined): DriverStop["changed"] {
+  return change ? { what: change.what, at: change.at.toISOString() } : null;
 }

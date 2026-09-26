@@ -9,6 +9,7 @@ import {
   SettlementRules,
   SlotPolicy,
   TreasuryPolicy,
+  AdminCopySettings,
   type SettingKey,
 } from "@delicate/contracts";
 import { settings, type DbExecutor } from "@delicate/db";
@@ -27,6 +28,9 @@ const SCHEMAS = {
   "settlement.rules": SettlementRules,
   "treasury.policy": TreasuryPolicy,
   "company.tax_profile": CompanyTaxProfile,
+  // Printed at the foot of every waybill. The operator's words, not ours.
+  "company.waybill_terms": z.string().max(4000),
+  "notifications.admin_copy": AdminCopySettings,
   "loyalty.program": LoyaltyProgram,
 } satisfies Record<SettingKey, z.ZodTypeAny>;
 
