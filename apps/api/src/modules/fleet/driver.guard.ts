@@ -7,7 +7,7 @@ import {
 import type { Request } from "express";
 import type { Driver } from "@delicate/contracts";
 import { AppError } from "../../common/errors.js";
-import type { Principal } from "../../auth/principal.js";
+import { requireUser, type Principal } from "../../auth/principal.js";
 import { FleetService } from "./fleet.service.js";
 
 /**
@@ -25,7 +25,8 @@ export class DriverGuard implements CanActivate {
       .getRequest<Request & { principal?: Principal; driver?: Driver }>();
     const p = req.principal;
     if (!p) throw AppError.unauthorized();
-    const driver = await this.fleet.driverForUser(p.user.id, p.user.email);
+    const user = requireUser(p);
+    const driver = await this.fleet.driverForUser(user.id, user.email);
     if (!driver) throw AppError.forbidden("no active driver profile is linked to this login");
     if (driver.status !== "active") throw AppError.forbidden("driver profile is inactive");
     req.driver = driver;

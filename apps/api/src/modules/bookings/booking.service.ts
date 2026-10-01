@@ -119,6 +119,7 @@ export class BookingService {
             holdId: hold.id,
             idempotencyKey,
             createdByUserId: requestContext.get()?.userId ?? null,
+            createdByServiceClientId: requestContext.get()?.serviceClientId ?? null,
           })
           .returning();
 
@@ -410,6 +411,49 @@ export class BookingService {
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────
+
+  /**
+   * The booking a previous attempt with this key already created, if there was one.
+   *
+   * `create` does this check too, but a caller that must quote before it can book needs the
+   * answer *before* paying for a routing call it would only throw away.
+   */
+  async findByIdempotencyKey(accountId: string, key: string): Promise<Booking | null> {
+    const row = await this.dbs.db.query.bookings.findFirst({
+      where: and(eq(bookings.accountId, accountId), eq(bookings.idempotencyKey, key)),
+    });
+    return row ? this.get(row.id, accountId) : null;
+  }
+
+  /** The booking that consumed a quote, which is how `quote_used` becomes an answer. */
+  async findByQuoteId(accountId: string, quoteId: string): Promise<Booking | null> {
+    const row = await this.dbs.db.query.bookings.findFirst({
+      where: and(
+        eq(bookings.accountId, accountId),
+        eq(bookings.quoteId, quoteId),
+        inArray(bookings.status, ["confirmed", "in_progress", "completed", "cancelled"]),
+      ),
+    });
+    return row ? this.get(row.id, accountId) : null;
+  }
+
+  /**
+   * Find a booking by the caller's own reference, exactly.
+   *
+   * Exact match only, and scoped to the account: a lookup that is loose about this attaches
+   * somebody else's delivery to an order and nothing downstream would notice.
+   */
+  async findByCustomerReference(accountId: string, reference: string): Promise<Booking | null> {
+    const row = await this.dbs.db.query.bookings.findFirst({
+      where: and(
+        eq(bookings.accountId, accountId),
+        eq(bookings.customerReference, reference),
+        inArray(bookings.status, ["confirmed", "in_progress", "completed", "cancelled"]),
+      ),
+      orderBy: (b, { desc: d }) => [d(b.createdAt)],
+    });
+    return row ? this.get(row.id, accountId) : null;
+  }
 
   async get(bookingId: string, accountId: string | null): Promise<Booking> {
     const row = await this.dbs.db.query.bookings.findFirst({ where: eq(bookings.id, bookingId) });

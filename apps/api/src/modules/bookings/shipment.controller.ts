@@ -16,7 +16,7 @@ import {
   RequireAccount,
 } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
-import type { Principal } from "../../auth/principal.js";
+import { requireUser, type Principal } from "../../auth/principal.js";
 import { ShipmentQueryService } from "./shipment-query.service.js";
 import { ChangeRequestService } from "./change-request.service.js";
 import { SavedFilterService } from "./saved-filter.service.js";
@@ -95,7 +95,7 @@ export class AccountShipmentsController {
     @CurrentPrincipal() principal: Principal,
     @Query(SavedFilterScope) q: { scope: "portal" | "admin" },
   ) {
-    return this.filters.list(principal.user.id, q.scope);
+    return this.filters.list(requireUser(principal).id, q.scope);
   }
 
   @Post("saved-filters")
@@ -104,12 +104,12 @@ export class AccountShipmentsController {
     @ActiveAccountId() accountId: string,
     @Body(CreateSavedFilter) body: CreateSavedFilter,
   ) {
-    return this.filters.create(principal.user.id, accountId, body);
+    return this.filters.create(requireUser(principal).id, accountId, body);
   }
 
   @Delete("saved-filters/:id")
   deleteFilter(@CurrentPrincipal() principal: Principal, @Params(IdParam) p: { id: string }) {
-    return this.filters.remove(p.id, principal.user.id);
+    return this.filters.remove(p.id, requireUser(principal).id);
   }
 }
 
@@ -159,7 +159,7 @@ export class AdminShipmentsController {
 
   @Get("saved-filters")
   listFilters(@CurrentPrincipal() principal: Principal) {
-    return this.filters.list(principal.user.id, "admin");
+    return this.filters.list(requireUser(principal).id, "admin");
   }
 
   @Post("saved-filters")
@@ -167,12 +167,12 @@ export class AdminShipmentsController {
     @CurrentPrincipal() principal: Principal,
     @Body(CreateSavedFilter) body: CreateSavedFilter,
   ) {
-    return this.filters.create(principal.user.id, null, body);
+    return this.filters.create(requireUser(principal).id, null, body);
   }
 
   @Delete("saved-filters/:id")
   deleteFilter(@CurrentPrincipal() principal: Principal, @Params(IdParam) p: { id: string }) {
-    return this.filters.remove(p.id, principal.user.id);
+    return this.filters.remove(p.id, requireUser(principal).id);
   }
 }
 

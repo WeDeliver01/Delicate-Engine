@@ -12,7 +12,8 @@ export interface AuditEntry {
 
 /**
  * Append-only audit log (invariant #10). Written with the caller's transaction so a rolled-back
- * change never leaves a phantom audit row. Actor and request id come from the request context.
+ * change never leaves a phantom audit row. Actor and request id come from the request context;
+ * the actor is a user or a service client, never both.
  */
 @Injectable()
 export class AuditService {
@@ -20,6 +21,7 @@ export class AuditService {
     const ctx = requestContext.get();
     await tx.insert(auditLog).values({
       actorUserId: ctx?.userId ?? null,
+      actorServiceClientId: ctx?.serviceClientId ?? null,
       actorAccountId: ctx?.accountId ?? null,
       action: entry.action,
       entityType: entry.entityType,

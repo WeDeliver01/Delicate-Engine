@@ -8,11 +8,13 @@ import { ChangeRequestService } from "./change-request.service.js";
 import { SavedFilterService } from "./saved-filter.service.js";
 import { LiveTrackingService } from "./live-tracking.service.js";
 import { WaybillService } from "./waybill.service.js";
+import { ServiceBookingService } from "./service-booking.service.js";
 import {
   AdminBookingsController,
   BookingsController,
   TrackingController,
 } from "./booking.controller.js";
+import { ServiceBookingsController } from "./service-booking.controller.js";
 import {
   AccountShipmentsController,
   AdminChangeDecisionController,
@@ -28,6 +30,7 @@ import {
     AccountShipmentsController,
     AdminShipmentsController,
     AdminChangeDecisionController,
+    ServiceBookingsController,
   ],
   providers: [
     BookingService,
@@ -36,6 +39,7 @@ import {
     SavedFilterService,
     LiveTrackingService,
     WaybillService,
+    ServiceBookingService,
   ],
   exports: [
     BookingService,

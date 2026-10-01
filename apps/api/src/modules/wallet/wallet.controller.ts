@@ -17,7 +17,7 @@ import {
   Public,
   RequireAccount,
 } from "../../auth/decorators.js";
-import type { Principal } from "../../auth/principal.js";
+import { requireUser, type Principal } from "../../auth/principal.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { DbService } from "../../infra/db.module.js";
 import { WalletService } from "./wallet.service.js";
@@ -62,7 +62,7 @@ export class WalletController {
     @CurrentPrincipal() p: Principal,
     @Body(CreateTopUpRequest) body: CreateTopUpRequest,
   ) {
-    return this.topUps.create(accountId, p.user.email, body);
+    return this.topUps.create(accountId, requireUser(p).email, body);
   }
 }
 

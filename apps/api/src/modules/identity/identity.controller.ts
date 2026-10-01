@@ -14,7 +14,7 @@ import {
   CurrentPrincipal,
   RequireAccount,
 } from "../../auth/decorators.js";
-import type { Principal } from "../../auth/principal.js";
+import { requireUser, type Principal } from "../../auth/principal.js";
 import { Body, Params } from "../../common/zod.js";
 import { IdentityService } from "./identity.service.js";
 
@@ -26,7 +26,7 @@ export class IdentityController {
 
   @Get("me")
   me(@CurrentPrincipal() p: Principal) {
-    return this.identity.me(p.user);
+    return this.identity.me(requireUser(p));
   }
 
   @Patch("me")
@@ -34,7 +34,7 @@ export class IdentityController {
     @CurrentPrincipal() p: Principal,
     @Body(UpdateProfileRequest) body: UpdateProfileRequest,
   ) {
-    return this.identity.updateProfile(p.user.id, body);
+    return this.identity.updateProfile(requireUser(p).id, body);
   }
 
   @Post("accounts")
@@ -42,7 +42,7 @@ export class IdentityController {
     @CurrentPrincipal() p: Principal,
     @Body(CreateAccountRequest) body: CreateAccountRequest,
   ) {
-    return this.identity.createAccount(p.user, body);
+    return this.identity.createAccount(requireUser(p), body);
   }
 }
 

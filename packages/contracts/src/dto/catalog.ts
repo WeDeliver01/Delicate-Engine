@@ -59,6 +59,15 @@ export const RateCard = z.object({
   earlyCollectionFeeCents: NonNegativeCents,
   signatureFeeCents: NonNegativeCents,
   weddingVenueFeeCents: NonNegativeCents,
+  /**
+   * Date-conditional surcharges, charged on the distance component plus a flat amount, when
+   * the delivery date qualifies. Zero everywhere until the business turns them on, which is
+   * its own commercial decision and its own release — see `pricing.ts`.
+   */
+  weekendSurchargeBps: Bps,
+  weekendSurchargeCents: NonNegativeCents,
+  publicHolidaySurchargeBps: Bps,
+  publicHolidaySurchargeCents: NonNegativeCents,
   /** Road-distance factor applied to straight-line km when no routing provider is available. */
   roadFactorBps: z.number().int().min(10_000).max(30_000),
   createdAt: z.string().datetime(),
@@ -74,6 +83,10 @@ export const UpsertRateCardRequest = RateCard.omit({
   isDefault: true,
   active: true,
   roadFactorBps: true,
+  weekendSurchargeBps: true,
+  weekendSurchargeCents: true,
+  publicHolidaySurchargeBps: true,
+  publicHolidaySurchargeCents: true,
 });
 export type UpsertRateCardRequest = z.infer<typeof UpsertRateCardRequest>;
 

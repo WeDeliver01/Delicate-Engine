@@ -15,6 +15,7 @@ import { createdAt, id, timestamps } from "./_shared.js";
 import { accounts, users } from "./identity.js";
 import { quotes } from "./catalog.js";
 import { walletHolds } from "./wallet.js";
+import { serviceClients } from "./service-access.js";
 
 export const bookingStatusEnum = pgEnum("booking_status", [
   "confirmed",
@@ -71,6 +72,15 @@ export const bookings = pgTable(
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    /**
+     * Set when another system booked this on the account's behalf. Null for portal bookings.
+     * Reconciliation during a migration needs to know which side placed a job without
+     * inferring it from reference formats.
+     */
+    createdByServiceClientId: uuid("created_by_service_client_id").references(
+      () => serviceClients.id,
+      { onDelete: "set null" },
+    ),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
     completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
     ...timestamps(),

@@ -4,14 +4,17 @@ import type { NextFunction, Request, Response } from "express";
 
 /**
  * Per-request context available anywhere on the call stack without threading it through
- * every signature. Auth populates `userId` / `accountId` after verification; the audit and
- * outbox services read them so every write is attributed automatically.
+ * every signature. Auth populates `userId` (or `serviceClientId`) and `accountId` after
+ * verification; the audit and outbox services read them so every write is attributed
+ * automatically, whoever made it.
  */
 export interface RequestContext {
   requestId: string;
   ip?: string;
   userId?: string;
   accountId?: string;
+  /** Set instead of `userId` when another system is calling. */
+  serviceClientId?: string;
 }
 
 class RequestContextStore {

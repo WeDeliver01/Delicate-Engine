@@ -100,6 +100,8 @@ export const auditLog = pgTable(
     id: id(),
     actorUserId: uuid("actor_user_id"),
     actorAccountId: uuid("actor_account_id"),
+    /** Set instead of `actorUserId` when a machine did it. Exactly one of the two is set. */
+    actorServiceClientId: uuid("actor_service_client_id"),
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id"),
@@ -112,6 +114,7 @@ export const auditLog = pgTable(
   (t) => [
     index("audit_entity_idx").on(t.entityType, t.entityId),
     index("audit_actor_idx").on(t.actorUserId, t.createdAt),
+    index("audit_service_actor_idx").on(t.actorServiceClientId, t.createdAt),
   ],
 );
 

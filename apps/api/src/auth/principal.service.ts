@@ -4,7 +4,7 @@ import { accounts, memberships, users } from "@delicate/db";
 import { DbService } from "../infra/db.module.js";
 import { AppError } from "../common/errors.js";
 import type { VerifiedToken } from "./token-verifier.js";
-import { isStaff, type Principal } from "./principal.js";
+import { isStaff, type AuthenticatedUser, type Principal } from "./principal.js";
 
 /**
  * Turns a verified token into our own notion of a user, and an account header into an
@@ -15,7 +15,7 @@ import { isStaff, type Principal } from "./principal.js";
 export class PrincipalService {
   constructor(private readonly dbs: DbService) {}
 
-  async resolveUser(token: VerifiedToken): Promise<Principal["user"]> {
+  async resolveUser(token: VerifiedToken): Promise<AuthenticatedUser> {
     const { db } = this.dbs;
     const existing = await db.query.users.findFirst({ where: eq(users.id, token.userId) });
     if (existing) {
@@ -39,7 +39,7 @@ export class PrincipalService {
   }
 
   async resolveAccount(
-    user: Principal["user"],
+    user: AuthenticatedUser,
     accountId: string,
   ): Promise<NonNullable<Principal["account"]>> {
     const { db } = this.dbs;
@@ -50,7 +50,7 @@ export class PrincipalService {
     if (!account) throw AppError.forbidden("unknown account");
     if (account.status !== "active") throw AppError.forbidden("account is not active");
 
-    if (isStaff({ user, account: null })) {
+    if (isStaff({ user, service: null, account: null })) {
       return { id: account.id, role: null };
     }
 

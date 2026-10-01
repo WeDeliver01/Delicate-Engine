@@ -13,3 +13,4 @@ export * from "./notifications.js";
 export * from "./address-book.js";
 export * from "./loyalty.js";
 export * from "./workspace.js";
+export * from "./service-access.js";

@@ -17,7 +17,7 @@ import { OutboxService } from "../../infra/outbox.service.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { AppError } from "../../common/errors.js";
 import { WalletService } from "../wallet/wallet.service.js";
-import type { Principal } from "../../auth/principal.js";
+import type { AuthenticatedUser } from "../../auth/principal.js";
 
 /**
  * Identity & Accounts domain. Every mutation runs in one transaction that writes the change,
@@ -32,7 +32,7 @@ export class IdentityService {
     private readonly wallet: WalletService,
   ) {}
 
-  async me(user: Principal["user"]): Promise<MeResponse> {
+  async me(user: AuthenticatedUser): Promise<MeResponse> {
     const { db } = this.dbs;
     const row = await db.query.users.findFirst({ where: eq(users.id, user.id) });
     if (!row) throw AppError.notFound("user");
@@ -82,7 +82,7 @@ export class IdentityService {
   }
 
   async createAccount(
-    user: Principal["user"],
+    user: AuthenticatedUser,
     input: CreateAccountRequest,
   ): Promise<AccountMembership> {
     return this.dbs.transaction(async (tx) => {
@@ -151,7 +151,7 @@ export class IdentityService {
    */
   private async resolveOrganization(
     tx: DbExecutor,
-    user: Principal["user"],
+    user: AuthenticatedUser,
     input: CreateAccountRequest,
   ): Promise<string> {
     const org = input.organization;

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { haversineKm, priceQuote, type PricingInput, toCustomerBreakdown } from "./pricing.js";
+import {
+  dateFlagsFor,
+  haversineKm,
+  priceQuote,
+  type PricingInput,
+  toCustomerBreakdown,
+} from "./pricing.js";
 import type { PackageType, RateCard, ServiceLevel } from "./dto/catalog.js";
 
 const card: RateCard = {
@@ -17,6 +23,10 @@ const card: RateCard = {
   earlyCollectionFeeCents: 6_000,
   signatureFeeCents: 1_500,
   weddingVenueFeeCents: 12_000,
+  weekendSurchargeBps: 0,
+  weekendSurchargeCents: 0,
+  publicHolidaySurchargeBps: 0,
+  publicHolidaySurchargeCents: 0,
   roadFactorBps: 13_000,
   createdAt: "2026-09-20T00:00:00.000Z",
   updatedAt: "2026-09-20T00:00:00.000Z",
@@ -153,6 +163,66 @@ describe("haversineKm", () => {
   });
 });
 
+describe("date-conditional surcharges", () => {
+  // Built, wired, and adding nothing — which is the whole point until the business says so.
+  const weekendRun: PricingInput = {
+    ...base,
+    legsKm: [10, 20, 15, 25],
+    dropCount: 2,
+    dateFlags: { weekend: true, publicHoliday: false },
+  };
+
+  it("charges nothing extra on a weekend while the rate card carries zero", () => {
+    const off = priceQuote(weekendRun);
+    const weekday = priceQuote({ ...weekendRun, dateFlags: undefined });
+    expect(off.totalCents).toBe(weekday.totalCents);
+    expect(off.lines.some((l) => l.code === "weekend")).toBe(false);
+  });
+
+  it("adds a weekend line only once a rate card sets one, as its own explainable line", () => {
+    const q = priceQuote({
+      ...weekendRun,
+      rateCard: { ...card, weekendSurchargeBps: 1_000, weekendSurchargeCents: 2_500 },
+    });
+    const weekday = priceQuote({ ...weekendRun, dateFlags: undefined });
+    const distance = q.lines.find((l) => l.code === "distance")!.amountCents;
+    // 10% of the distance component plus a flat R25.
+    expect(q.lines.find((l) => l.code === "weekend")!.amountCents).toBe(
+      Math.round(distance * 0.1) + 2_500,
+    );
+    expect(q.subtotalCents).toBeGreaterThan(weekday.subtotalCents);
+    expect(q.lines.reduce((sum, l) => sum + l.amountCents, 0)).toBe(q.subtotalCents);
+  });
+
+  it("keeps a public holiday separate from a weekend so a price can say which it was", () => {
+    const q = priceQuote({
+      ...weekendRun,
+      dateFlags: { weekend: true, publicHoliday: true },
+      rateCard: {
+        ...card,
+        weekendSurchargeCents: 2_500,
+        publicHolidaySurchargeCents: 7_500,
+      },
+    });
+    expect(q.lines.find((l) => l.code === "weekend")!.amountCents).toBe(2_500);
+    expect(q.lines.find((l) => l.code === "public_holiday")!.amountCents).toBe(7_500);
+  });
+});
+
+describe("dateFlagsFor", () => {
+  it("reads Saturday and Sunday as the weekend, whatever the machine's timezone is", () => {
+    expect(dateFlagsFor("2026-10-03").weekend).toBe(true); // Saturday
+    expect(dateFlagsFor("2026-10-04").weekend).toBe(true); // Sunday
+    expect(dateFlagsFor("2026-10-05").weekend).toBe(false); // Monday
+    expect(dateFlagsFor("2026-10-02").weekend).toBe(false); // Friday
+  });
+
+  it("only calls a date a public holiday when it is in the list it was given", () => {
+    expect(dateFlagsFor("2026-12-25").publicHoliday).toBe(false);
+    expect(dateFlagsFor("2026-12-25", ["2026-12-25"]).publicHoliday).toBe(true);
+  });
+});
+
 describe("what a customer is allowed to see", () => {
   const full = {
     distanceKm: 23.4,
@@ -183,6 +253,7 @@ describe("what a customer is allowed to see", () => {
     const shown = toCustomerBreakdown(full);
     expect(shown.totalCents).toBe(31_050);
     expect(shown.vatCents).toBe(4_050);
+    expect(shown.subtotalCents).toBe(27_000);
     expect(shown.lines.map((l) => l.code)).toEqual(["distance", "extra_drops"]);
   });
 
@@ -193,12 +264,18 @@ describe("what a customer is allowed to see", () => {
   });
 
   it("strips the distance however it was written", () => {
-    for (const label of ["Standard · 23.4 km", "Standard 23,4km", "Standard - 8 KM"]) {
+    const variants = [
+      "Standard · 23.4 km",
+      "Standard 23,4km",
+      "Standard - 8 KM",
+      "Express · 112.75 km",
+    ];
+    for (const label of variants) {
       const [line] = toCustomerBreakdown({
         ...full,
         lines: [{ code: "x", label, amountCents: 1 }],
       }).lines;
-      expect(line!.label, label).toBe("Standard");
+      expect(line!.label, label).not.toMatch(/\d|km/i);
     }
   });
 

@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from "./common/errors.js";
 import { HealthController } from "./modules/health/health.controller.js";
 import { IdentityModule } from "./modules/identity/identity.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
+import { ServiceAccessModule } from "./modules/service-access/service-access.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { WalletModule } from "./modules/wallet/wallet.module.js";
 import { SchedulingModule } from "./modules/scheduling/scheduling.module.js";
@@ -63,6 +64,7 @@ export class AppModule {
         LedgerModule,
         IdentityModule,
         AdminModule,
+        ServiceAccessModule,
         CatalogModule,
         WalletModule,
         SchedulingModule,

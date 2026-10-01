@@ -245,6 +245,26 @@ rejected | failed`). The engine only ever creates proposals; a `finance` user ap
 
 Each phase ends with: tests green, a short demo, and a sign-off before the next.
 
+### Phase 6 — the integration seam (proposed, not yet signed off)
+
+Added 2026-10-01, after the Delicate Courier API's migration analysis. Phases 0–5 built the
+engine for customers who book through the portal. Phase 6 makes it bookable **by another
+system** on a merchant's behalf, which is what moving Delicate off ShipLogic needs.
+
+| Item                                                                                                          | State                                        |
+| ------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Service credentials, scopes, account grants ([ADR 0004](adr/0004-service-credentials-for-machine-callers.md)) | Built                                        |
+| `account_external_refs` — the caller keeps its own identifiers                                                | Built                                        |
+| One-call booking with retry-safe quote semantics (`quote_used` / `quote_expired`)                             | Built                                        |
+| Lookup by the caller's own reference, exact match                                                             | Built                                        |
+| Date-conditional surcharges, framework in place and switched off                                              | Built                                        |
+| Merchant wallets or agreed credit terms                                                                       | **Commercial, not built — gates everything** |
+| Whether engine pricing must reproduce the ShipLogic rate card                                                 | **Decision outstanding**                     |
+
+The last two are not engineering work and no amount of code removes them. Every booking still
+passes the wallet gate, so a merchant cannot be migrated until its account is funded or on
+credit terms.
+
 ---
 
 ## 7. Open items to confirm
@@ -267,6 +287,9 @@ Each phase ends with: tests green, a short demo, and a sign-off before the next.
 - **Service levels & zones** for the initial rate card (I can seed from the copy deck / old
   quote stepper, but you should confirm the numbers).
 - **Fuel rate** (cents/km) and **driver earning rule** initial values.
+- **Public holiday calendar**: the rate card can now carry a public-holiday surcharge and the
+  quote engine will apply it, but nothing decides which dates qualify. Needs the list (and who
+  maintains it each year) before that lever can be used. Weekends need no list and already work.
 
 ---
 
