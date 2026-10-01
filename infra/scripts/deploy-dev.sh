@@ -4,7 +4,11 @@
 #
 # Run it on the VPS, from the repository root:
 #
-#   infra/scripts/deploy-dev.sh            # pull the images CI built, migrate, start, check
+#   infra/scripts/deploy-dev.sh            # pull the images CI built, start, check
+#
+# Migrations are NOT run here. The api container applies them from its own entrypoint before
+# the server starts, so they run wherever the image runs rather than only where this script
+# does — and the worker sits them out so only one container migrates.
 #   infra/scripts/deploy-dev.sh --seed     # ...and seed the catalog (first run)
 #   infra/scripts/deploy-dev.sh --build    # build here instead of pulling (slow on 2 vCPU)
 #   infra/scripts/deploy-dev.sh --edge     # also run Caddy on 80/443 (dedicated machine only)
