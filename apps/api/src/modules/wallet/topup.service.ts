@@ -53,7 +53,7 @@ export class TopUpService {
     const provider = this.providers.get(input.provider);
     if (!provider || !(await provider.isEnabled())) {
       throw new AppError("provider_unavailable", `${input.provider} is not available`, 400, {
-        available: this.availableProviders(),
+        available: await this.availableProviders(),
       });
     }
     const topUp = await this.dbs.transaction(async (tx) => {

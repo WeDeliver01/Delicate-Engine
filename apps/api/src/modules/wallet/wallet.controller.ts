@@ -17,7 +17,7 @@ import {
   Public,
   RequireAccount,
 } from "../../auth/decorators.js";
-import type { Principal } from "../../auth/principal.js";
+import { requireUser, type Principal } from "../../auth/principal.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { DbService } from "../../infra/db.module.js";
 import { WalletService } from "./wallet.service.js";
@@ -44,8 +44,11 @@ export class WalletController {
   }
 
   @Get("providers")
-  providers() {
-    return { providers: this.topUps.availableProviders() };
+  async providers() {
+    // Awaited. `availableProviders` asks every provider whether it is configured, so it is
+    // async, and a promise handed to the JSON serialiser becomes `{}` — which reaches the
+    // browser as a providers field that is not an array and takes the whole page down.
+    return { providers: await this.topUps.availableProviders() };
   }
 
   @Get("top-ups")
@@ -59,7 +62,7 @@ export class WalletController {
     @CurrentPrincipal() p: Principal,
     @Body(CreateTopUpRequest) body: CreateTopUpRequest,
   ) {
-    return this.topUps.create(accountId, p.user.email, body);
+    return this.topUps.create(accountId, requireUser(p).email, body);
   }
 }
 

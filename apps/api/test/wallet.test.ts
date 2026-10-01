@@ -250,4 +250,33 @@ describe("wallet & top-ups", () => {
       .set("Authorization", `Bearer ${finance}`);
     expect(verify.body).toEqual({ ok: true, cachedCents: 5_500, derivedCents: 5_500 });
   });
+
+  it("serves the available providers as a JSON array the browser can iterate", async () => {
+    // Regression: `availableProviders` is async, and returning the promise unawaited made the
+    // serialiser render it as `{}`. The response still looked fine -- 200, small body, no
+    // error in any log -- and the portal's wallet page died on `providers.map is not a
+    // function`, which is a white screen for something the engine reported as healthy.
+    const res = await h.http().get("/v1/account/wallet/providers").set(asOwner()).expect(200);
+
+    expect(Array.isArray(res.body.providers), JSON.stringify(res.body)).toBe(true);
+    // Manual EFT needs no credentials, so it is always on and the list is never empty.
+    expect(res.body.providers).toContain("manual_eft");
+    for (const name of res.body.providers) {
+      expect(typeof name).toBe("string");
+    }
+  });
+
+  it("names the available providers when one is asked for that is not configured", async () => {
+    // The same unawaited call appeared in this error's details, where it would have told a
+    // customer their alternatives were `{}`.
+    const res = await h
+      .http()
+      .post("/v1/account/wallet/top-ups")
+      .set(asOwner())
+      .send({ provider: "yoco", amountCents: 50_000 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("provider_unavailable");
+    expect(Array.isArray(res.body.details.available)).toBe(true);
+  });
 });
