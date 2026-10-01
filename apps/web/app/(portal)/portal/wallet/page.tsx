@@ -18,7 +18,7 @@ const PROVIDER_LABELS: Record<PaymentProviderName, string> = {
   manual_eft: "Bank transfer (EFT)",
   payfast: "Card / Instant EFT via PayFast",
   yoco: "Card via Yoco",
-  bobpay: "BobPay",
+  bobpay: "Bob Pay",
 };
 
 export default function WalletPage() {

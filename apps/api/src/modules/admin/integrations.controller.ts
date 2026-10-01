@@ -111,13 +111,16 @@ export class AdminIntegrationsController {
 
     out.push({
       key: "bobpay",
-      name: "BobPay",
-      purpose: "A further card and EFT option for customers topping up.",
-      configured: false,
-      using: "Off",
+      name: "Bob Pay",
+      purpose: "Card and instant EFT top-ups, credited once the notification is verified.",
+      configured: providers.includes("bobpay"),
+      using: providers.includes("bobpay") ? (this.env.BOBPAY_SANDBOX ? "Sandbox" : "Live") : "Off",
       changeIn: "environment",
-      action:
-        "Not built: money coming in is where a guessed API is silently dangerous, so this needs BobPay's merchant documentation and a sandbox payment before it can credit a wallet.",
+      action: providers.includes("bobpay")
+        ? this.env.BOBPAY_SANDBOX
+          ? "Sandbox. Clear BOBPAY_SANDBOX to take real money."
+          : null
+        : "Set BOBPAY_API_TOKEN, BOBPAY_ACCOUNT_CODE and BOBPAY_PASSPHRASE from your Bob Pay account settings, then make one sandbox payment end to end before taking real money.",
     });
 
     for (const c of channels) {

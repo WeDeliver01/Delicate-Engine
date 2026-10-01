@@ -1,7 +1,6 @@
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { YocoProvider } from "../src/modules/wallet/payments/yoco.provider.js";
-import { BobPayProvider } from "../src/modules/wallet/payments/bobpay.provider.js";
 import type { Env } from "../src/config/env.js";
 import type { TopUp } from "@delicate/contracts";
 
@@ -164,20 +163,5 @@ describe("Yoco", () => {
     await expect(
       provider.verifyNotification({ rawBody: orphan, params: {}, headers: signed(orphan) }),
     ).rejects.toMatchObject({ code: "yoco_unknown_payment" });
-  });
-});
-
-describe("BobPay", () => {
-  it("stays off and says what it needs, rather than pretending to work", async () => {
-    const provider = new BobPayProvider({} as unknown as Env);
-    expect(await provider.isEnabled()).toBe(false);
-    expect(provider.pendingReason).toContain("documentation");
-    await expect(provider.initiate(topUp)).rejects.toMatchObject({ code: "provider_unavailable" });
-  });
-
-  it("stays off even when a merchant id is present, because nothing verifies a notification", async () => {
-    const provider = new BobPayProvider({ BOBPAY_MERCHANT_ID: "m-1" } as unknown as Env);
-    expect(await provider.isEnabled()).toBe(false);
-    await expect(provider.verifyNotification()).rejects.toMatchObject({ code: "unauthorized" });
   });
 });

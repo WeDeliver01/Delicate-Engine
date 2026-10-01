@@ -57,8 +57,23 @@ const EnvSchema = z
     YOCO_SECRET_KEY: z.string().min(10).optional(),
     YOCO_WEBHOOK_SECRET: z.string().min(10).optional(),
 
-    /** BobPay. Present for completeness; the integration needs its API documentation first. */
-    BOBPAY_MERCHANT_ID: z.string().optional(),
+    /**
+     * Bob Pay. All three required: the token takes the payment, and the account code and
+     * passphrase are what prove the notification about it is genuine. A token on its own could
+     * collect money it could not then verify.
+     */
+    BOBPAY_API_TOKEN: z.string().min(10).optional(),
+    BOBPAY_ACCOUNT_CODE: z.string().min(1).optional(),
+    BOBPAY_PASSPHRASE: z.string().min(1).optional(),
+    BOBPAY_SANDBOX: z
+      .string()
+      .optional()
+      .transform((v) => v === "1" || v === "true"),
+    /** Tests only: skip the server-to-server validate call. Never set in production. */
+    BOBPAY_SKIP_VALIDATE: z
+      .string()
+      .optional()
+      .transform((v) => v === "1" || v === "true"),
 
     /** Outbound email over SMTP. Unset = email is recorded and suppressed, never sent. */
     SMTP_HOST: z.string().min(1).optional(),
