@@ -19,6 +19,9 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "geocoded_addresses",
+  "route_legs",
+  "geo_usage_daily",
   "loyalty_awards",
   "saved_addresses",
   "notifications",

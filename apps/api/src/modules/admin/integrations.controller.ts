@@ -5,6 +5,8 @@ import { PlatformRoles } from "../../auth/decorators.js";
 import { ENV, type Env } from "../../config/env.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { GEO_PROVIDER, type GeoProvider } from "../../infra/geo/geo.provider.js";
+import { LocationCacheService } from "../../infra/geo/location-cache.service.js";
+import { GEO_DAILY_BUDGET } from "../../infra/geo/geo.module.js";
 import { TopUpService } from "../../modules/wallet/topup.service.js";
 import { NotificationService } from "../../modules/notifications/notification.service.js";
 
@@ -41,7 +43,32 @@ export class AdminIntegrationsController {
     private readonly settings: SettingsService,
     private readonly topups: TopUpService,
     private readonly notifications: NotificationService,
+    private readonly locations: LocationCacheService,
   ) {}
+
+  /**
+   * What is measuring distances right now, what today has cost of the allowance, and how much
+   * the cache saved.
+   *
+   * Worth showing next to the integration rather than buried in a log: it is the number that
+   * says whether the free plan is still the right plan, and the only warning before a day
+   * starts pricing on estimates.
+   */
+  private async geoUsing(): Promise<string> {
+    if (this.geo.name === "haversine") {
+      return "Straight-line distance with a road factor — good enough to quote, but not real road distance";
+    }
+    if (!this.env.GEOAPIFY_API_KEY) return this.geo.name;
+
+    const [usage, saved] = await Promise.all([
+      this.locations.usageToday("geoapify"),
+      this.locations.savedCallsToday(),
+    ]);
+    const standby = this.env.LOCATIONIQ_API_KEY ? " (LocationIQ standing by)" : "";
+    const reused = saved > 0 ? `, ${saved} answered from our own records` : "";
+    const refused = usage.skipped > 0 ? ` — ${usage.skipped} skipped, the budget is spent` : "";
+    return `${this.geo.name}${standby} · ${usage.calls} of ${GEO_DAILY_BUDGET} lookups used today${reused}${refused}`;
+  }
 
   @Get()
   async all(): Promise<IntegrationStatus[]> {
@@ -58,10 +85,7 @@ export class AdminIntegrationsController {
       // `name` is whichever provider last answered, so this reports what is actually pricing
       // quotes rather than what is configured -- the two differ the moment Geoapify is down.
       configured: this.env.GEOAPIFY_API_KEY != null || this.env.LOCATIONIQ_API_KEY != null,
-      using:
-        this.geo.name === "haversine"
-          ? "Straight-line distance with a road factor — good enough to quote, but not real road distance"
-          : `${this.geo.name}${this.env.GEOAPIFY_API_KEY && this.env.LOCATIONIQ_API_KEY ? " (LocationIQ standing by)" : ""}`,
+      using: await this.geoUsing(),
       changeIn: "environment",
       action: !this.env.GEOAPIFY_API_KEY
         ? "Set GEOAPIFY_API_KEY to price on real road distance, and LOCATIONIQ_API_KEY as the fallback."
