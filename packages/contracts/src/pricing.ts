@@ -17,9 +17,7 @@ import { Uuid } from "./dto/common.js";
  *   extraDrops  = (N − 1) × extraDropFee
  *   parcels     = Σ packageType.surcharge
  *   options     = liability cover (% of declared value, min) + early collection + signature + wedding venue
- *   dated       = weekend / public-holiday surcharge, when the caller says the date qualifies
- *                 (zero on every rate card until the business decides otherwise)
- *   subtotal    = max(base + fuel + extraDrops + parcels + options + dated, minFee)
+ *   subtotal    = max(base + fuel + extraDrops + parcels + options, minFee)
  *   vat         = subtotal × vatBps (only when registered)
  *   total       = subtotal + vat
  *
@@ -44,38 +42,6 @@ export const QuoteParcel = z.object({
 });
 export type QuoteParcel = z.infer<typeof QuoteParcel>;
 
-/**
- * When the delivery falls, as facts rather than dates — the engine stays a pure function.
- * The caller decides what counts as a weekend or a public holiday (it needs a timezone and a
- * holiday list to know) and passes the answer in.
- */
-export const DateFlags = z.object({
-  weekend: z.boolean().default(false),
-  publicHoliday: z.boolean().default(false),
-});
-export type DateFlags = z.infer<typeof DateFlags>;
-
-export const NO_DATE_FLAGS: DateFlags = { weekend: false, publicHoliday: false };
-
-/**
- * Read a delivery date as pricing facts.
- *
- * `YYYY-MM-DD` is already a local date, so the day of the week is a property of the string
- * and needs no timezone; reading it as UTC is what stops the machine's own offset moving a
- * Saturday booking to a Friday. Public holidays need a calendar nobody has chosen yet, so
- * the caller supplies the list and gets `false` until it does.
- */
-export function dateFlagsFor(
-  deliveryDate: string,
-  publicHolidays: readonly string[] = [],
-): DateFlags {
-  const day = new Date(`${deliveryDate}T00:00:00Z`).getUTCDay();
-  return {
-    weekend: day === 0 || day === 6,
-    publicHoliday: publicHolidays.includes(deliveryDate),
-  };
-}
-
 export interface PricingInput {
   /** Road kilometres for each leg of the loop, in order. Must have at least 2 legs. */
   legsKm: number[];
@@ -85,8 +51,6 @@ export interface PricingInput {
   parcels: { packageType: PackageType; quantity: number }[];
   options: QuoteOptions;
   vatBps: Bps; // 0 when not VAT registered
-  /** Defaults to neither, which is what keeps date-conditional pricing switched off. */
-  dateFlags?: DateFlags;
 }
 
 export const QuoteLine = z.object({
@@ -102,7 +66,7 @@ export type QuoteLine = z.infer<typeof QuoteLine>;
  * and it is for us.
  *
  * It must never leave the API to a customer. `toCustomerBreakdown` is the only thing that should
- * reach a browser — see the note on it.
+ * reach a browser.
  */
 export const QuoteBreakdown = z.object({
   distanceKm: z.number(),
@@ -233,24 +197,6 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
       label: "Wedding venue delivery",
       amountCents: rateCard.weddingVenueFeeCents,
     });
-  }
-
-  // Date-conditional surcharges. The rate card ships with these at zero, so they add nothing
-  // until someone sets them: the framework exists, the business rule is off. Turning it on is
-  // a pricing decision with its own release, not a side effect of this code being here.
-  const dateFlags = input.dateFlags ?? NO_DATE_FLAGS;
-  if (dateFlags.weekend) {
-    const amount =
-      applyBps(baseCents, rateCard.weekendSurchargeBps) + rateCard.weekendSurchargeCents;
-    if (amount > 0) lines.push({ code: "weekend", label: "Weekend delivery", amountCents: amount });
-  }
-  if (dateFlags.publicHoliday) {
-    const amount =
-      applyBps(baseCents, rateCard.publicHolidaySurchargeBps) +
-      rateCard.publicHolidaySurchargeCents;
-    if (amount > 0) {
-      lines.push({ code: "public_holiday", label: "Public holiday delivery", amountCents: amount });
-    }
   }
 
   let subtotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);

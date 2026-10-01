@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { Address } from "./geo.js";
 import { Uuid } from "./common.js";
-import { IsoDate } from "./slots.js";
 import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
 
 export const Contact = z.object({
@@ -36,12 +35,6 @@ export const QuoteRequest = z.object({
   accountId: Uuid.optional(),
   /** A name the customer gives a quote they mean to keep, e.g. "Saturday market run". */
   label: z.string().trim().max(80).optional(),
-  /**
-   * The day the job is for, when it is known at pricing time. Only date-conditional
-   * surcharges read it, and those are zero on every rate card, so omitting it prices
-   * exactly as before.
-   */
-  deliveryDate: IsoDate.optional(),
 });
 export type QuoteRequest = z.infer<typeof QuoteRequest>;
 
