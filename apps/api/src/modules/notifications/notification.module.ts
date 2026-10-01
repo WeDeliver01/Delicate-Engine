@@ -1,7 +1,7 @@
 import { Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { eq } from "drizzle-orm";
-import { formatCents } from "@delicate/contracts";
+import { formatCents, formatOperatingDateTime } from "@delicate/contracts";
 import { accounts, drivers, shipments, type DbExecutor } from "@delicate/db";
 import { ENV, type Env } from "../../config/env.js";
 import { DbService } from "../../infra/db.module.js";
@@ -139,7 +139,9 @@ export class NotificationModule implements OnModuleInit {
         const payload = {
           ...ctx.payload,
           receivedBy: e.payload.receivedBy,
-          deliveredAt: new Date(e.occurredAt).toLocaleString("en-ZA"),
+          // In Johannesburg, not the container's UTC: this is a time the recipient reads
+          // and checks against when the parcel actually turned up.
+          deliveredAt: formatOperatingDateTime(e.occurredAt),
         };
         await this.notifications.enqueue(tx, {
           kind: "shipment.delivered",

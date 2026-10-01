@@ -18,6 +18,39 @@
  */
 export const OPERATING_UTC_OFFSET_HOURS = 2;
 
+/**
+ * The IANA zone the business runs in, for formatting a time a person will read.
+ *
+ * The offset above is enough for calendar arithmetic; this is for `Intl`, which needs the
+ * zone name. Both are needed because the engine's containers run in UTC with no TZ set, so
+ * anything the *server* formats renders two hours early unless it says otherwise — and a
+ * delivery confirmation claiming a parcel arrived at 17:50 when it arrived at 19:50 is the
+ * kind of wrong that a customer notices and we cannot explain.
+ */
+export const OPERATING_TIMEZONE = "Africa/Johannesburg";
+
+/** A date and time as someone in Johannesburg would read it, e.g. "01/10/2026, 19:48". */
+export function formatOperatingDateTime(at: Date | string): string {
+  return new Date(at).toLocaleString("en-ZA", {
+    timeZone: OPERATING_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** A date alone, e.g. "01/10/2026". Crosses midnight correctly: 22:30 UTC is already tomorrow. */
+export function formatOperatingDate(at: Date | string): string {
+  return new Date(at).toLocaleDateString("en-ZA", {
+    timeZone: OPERATING_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 export const PERIOD_KEYS = [
   "today",
   "yesterday",

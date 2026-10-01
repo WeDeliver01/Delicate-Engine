@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  formatOperatingDate,
+  formatOperatingDateTime,
   daysBetween,
   formatRange,
   monthOf,
@@ -135,5 +137,34 @@ describe("formatRange", () => {
 
   it("states both years when a range crosses one", () => {
     expect(formatRange({ from: "2025-12-20", to: "2026-01-05" })).toBe("20 Dec 2025 – 5 Jan 2026");
+  });
+});
+
+describe("formatting a time for someone to read", () => {
+  it("renders Johannesburg time, not the server's UTC", () => {
+    // The engine's containers run in UTC with no TZ set. A delivery confirmation that says
+    // 17:48 when the parcel arrived at 19:48 is wrong in a way the recipient notices.
+    expect(formatOperatingDateTime(new Date("2026-10-01T17:48:00Z"))).toContain("19:48");
+  });
+
+  it("gives the Johannesburg date when UTC is still on the day before", () => {
+    // 22:30 UTC is already half past midnight in SA, so an invoice dated from the UTC clock
+    // would print a due date a day early. Asserted on the parts rather than the punctuation,
+    // because the order of a locale's date separators is CLDR's business, not ours.
+    const justAfterMidnightSAST = formatOperatingDate(new Date("2026-09-30T22:30:00Z"));
+    expect(justAfterMidnightSAST).toContain("01");
+    expect(justAfterMidnightSAST).toContain("10");
+    expect(justAfterMidnightSAST).toContain("2026");
+
+    const stillYesterday = formatOperatingDate(new Date("2026-09-30T21:30:00Z"));
+    expect(stillYesterday).toContain("30");
+    expect(stillYesterday).toContain("09");
+  });
+
+  it("is unaffected by whatever timezone the process happens to run in", () => {
+    // The whole point: the same instant formats identically on a developer's laptop in SAST
+    // and in a container in UTC.
+    const instant = new Date("2026-10-01T17:48:00Z");
+    expect(formatOperatingDateTime(instant)).toBe(formatOperatingDateTime(instant.toISOString()));
   });
 });

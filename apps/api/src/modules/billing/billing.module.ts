@@ -7,7 +7,7 @@ import { AccountBillingController, AdminBillingController } from "./billing.cont
 import { InvoiceService } from "./invoice.service.js";
 import { NotificationService } from "../notifications/notification.service.js";
 import { DbService } from "../../infra/db.module.js";
-import { formatCents } from "@delicate/contracts";
+import { formatCents, formatOperatingDate } from "@delicate/contracts";
 
 /**
  * Billing documents. Invoicing sits behind the outbox like treasury: a document must never be
@@ -54,7 +54,7 @@ export class BillingModule implements OnModuleInit {
             number: invoice.number,
             total: formatCents(invoice.totalCents),
             dueLine: invoice.dueAt
-              ? `Payment is due by ${new Date(invoice.dueAt).toLocaleDateString("en-ZA")}.`
+              ? `Payment is due by ${formatOperatingDate(invoice.dueAt)}.`
               : "It has already been paid from your wallet — nothing further is needed.",
             portalUrl: `${process.env["WEB_PUBLIC_URL"] ?? "http://localhost:3000"}/portal/invoices`,
           },
