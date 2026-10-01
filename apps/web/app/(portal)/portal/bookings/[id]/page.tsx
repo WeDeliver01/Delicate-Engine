@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { Suspense, use, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +11,16 @@ import { dateTime } from "@/lib/money";
 import { Breakdown } from "@/components/booking/breakdown";
 import { StatusBadge } from "@/components/booking/status-badge";
 
+/** Wrapped for the same reason as the wallet: `useSearchParams` needs a Suspense boundary. */
 export default function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<p className="lede">Loading…</p>}>
+      <BookingDetail params={params} />
+    </Suspense>
+  );
+}
+
+function BookingDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const me = useMe();
   const qc = useQueryClient();

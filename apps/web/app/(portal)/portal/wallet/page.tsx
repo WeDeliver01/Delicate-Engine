@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -21,7 +21,21 @@ const PROVIDER_LABELS: Record<PaymentProviderName, string> = {
   bobpay: "Bob Pay",
 };
 
+/**
+ * `useSearchParams` reads the ?result= the payment provider sends the customer back with, and
+ * Next requires it to sit inside a Suspense boundary: without one the prerendered page throws
+ * on hydration and the whole route renders as "a client-side exception has occurred", with no
+ * clue that a query parameter was behind it.
+ */
 export default function WalletPage() {
+  return (
+    <Suspense fallback={<p className="lede">Loading your wallet…</p>}>
+      <Wallet />
+    </Suspense>
+  );
+}
+
+function Wallet() {
   const me = useMe();
   const qc = useQueryClient();
   const params = useSearchParams();
