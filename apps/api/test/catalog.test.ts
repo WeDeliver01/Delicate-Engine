@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { users } from "@delicate/db";
+import { quotes, users } from "@delicate/db";
 import type { CatalogResponse, EstimateResponse, Quote } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
 
@@ -60,9 +60,16 @@ describe("catalog & quotes", () => {
       });
     expect(res.status).toBe(201);
     const body = res.body as EstimateResponse;
-    expect(body.distanceProvider).toBe("haversine");
-    expect(body.breakdown.legsKm).toHaveLength(3); // depot→collection→drop→depot
-    expect(body.breakdown.distanceKm).toBeGreaterThan(20);
+    // Which vendor measured the route is not in the response at all: naming it says which
+    // provider we use, and "haversine" would say our prices are approximations today.
+    expect((body as Record<string, unknown>)["distanceProvider"]).toBeUndefined();
+    // The rate logic is ours. A public estimator is the most exposed surface the engine has,
+    // and from a distance and a price our cost per kilometre is one division away.
+    const estimate = body.breakdown as Record<string, unknown>;
+    expect(estimate["legsKm"]).toBeUndefined();
+    expect(estimate["distanceKm"]).toBeUndefined();
+    expect(estimate["cogsCents"]).toBeUndefined();
+    expect(estimate["marginBps"]).toBeUndefined();
     expect(body.breakdown.totalCents).toBeGreaterThanOrEqual(15_000 * 1.15);
     expect(body.breakdown.lines.some((l) => l.code === "parcel:cake_tiered")).toBe(true);
   });
@@ -99,7 +106,21 @@ describe("catalog & quotes", () => {
     expect(res.status).toBe(201);
     const quote = res.body as Quote;
     expect(quote.status).toBe("priced");
-    expect(quote.breakdown.legsKm).toHaveLength(4);
+    const served = quote.breakdown as Record<string, unknown>;
+    for (const secret of ["legsKm", "distanceKm", "cogsCents", "marginBps"]) {
+      expect(served[secret], `${secret} reached the customer`).toBeUndefined();
+    }
+    // No line may name a distance either -- the label is where it used to hide.
+    for (const line of quote.breakdown.lines) {
+      expect(line.label, line.label).not.toMatch(/km/i);
+    }
+    // Still recorded against the row, so a price stays explainable to us.
+    const [row] = await h.db.db.select().from(quotes).where(eq(quotes.id, quote.id));
+    const stored = row!.breakdown as { legsKm: number[]; distanceKm: number; cogsCents: number };
+    expect(stored.legsKm).toHaveLength(4);
+    expect(stored.distanceKm).toBeGreaterThan(0);
+    expect(stored.cogsCents).toBeGreaterThan(0);
+
     const codes = quote.breakdown.lines.map((l) => l.code);
     expect(codes).toContain("extra_drops");
     expect(codes).toContain("liability_cover");

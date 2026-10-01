@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Cents } from "../money.js";
-import { QuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
+import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
 import { Uuid } from "./common.js";
 import { Address } from "./geo.js";
 import { Contact } from "./quotes.js";
@@ -99,7 +99,7 @@ export const Booking = z.object({
     instructions: z.string().nullable(),
   }),
   options: QuoteOptions,
-  breakdown: QuoteBreakdown,
+  breakdown: CustomerQuoteBreakdown,
   totalCents: Cents,
   holdId: Uuid.nullable(),
   rejectionReason: z.string().nullable(),

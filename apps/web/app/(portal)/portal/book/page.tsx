@@ -544,11 +544,6 @@ function Book() {
                   <div className="mt-3">
                     <Breakdown b={quote.breakdown} />
                   </div>
-                  {quote.distanceProvider === "haversine" && (
-                    <p className="mt-2 text-xs text-muted">
-                      Distance estimated; live routing arrives with the maps key.
-                    </p>
-                  )}
                   <button type="button" onClick={clearQuote} className="link-quiet mt-3 text-xs">
                     Edit details
                   </button>

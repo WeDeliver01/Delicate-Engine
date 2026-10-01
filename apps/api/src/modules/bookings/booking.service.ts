@@ -7,6 +7,7 @@ import {
   type CreateBookingRequest,
   type Quote,
   type QuoteRequest,
+  toCustomerBreakdown,
   type Shipment,
   type ShipmentStatus,
   type TrackingView,
@@ -606,7 +607,9 @@ export function toBooking(r: typeof bookings.$inferSelect, ships: Shipment[]): B
     slotWindowKey: r.slotWindowKey,
     collection: r.collection as Booking["collection"],
     options: r.options as Booking["options"],
-    breakdown: r.breakdown as Booking["breakdown"],
+    // The stored row keeps the kilometres, the cost and the margin; the customer gets the
+    // prices. Projected here so every booking response goes through it.
+    breakdown: toCustomerBreakdown(r.breakdown as Parameters<typeof toCustomerBreakdown>[0]),
     totalCents: r.totalCents,
     holdId: r.holdId,
     rejectionReason: r.rejectionReason,

@@ -55,15 +55,18 @@ export class AdminIntegrationsController {
       name: "Maps & routing",
       purpose:
         "Turns an address into coordinates and a route into kilometres, which is what every quote is priced on.",
-      configured: this.geo.name !== "fallback",
+      // `name` is whichever provider last answered, so this reports what is actually pricing
+      // quotes rather than what is configured -- the two differ the moment Geoapify is down.
+      configured: this.env.GEOAPIFY_API_KEY != null || this.env.LOCATIONIQ_API_KEY != null,
       using:
-        this.geo.name === "fallback"
+        this.geo.name === "haversine"
           ? "Straight-line distance with a road factor — good enough to quote, but not real road distance"
-          : this.geo.name,
+          : `${this.geo.name}${this.env.GEOAPIFY_API_KEY && this.env.LOCATIONIQ_API_KEY ? " (LocationIQ standing by)" : ""}`,
       changeIn: "environment",
-      action:
-        this.geo.name === "fallback"
-          ? "Set GOOGLE_MAPS_API_KEY (Places API New + Routes API) to price on real road distance."
+      action: !this.env.GEOAPIFY_API_KEY
+        ? "Set GEOAPIFY_API_KEY to price on real road distance, and LOCATIONIQ_API_KEY as the fallback."
+        : !this.env.LOCATIONIQ_API_KEY
+          ? "Set LOCATIONIQ_API_KEY so addresses and pricing survive a Geoapify outage."
           : null,
     });
 

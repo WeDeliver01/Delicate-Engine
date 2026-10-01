@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { Address } from "./geo.js";
 import { Uuid } from "./common.js";
-import { QuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
+import { IsoDate } from "./slots.js";
+import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
 
 export const Contact = z.object({
   name: z.string().min(2).max(120),
@@ -35,6 +36,12 @@ export const QuoteRequest = z.object({
   accountId: Uuid.optional(),
   /** A name the customer gives a quote they mean to keep, e.g. "Saturday market run". */
   label: z.string().trim().max(80).optional(),
+  /**
+   * The day the job is for, when it is known at pricing time. Only date-conditional
+   * surcharges read it, and those are zero on every rate card, so omitting it prices
+   * exactly as before.
+   */
+  deliveryDate: IsoDate.optional(),
 });
 export type QuoteRequest = z.infer<typeof QuoteRequest>;
 
@@ -66,17 +73,14 @@ export const Quote = z.object({
   rateCardId: Uuid,
   status: QuoteStatus,
   request: QuoteRequest,
-  breakdown: QuoteBreakdown,
-  /** Provider used for distance: "google" | "haversine". Recorded for audit. */
-  distanceProvider: z.string(),
+  breakdown: CustomerQuoteBreakdown,
   expiresAt: z.string().datetime(),
   createdAt: z.string().datetime(),
 });
 export type Quote = z.infer<typeof Quote>;
 
 export const EstimateResponse = z.object({
-  breakdown: QuoteBreakdown,
+  breakdown: CustomerQuoteBreakdown,
   serviceLevelCode: z.string(),
-  distanceProvider: z.string(),
 });
 export type EstimateResponse = z.infer<typeof EstimateResponse>;

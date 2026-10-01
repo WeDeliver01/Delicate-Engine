@@ -1,12 +1,15 @@
 import { PinoLogger } from "nestjs-pino";
-import type { GeocodeSuggestion, LatLng } from "@delicate/contracts";
+import { haversineKm, type GeocodeSuggestion, type LatLng } from "@delicate/contracts";
 import type { GeoProvider } from "./geo.provider.js";
-import { fallbackLegs } from "./google.provider.js";
 
 /**
- * No-key provider for development and as a safety net: OpenStreetMap Nominatim for geocoding
- * (usage policy: identify the app, ≤1 req/s, not for production autocomplete) and straight-line
- * distance × road factor for legs. Production sets GOOGLE_MAPS_API_KEY.
+ * The last resort, behind Geoapify and LocationIQ: OpenStreetMap Nominatim for geocoding
+ * (usage policy: identify the app, ≤1 req/s, and explicitly not for production autocomplete)
+ * and straight-line distance × a road factor for legs.
+ *
+ * It always answers, which is the point — a booking form that cannot price is a booking that
+ * does not happen. The distance is an approximation, so a quote produced here records
+ * "haversine" as its provider and is recognisable later as one priced without real roads.
  */
 export class FallbackGeoProvider implements GeoProvider {
   readonly name = "haversine";
@@ -62,6 +65,11 @@ export class FallbackGeoProvider implements GeoProvider {
   }
 
   async routeLegsKm(points: LatLng[]): Promise<number[]> {
-    return fallbackLegs(points, this.roadFactorBps);
+    const legs: number[] = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const straight = haversineKm(points[i]!, points[i + 1]!);
+      legs.push(Math.round(straight * (this.roadFactorBps / 10_000) * 100) / 100);
+    }
+    return legs;
   }
 }

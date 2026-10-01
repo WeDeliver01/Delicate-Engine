@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import {
+  dateFlagsFor,
   priceQuote,
+  toCustomerBreakdown,
   type EstimateRequest,
   type EstimateResponse,
   type LatLng,
@@ -59,7 +61,12 @@ export class QuoteService {
       options: input.options,
       vatBps,
     });
-    return { breakdown, serviceLevelCode: serviceLevel.code, distanceProvider: this.geo.name };
+    // The public estimator is the most exposed surface there is -- no sign-in at all -- so
+    // it gets the same projection as everything else.
+    // The provider is recorded against saved quotes for audit, but not returned: naming it
+    // says which vendor we use, and "haversine" says our routing is degraded and today's
+    // prices are approximations. Neither is the customer's business.
+    return { breakdown: toCustomerBreakdown(breakdown), serviceLevelCode: serviceLevel.code };
   }
 
   /** Full quote for an account: persisted, bookable for 24h. */
@@ -106,6 +113,9 @@ export class QuoteService {
       parcels: [...parcels.values()],
       options: input.options,
       vatBps,
+      // Only set when the caller said which day the job is for. Every rate card carries zero
+      // for both surcharges, so this changes no price until the business decides it should.
+      ...(input.deliveryDate ? { dateFlags: dateFlagsFor(input.deliveryDate) } : {}),
     });
 
     const reference = await this.nextReference();
@@ -203,14 +213,24 @@ export class QuoteService {
     return `QT-${day}-${String(counter!.next - 1).padStart(4, "0")}`;
   }
 
-  /** Called inside the booking transaction: marks the quote consumed (once). */
+  /**
+   * Called inside the booking transaction: marks the quote consumed, once.
+   *
+   * The predicate is the lock. Two bookings racing the same quote both read it as `priced`
+   * before either commits, so checking the status beforehand decides nothing; the update that
+   * matches no row is the one that loses, and it loses with `quote_used` rather than with a
+   * unique-constraint violation nobody can interpret.
+   */
   async markBooked(tx: DbExecutor, id: string): Promise<void> {
     const [row] = await tx
       .update(quotes)
       .set({ status: "booked" })
-      .where(eq(quotes.id, id))
-      .returning({ id: quotes.id, status: quotes.status });
-    if (!row) throw AppError.notFound("quote");
+      .where(and(eq(quotes.id, id), eq(quotes.status, "priced")))
+      .returning({ id: quotes.id });
+    if (row) return;
+    const existing = await tx.query.quotes.findFirst({ where: eq(quotes.id, id) });
+    if (!existing) throw AppError.notFound("quote");
+    throw AppError.conflict("quote_used", "this quote has already been booked");
   }
 }
 
@@ -229,8 +249,9 @@ export function toQuote(r: typeof quotes.$inferSelect): Quote {
     rateCardId: r.rateCardId,
     status: r.status,
     request: r.request as Quote["request"],
-    breakdown: r.breakdown as Quote["breakdown"],
-    distanceProvider: r.distanceProvider,
+    // Projected here, at the only place a quote becomes a response: the row keeps the
+    // full workings, the customer gets the prices.
+    breakdown: toCustomerBreakdown(r.breakdown as Parameters<typeof toCustomerBreakdown>[0]),
     expiresAt: r.expiresAt.toISOString(),
     createdAt: r.createdAt.toISOString(),
   };

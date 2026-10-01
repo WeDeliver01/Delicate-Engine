@@ -17,7 +17,9 @@ import { Uuid } from "./dto/common.js";
  *   extraDrops  = (N − 1) × extraDropFee
  *   parcels     = Σ packageType.surcharge
  *   options     = liability cover (% of declared value, min) + early collection + signature + wedding venue
- *   subtotal    = max(base + fuel + extraDrops + parcels + options, minFee)
+ *   dated       = weekend / public-holiday surcharge, when the caller says the date qualifies
+ *                 (zero on every rate card until the business decides otherwise)
+ *   subtotal    = max(base + fuel + extraDrops + parcels + options + dated, minFee)
  *   vat         = subtotal × vatBps (only when registered)
  *   total       = subtotal + vat
  *
@@ -42,6 +44,38 @@ export const QuoteParcel = z.object({
 });
 export type QuoteParcel = z.infer<typeof QuoteParcel>;
 
+/**
+ * When the delivery falls, as facts rather than dates — the engine stays a pure function.
+ * The caller decides what counts as a weekend or a public holiday (it needs a timezone and a
+ * holiday list to know) and passes the answer in.
+ */
+export const DateFlags = z.object({
+  weekend: z.boolean().default(false),
+  publicHoliday: z.boolean().default(false),
+});
+export type DateFlags = z.infer<typeof DateFlags>;
+
+export const NO_DATE_FLAGS: DateFlags = { weekend: false, publicHoliday: false };
+
+/**
+ * Read a delivery date as pricing facts.
+ *
+ * `YYYY-MM-DD` is already a local date, so the day of the week is a property of the string
+ * and needs no timezone; reading it as UTC is what stops the machine's own offset moving a
+ * Saturday booking to a Friday. Public holidays need a calendar nobody has chosen yet, so
+ * the caller supplies the list and gets `false` until it does.
+ */
+export function dateFlagsFor(
+  deliveryDate: string,
+  publicHolidays: readonly string[] = [],
+): DateFlags {
+  const day = new Date(`${deliveryDate}T00:00:00Z`).getUTCDay();
+  return {
+    weekend: day === 0 || day === 6,
+    publicHoliday: publicHolidays.includes(deliveryDate),
+  };
+}
+
 export interface PricingInput {
   /** Road kilometres for each leg of the loop, in order. Must have at least 2 legs. */
   legsKm: number[];
@@ -51,6 +85,8 @@ export interface PricingInput {
   parcels: { packageType: PackageType; quantity: number }[];
   options: QuoteOptions;
   vatBps: Bps; // 0 when not VAT registered
+  /** Defaults to neither, which is what keeps date-conditional pricing switched off. */
+  dateFlags?: DateFlags;
 }
 
 export const QuoteLine = z.object({
@@ -60,6 +96,14 @@ export const QuoteLine = z.object({
 });
 export type QuoteLine = z.infer<typeof QuoteLine>;
 
+/**
+ * What the engine worked out, in full: the kilometres, what the driving cost us, and the margin
+ * taken. This is persisted on the quote so a charged price can always be explained years later,
+ * and it is for us.
+ *
+ * It must never leave the API to a customer. `toCustomerBreakdown` is the only thing that should
+ * reach a browser — see the note on it.
+ */
 export const QuoteBreakdown = z.object({
   distanceKm: z.number(),
   legsKm: z.array(z.number()),
@@ -74,6 +118,41 @@ export const QuoteBreakdown = z.object({
   marginBps: Bps,
 });
 export type QuoteBreakdown = z.infer<typeof QuoteBreakdown>;
+
+/**
+ * The price as the customer is allowed to see it: what each part costs, VAT, and the total.
+ *
+ * Everything that explains *how* the number was reached is dropped — the kilometres, the legs,
+ * what the driving cost us, and the margin. Those are the rate logic, and a customer who has
+ * the distance and the price can work out our rate per kilometre with a division, which is the
+ * one thing a competitor would want.
+ *
+ * Labels are stripped of any distance too, so quotes priced before this existed do not leak it
+ * when they are re-read.
+ */
+export const CustomerQuoteBreakdown = z.object({
+  lines: z.array(QuoteLine),
+  subtotalCents: Cents,
+  vatBps: Bps,
+  vatCents: Cents,
+  totalCents: Cents,
+  minFeeApplied: z.boolean(),
+});
+export type CustomerQuoteBreakdown = z.infer<typeof CustomerQuoteBreakdown>;
+
+/** Matches "12 km", "12.4km", "· 12,4 km" and the like, anywhere in a label. */
+const DISTANCE_IN_LABEL = /\s*[·,-]?\s*\d+(?:[.,]\d+)?\s*km\b/gi;
+
+export function toCustomerBreakdown(b: QuoteBreakdown): CustomerQuoteBreakdown {
+  return {
+    lines: b.lines.map((l) => ({ ...l, label: l.label.replace(DISTANCE_IN_LABEL, "").trim() })),
+    subtotalCents: b.subtotalCents,
+    vatBps: b.vatBps,
+    vatCents: b.vatCents,
+    totalCents: b.totalCents,
+    minFeeApplied: b.minFeeApplied,
+  };
+}
 
 function roundCents(value: number): Cents {
   return Math.round(value);
@@ -95,7 +174,10 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   const lines: QuoteLine[] = [
     {
       code: "distance",
-      label: `${serviceLevel.name} · ${distanceKm.toFixed(1)} km`,
+      // The service level alone. The distance is still on the breakdown for us, but putting it
+      // in a label makes it a customer-facing number that is then impossible to take back --
+      // and from the distance and the price, our rate per kilometre is one division away.
+      label: serviceLevel.name,
       amountCents: baseCents,
     },
   ];
@@ -151,6 +233,24 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
       label: "Wedding venue delivery",
       amountCents: rateCard.weddingVenueFeeCents,
     });
+  }
+
+  // Date-conditional surcharges. The rate card ships with these at zero, so they add nothing
+  // until someone sets them: the framework exists, the business rule is off. Turning it on is
+  // a pricing decision with its own release, not a side effect of this code being here.
+  const dateFlags = input.dateFlags ?? NO_DATE_FLAGS;
+  if (dateFlags.weekend) {
+    const amount =
+      applyBps(baseCents, rateCard.weekendSurchargeBps) + rateCard.weekendSurchargeCents;
+    if (amount > 0) lines.push({ code: "weekend", label: "Weekend delivery", amountCents: amount });
+  }
+  if (dateFlags.publicHoliday) {
+    const amount =
+      applyBps(baseCents, rateCard.publicHolidaySurchargeBps) +
+      rateCard.publicHolidaySurchargeCents;
+    if (amount > 0) {
+      lines.push({ code: "public_holiday", label: "Public holiday delivery", amountCents: amount });
+    }
   }
 
   let subtotalCents = lines.reduce((sum, l) => sum + l.amountCents, 0);

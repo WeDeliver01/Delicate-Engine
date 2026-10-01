@@ -1,8 +1,20 @@
-import type { QuoteBreakdown } from "@delicate/contracts";
+import type { CustomerQuoteBreakdown } from "@delicate/contracts";
 import { rands } from "@/lib/money";
 
-/** The price explained, line by line — the same numbers the engine persisted. */
-export function Breakdown({ b, compact = false }: { b: QuoteBreakdown; compact?: boolean }) {
+/**
+ * What the customer pays, line by line.
+ *
+ * Deliberately takes the customer projection rather than the full breakdown, so this component
+ * cannot render the kilometres, our cost or our margin even by accident — they are not in the
+ * type it is handed, and the engine never sends them.
+ */
+export function Breakdown({
+  b,
+  compact = false,
+}: {
+  b: CustomerQuoteBreakdown;
+  compact?: boolean;
+}) {
   return (
     <div className="text-sm">
       {!compact && (
@@ -30,7 +42,7 @@ export function Breakdown({ b, compact = false }: { b: QuoteBreakdown; compact?:
           <span>Total</span>
           <span className="font-mono">{rands(b.totalCents)}</span>
         </div>
-        <p className="text-xs text-muted">{b.distanceKm.toFixed(1)} km round trip from our depot</p>
+        <p className="text-xs text-muted">Includes collection and delivery.</p>
       </div>
     </div>
   );

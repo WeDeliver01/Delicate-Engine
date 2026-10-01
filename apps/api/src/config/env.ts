@@ -31,7 +31,12 @@ const EnvSchema = z
     AUTH_DEV_SECRET: z.string().min(32).optional(),
 
     /** Google Maps Platform (Places API New + Routes API). Unset = free fallback provider. */
-    GOOGLE_MAPS_API_KEY: z.string().min(10).optional(),
+    /**
+     * Addresses and road distance: Geoapify first, LocationIQ behind it. Neither set means
+     * straight-line distance with a road factor, which prices but is approximate.
+     */
+    GEOAPIFY_API_KEY: z.string().min(10).optional(),
+    LOCATIONIQ_API_KEY: z.string().min(10).optional(),
 
     /** Manual EFT bank details shown to customers (provider is disabled until set). */
     EFT_ACCOUNT_NAME: z.string().optional(),
