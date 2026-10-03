@@ -395,3 +395,80 @@ export const ApplyDayPlanRequest = z.object({
   driverIds: z.array(Uuid).max(50).optional(),
 });
 export type ApplyDayPlanRequest = z.infer<typeof ApplyDayPlanRequest>;
+
+// ── live operations ───────────────────────────────────────────────────────────
+
+/** One remaining stop with where the driver will actually get to it. */
+export const LiveStop = z.object({
+  stopId: Uuid,
+  /** Null on a collection stop, which covers every shipment on its booking. */
+  shipmentId: Uuid.nullable(),
+  bookingId: Uuid,
+  accountId: Uuid.nullable(),
+  status: ShipmentStatus.nullable(),
+  kind: TripStopKind,
+  sequence: z.number().int().positive(),
+  waybill: z.string().nullable(),
+  address: z.string(),
+  location: LatLng.nullable(),
+  window: TripStopWindow,
+  plannedArrivalMinute: MinuteOfDay.nullable(),
+  etaMinute: MinuteOfDay.nullable(),
+  /** Minutes later than the plan. Negative is ahead of it. */
+  varianceMinutes: z.number().int().nullable(),
+  /** Minutes past the promise on current form. Zero when it will be made. */
+  lateMinutes: z.number().int().nonnegative(),
+  willMissWindow: z.boolean(),
+});
+export type LiveStop = z.infer<typeof LiveStop>;
+
+export const LiveDriver = z.object({
+  driverId: Uuid,
+  name: z.string(),
+  vehicleRegistration: z.string().nullable(),
+  tripId: Uuid.nullable(),
+  tripReference: z.string().nullable(),
+  activity: z.enum(["available", "no_shift", "planned", "ready", "working", "finished"]),
+  location: LatLng.nullable(),
+  /** Minutes since the last ping. Null when the app has never reported. */
+  silentMinutes: z.number().int().nonnegative().nullable(),
+  progress: TripProgress.nullable(),
+  /** How far off the line between their last stop and their next they are. */
+  offRouteKm: z.number().nonnegative(),
+  remainingKm: z.number().nonnegative(),
+  /** Measured from the driver's own trail since the shift opened, not from the plan. */
+  travelledKm: z.number().nonnegative(),
+  plannedKm: z.number().nonnegative(),
+  stops: z.array(LiveStop),
+});
+export type LiveDriver = z.infer<typeof LiveDriver>;
+
+/**
+ * The wire shape of an advisory. `Advisory` itself is the pure domain type in `live-ops.ts`,
+ * where the function that produces them lives; this is the same shape as a schema, so a client
+ * can validate what it receives without pulling the operational logic in with it.
+ */
+export const OperationalAdvisory = z.object({
+  category: z.enum(["route", "fuel", "punctuality", "capacity", "silence"]),
+  severity: z.enum(["info", "tip", "warning"]),
+  driverId: Uuid.nullable(),
+  title: z.string(),
+  detail: z.string(),
+});
+export type OperationalAdvisory = z.infer<typeof OperationalAdvisory>;
+
+/**
+ * The day as it is actually going.
+ *
+ * Everything here is derived per request and stored nowhere: an ETA is only true for as long as
+ * the van is where it was when we asked.
+ */
+export const LiveOperations = z.object({
+  date: IsoDate,
+  nowMinute: MinuteOfDay,
+  depot: LatLng,
+  drivers: z.array(LiveDriver),
+  advisories: z.array(OperationalAdvisory),
+  unassignedCount: z.number().int().nonnegative(),
+});
+export type LiveOperations = z.infer<typeof LiveOperations>;

@@ -8,10 +8,12 @@ import { TripPlanRegistry } from "../../infra/trip-plan.registry.js";
 import { TripService } from "./trip.service.js";
 import { BoardService } from "./board.service.js";
 import { PlanService } from "./plan.service.js";
+import { LiveService } from "./live.service.js";
 import { RiskService } from "./risk.service.js";
 import { RiskDispatcher } from "./risk.dispatcher.js";
 import {
   AdminBoardController,
+  AdminLiveController,
   AdminPlanController,
   AdminTripController,
   AdminTripStopController,
@@ -31,13 +33,22 @@ import {
   imports: [FleetModule, SchedulingModule],
   controllers: [
     AdminBoardController,
+    AdminLiveController,
     AdminPlanController,
     AdminTripController,
     AdminTripStopController,
     DriverTripController,
   ],
-  providers: [TripService, BoardService, PlanService, RiskService, RiskDispatcher, DriverGuard],
-  exports: [TripService, BoardService, PlanService, RiskService, RiskDispatcher],
+  providers: [
+    TripService,
+    BoardService,
+    PlanService,
+    LiveService,
+    RiskService,
+    RiskDispatcher,
+    DriverGuard,
+  ],
+  exports: [TripService, BoardService, PlanService, LiveService, RiskService, RiskDispatcher],
 })
 export class OperationsModule implements OnModuleInit {
   constructor(

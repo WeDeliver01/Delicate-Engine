@@ -22,6 +22,7 @@ import { CurrentDriver, DriverGuard } from "../fleet/driver.guard.js";
 import { TripService } from "./trip.service.js";
 import { BoardService } from "./board.service.js";
 import { PlanService } from "./plan.service.js";
+import { LiveService } from "./live.service.js";
 
 const IdParam = z.object({ id: Uuid });
 const StopParam = z.object({ id: Uuid });
@@ -69,6 +70,25 @@ export class AdminBoardController {
  * A proposal and nothing more: reading it changes nothing, and applying it is a second call
  * that leaves the trips unreleased so a dispatcher still signs off each day.
  */
+/**
+ * The day as it is going, rather than as it was planned.
+ *
+ * Polled, and derived fresh each time: an ETA is only true for as long as the van is where it
+ * was when we asked, so none of this is stored.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/dispatch/live")
+@PlatformRoles("super_admin", "dispatcher")
+export class AdminLiveController {
+  constructor(private readonly live: LiveService) {}
+
+  @Get()
+  get(@Query(BoardQuery) q: BoardQuery) {
+    return this.live.live(q.date);
+  }
+}
+
 @ApiTags("admin")
 @ApiBearerAuth()
 @Controller("v1/admin/dispatch/plan")

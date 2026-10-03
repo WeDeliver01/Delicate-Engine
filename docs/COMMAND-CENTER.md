@@ -280,23 +280,43 @@ late against, and `morning` is not one.
 
 ---
 
-## 8. Sub-phases
+## 8. Sub-phases — all delivered
 
-Each ends with tests green and a demo, as every other phase has. 7a is signed off to start.
+| Sub-phase                | State     | What landed                                                                                                                                                                                          |
+| ------------------------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **7a Trips**             | Delivered | `trips` + `trip_stops`, plan/release/resequence/start/complete/abandon, arrival events, the trip sheet (screen and paper), and `day()` reading the released trip instead of recomputing the order.   |
+| **7b Dispatch board**    | Delivered | `/admin/dispatch`: eight lanes with three derived, exceptions on the card rather than in a bin, the driver rail, and recommendations that carry their reason.                                        |
+| **7c Operational logic** | Delivered | `serviceMinutes`, `groupCollections`, `groupingAdvisories`, `sequenceDay`, `vehicleConstraints`, `allocateDay` — pure, seeded, tested. Plus `/admin/plan`, which answers the brief's allocation ask. |
+| **7d Timed windows**     | Delivered | Sold windows, the per-hour band gate beside the slot's volume gate, one ascending lock pass, the surcharge, `shipment.at_risk`, and the two notifications.                                           |
+| **7e Live operations**   | Delivered | `/admin/live`: positions on a map, ETAs projected from the van, route deviation, and advisories ported from `generateInsights`.                                                                      |
 
-| Sub-phase                | Outcome                                                                                      | Contents                                                                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **7a Trips** ← starting  | A dispatcher builds tomorrow's trips and prints a trip sheet; the driver app reads the trip. | `operations` module, `trips` + `trip_stops`, plan/release/resequence/start/complete, `day()` reads the trip, trip events, trip sheet UI.                                                                     |
-| **7b Dispatch board**    | One screen runs the day.                                                                     | `/v1/admin/dispatch/board`, the nine lanes, exception derivation, driver rail, drag-to-assign onto a trip, recommendations with a reason.                                                                    |
-| **7c Operational logic** | Sequencing respects how the business actually works.                                         | `serviceMinutes`, `groupCollections`, `sequenceDay`, `scoreAllocation`, `vehicleConstraints`, `groupingAdvisories` — pure functions with tests.                                                              |
-| **7d Timed windows**     | A customer buys 09:00–10:00 and ops can see it slipping.                                     | Per-hour capacity gate, window surcharge in the quote, windows on booking + shipment, dispatcher overrides with pinned times, `shipment.at_risk`, arrival events, recipient "driver is here". The §7.1 work. |
-| **7e Live operations**   | The map.                                                                                     | Live positions, ETA from the trail, route deviation, late-stop detection, dispatcher advisories from `generateInsights`.                                                                                     |
+### What was deliberately left out of 7e
 
-7d is larger than it looks and carries the only changes in this phase that touch pricing and the
-booking transaction. 7b and 7c can be built in either order once 7a lands.
+The old planner's insight generator also carried a table of Pretoria corridors ("avoid Atterbury,
+use Lynnwood, because…") and a traffic condition a dispatcher set by hand. Neither came across:
 
-The brief's Phase 5 (AI allocation advice, at-risk triage) is a phase of its own after this, and
-genuinely belongs last: it is only as good as `trip_stops` and the at-risk signal beneath it.
+- **The corridor table is knowledge that rots silently.** A hard-coded list of which road to
+  avoid at which hour is wrong the month a route changes, and nothing in the system would say
+  so. It belongs in configuration with an owner, or behind a real feed.
+- **There is no traffic source.** A dispatcher-set "traffic is bad today" multiplier is a
+  guess wearing a number's clothes. When a feed exists it belongs in the `roadFactor` these
+  functions already take, and every ETA improves at once.
+
+ETAs are straight-line distance times a road factor, from where the van actually is. Crude, and
+still far better than the planned time once a day has slipped — the plan was computed at 6am
+from the depot and has not known where the van is since. Nothing is stored: an ETA is only true
+for as long as the van is where it was when we asked, and writing one down creates a number that
+is wrong within minutes and that somebody eventually trusts.
+
+### Still open, and honestly so
+
+| Item                                        | Why it is not done                                                                                                                                                |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Band capacity derived from drivers on shift | Set directly for now. Deriving it means a query inside the booking transaction, and the honest number is drivers × stops-per-hour, which nobody has measured yet. |
+| Per-drop windows on a multi-drop booking    | One window per booking, inherited by its drops, matching how the slot already works. Per-drop would mean per-drop pricing.                                        |
+| The current fleet's real vehicle rules      | The columns and the editor exist; the values need confirming, because the old constants named cars that may since have been sold.                                 |
+| Traffic, and road distance for ETAs         | Needs the Google Maps key (`ARCHITECTURE.md` §8) or a traffic feed. Both land in `roadFactor`.                                                                    |
+| The AI layer the brief put in its Phase 5   | A phase of its own, and genuinely last: it is only as good as `trip_stops` and the at-risk signal under it, which now exist.                                      |
 
 ---
 

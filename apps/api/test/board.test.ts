@@ -8,6 +8,7 @@ import type {
   DayPlan,
   DispatchBoard,
   Driver,
+  LiveOperations,
   Quote,
   Trip,
   TripSheet,
@@ -547,6 +548,106 @@ describe("dispatch board", () => {
     // rather than silently accepted.
     expect(plan.warnings.join(" ")).toContain("cargo");
     expect(plan.warnings.join(" ")).toContain(b.shipments[0]!.waybill);
+  });
+
+  it("projects arrivals from where the van is, and says which windows will be missed", async () => {
+    const b = await book(2);
+    await openShift();
+    const trip = (
+      await h
+        .http()
+        .post("/v1/admin/dispatch/trips")
+        .set(asDispatcher())
+        .send({ driverId: driver.id, date: TODAY })
+        .expect(201)
+    ).body as Trip;
+    const sheet = (
+      await h
+        .http()
+        .post(`/v1/admin/dispatch/trips/${trip.id}/stops`)
+        .set(asDispatcher())
+        .send({ shipmentIds: b.shipments.map((s) => s.id), resequence: true })
+        .expect(201)
+    ).body as TripSheet;
+    // A window that has already closed: the clock is 09:00.
+    const drop = sheet.stops.find((s) => s.kind === "drop")!;
+    await h
+      .http()
+      .put(`/v1/admin/dispatch/stops/${drop.id}/window`)
+      .set(asDispatcher())
+      .send({ startMinute: 420, endMinute: 480 })
+      .expect(200);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/trips/${trip.id}/release`)
+      .set(asDispatcher())
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/driver/trip/start")
+      .set(asDriver())
+      .send({ tripId: trip.id })
+      .expect(201);
+
+    const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
+      .body as LiveOperations;
+    const me = live.drivers.find((d) => d.driverId === driver.id)!;
+    expect(me.activity).toBe("working");
+    expect(me.location).toMatchObject(MENLYN);
+    expect(me.stops.length).toBeGreaterThan(0);
+    // Every remaining stop has a projected arrival, computed from the van's position.
+    expect(me.stops.every((s) => s.etaMinute !== null)).toBe(true);
+    const doomed = me.stops.find((s) => s.stopId === drop.id)!;
+    expect(doomed.willMissWindow).toBe(true);
+    expect(doomed.lateMinutes).toBeGreaterThan(0);
+    // And the dispatcher is told what to do about it, warnings first.
+    expect(live.advisories[0]!.severity).toBe("warning");
+    expect(live.advisories.some((a) => a.category === "punctuality")).toBe(true);
+  });
+
+  it("admits it cannot predict without a position rather than inventing one", async () => {
+    const b = await book(1);
+    // A shift that was scheduled but never started, so the app has never reported.
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY })
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/admin/dispatch/board/assign")
+      .set(asDispatcher())
+      .send({ shipmentId: b.shipments[0]!.id, driverId: driver.id, date: TODAY })
+      .expect(201);
+
+    const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
+      .body as LiveOperations;
+    const me = live.drivers.find((d) => d.driverId === driver.id)!;
+    expect(me.location).toBeNull();
+    expect(me.silentMinutes).toBeNull();
+    expect(me.travelledKm).toBe(0);
+    // The plan is still shown; the ETA is not guessed at from a van we cannot find.
+    expect(me.stops.every((s) => s.etaMinute === null)).toBe(true);
+  });
+
+  it("says nothing at all about a day that is going fine", async () => {
+    await openShift();
+    const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
+      .body as LiveOperations;
+    // No work, nobody late, nothing unassigned: an empty list beats a reassuring one.
+    expect(live.advisories).toEqual([]);
+    expect(live.unassignedCount).toBe(0);
+  });
+
+  it("names the idle driver when work has nobody on it", async () => {
+    await book(1);
+    await openShift();
+    const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
+      .body as LiveOperations;
+    expect(live.unassignedCount).toBe(1);
+    const capacity = live.advisories.find((a) => a.category === "capacity")!;
+    expect(capacity.detail).toContain("Sipho");
   });
 
   it("reports the operating clock so the board does not have to guess it", async () => {

@@ -15,6 +15,7 @@ const NAV: NavSection[] = [
     items: [
       { href: "/admin", label: "Overview", icon: "space_dashboard", exact: true },
       { href: "/admin/dispatch", label: "Dispatch board", icon: "dashboard" },
+      { href: "/admin/live", label: "Live operations", icon: "my_location" },
       { href: "/admin/shipments", label: "Shipments", icon: "local_shipping" },
       { href: "/admin/bookings", label: "Bookings", icon: "receipt_long" },
       { href: "/admin/changes", label: "Change requests", icon: "edit_note" },

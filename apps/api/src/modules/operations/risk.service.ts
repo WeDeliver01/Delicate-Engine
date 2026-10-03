@@ -7,6 +7,7 @@ import { DbService } from "../../infra/db.module.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { Clock } from "../../infra/clock.js";
+import { LiveService } from "./live.service.js";
 
 const LIVE: ShipmentStatus[] = ["booked", "assigned", "collected", "in_transit"];
 
@@ -28,6 +29,7 @@ export class RiskService {
     private readonly settings: SettingsService,
     private readonly outbox: OutboxService,
     private readonly clock: Clock,
+    private readonly live: LiveService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(RiskService.name);
@@ -119,6 +121,48 @@ export class RiskService {
      * A sweep is the exception — it runs every minute and most of what it finds it has already
      * reported — so it asks first rather than catching an error it expects.
      */
+    /**
+     * Stops the driver will not reach in time, projected from where the van actually is.
+     *
+     * This is the half worth having. The query above tells a dispatcher a window has closed,
+     * which they will shortly hear from the customer anyway; this tells them at eleven that the
+     * two o'clock will not be made, while there is still something to be done about it.
+     */
+    const predicted: {
+      shipmentId: string;
+      waybill: string;
+      bookingId: string;
+      accountId: string;
+      tripId: string | null;
+      driverId: string;
+      windowEndMinute: number;
+      lateMinutes: number;
+    }[] = [];
+    const liveNow = await this.live.live(today);
+    for (const driver of liveNow.drivers) {
+      if (driver.activity !== "working") continue;
+      for (const stop of driver.stops) {
+        // Only a stop whose window is still open: once it has closed the sweep above owns it,
+        // and two events about one parcel is how a dispatcher learns to ignore both.
+        if (!stop.willMissWindow || stop.window.endMinute == null) continue;
+        if (stop.window.endMinute < nowMinute) continue;
+        // Collections have no shipment of their own, and a parcel already delivered or failed
+        // is nobody's risk.
+        if (!stop.shipmentId || !stop.accountId || !stop.waybill) continue;
+        if (!stop.status || !LIVE.includes(stop.status)) continue;
+        predicted.push({
+          shipmentId: stop.shipmentId,
+          waybill: stop.waybill,
+          bookingId: stop.bookingId,
+          accountId: stop.accountId,
+          tripId: driver.tripId,
+          driverId: driver.driverId,
+          windowEndMinute: stop.window.endMinute,
+          lateMinutes: stop.lateMinutes,
+        });
+      }
+    }
+
     const candidates = [
       ...missed
         // The window the driver is actually working to: a dispatcher's narrowing wins over what
@@ -143,6 +187,20 @@ export class RiskService {
             windowEndMinute: endMinute,
           },
         })),
+      ...predicted.map((row) => ({
+        key: `at_risk:${row.shipmentId}:eta:${row.windowEndMinute}`,
+        payload: {
+          shipmentId: row.shipmentId,
+          bookingId: row.bookingId,
+          accountId: row.accountId,
+          waybill: row.waybill,
+          tripId: row.tripId,
+          driverId: row.driverId,
+          reason: "eta_after_window" as const,
+          minutes: row.lateMinutes,
+          windowEndMinute: row.windowEndMinute,
+        },
+      })),
       ...orphaned.map((row) => ({
         key: `at_risk:${row.shipmentId}:unassigned:${today}`,
         payload: {
