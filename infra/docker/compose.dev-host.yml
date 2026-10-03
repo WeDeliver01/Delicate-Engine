@@ -30,7 +30,10 @@
 # customers will use is most of the point of having a dev environment.
 #
 # Deploy: infra/scripts/deploy-dev.sh   ·   Runbook: docs/RUNBOOK.md
-name: delicate-dev
+# Interpolated rather than fixed, so a second host on the same box gets its own project —
+# its own containers, network and database volume — with COMPOSE_PROJECT_NAME. Relying on that
+# variable to override a hardcoded `name:` is version-dependent; this is not.
+name: ${COMPOSE_PROJECT_NAME:-delicate-dev}
 
 services:
   # Opt-in only: `docker compose --profile edge up -d`. On a shared box, leave it off and let

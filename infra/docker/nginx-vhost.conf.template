@@ -1,26 +1,22 @@
-# dev.delicatecourier.co.za — vhost for the nginx that already runs on this VPS.
+# Vhost template for one Delicate host.
 #
-# This box already serves other sites, including live client ones, so the engine does not take
-# ports 80 and 443 for itself. It binds to loopback and nginx proxies to it; the worst a mistake
-# in here can do is break this site, never someone else's.
+# Rendered by infra/scripts/nginx-vhost.sh; the __PLACEHOLDERS__ below are not valid nginx, so
+# this file is never installed as it stands. Everything above the sentinel line is these notes
+# and is dropped on the way out.
 #
-# Install:
-#   sudo cp infra/docker/nginx-dev.conf /etc/nginx/sites-available/dev.delicatecourier.co.za
-#   sudo ln -s /etc/nginx/sites-available/dev.delicatecourier.co.za /etc/nginx/sites-enabled/
-#   sudo nginx -t && sudo systemctl reload nginx
+# One template rather than a file per host. A second hostname used to mean copying the whole
+# thing and changing one word, which is how two vhosts end up with different timeouts and
+# nobody knows which is right.
 #
-# The certificate is issued by webroot, matching this box's other sites, and the acme-challenge
-# location below is what makes that work through a vhost that otherwise proxies everything:
-#   sudo certbot certonly --webroot -w /var/www/html -d dev.delicatecourier.co.za
+# Placeholders: __HOST__, __SLUG__ (session-cache zone name), __WEB_PORT__, __API_PORT__,
+# __ROBOTS__ (the indexing header, or a note saying indexing is deliberate).
 #
-# `nginx -t` before every reload, without exception. It parses the whole configuration, so it
-# also catches a mistake that would have taken the other sites down with it.
-
+# ---8<--- rendered output begins below this line
 # ── HTTP: renewals, and a push to HTTPS for everything else ──────────────────
 server {
     listen 80;
     listen [::]:80;
-    server_name dev.delicatecourier.co.za;
+    server_name __HOST__;
 
     # Let's Encrypt writes its challenge file into the webroot and fetches it over plain HTTP.
     # Without this it would be proxied to the web app like everything else, which answers 404.
@@ -42,17 +38,18 @@ server {
     # only exists from 1.25.1, and using it here fails the config test.
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name dev.delicatecourier.co.za;
+    server_name __HOST__;
 
-    ssl_certificate     /etc/letsencrypt/live/dev.delicatecourier.co.za/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/dev.delicatecourier.co.za/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/__HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem;
 
     # Set inline rather than including certbot's options-ssl-nginx.conf, which is installed by
     # the nginx plugin — not present on this box, and a missing include fails the config test
     # for every site, not just this one.
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
-    ssl_session_cache shared:SSL_dev:10m;
+    # The cache name must be unique per host, or nginx refuses to start with a duplicate zone.
+    ssl_session_cache shared:SSL___SLUG__:10m;
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
@@ -62,13 +59,11 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    # A development site; keep it out of search results.
-    add_header X-Robots-Tag "noindex, nofollow" always;
-
+__ROBOTS__
     # The engine. Straight through, so a webhook signature is computed over the bytes the
     # provider actually sent — anything that re-encodes the body breaks it.
     location /api/ {
-        proxy_pass http://127.0.0.1:8091/;
+        proxy_pass http://127.0.0.1:__API_PORT__/;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
@@ -78,9 +73,9 @@ server {
         proxy_read_timeout 60s;
     }
 
-    # The web app.
+    # The web app: marketing, the customer portal and the ops console, one Next.js app.
     location / {
-        proxy_pass http://127.0.0.1:8090;
+        proxy_pass http://127.0.0.1:__WEB_PORT__;
         proxy_http_version 1.1;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;

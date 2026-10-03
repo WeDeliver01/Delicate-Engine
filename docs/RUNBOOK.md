@@ -110,18 +110,54 @@ echo <github-token-with-read:packages> | docker login ghcr.io -u <username> --pa
 To pin a deploy to a known-good build rather than `latest`, set `IMAGE_TAG` in `.env` to a commit
 SHA. Rolling back is then the same command with the previous SHA.
 
-Then put nginx in front, once:
+Then put nginx in front, once per hostname. The vhost is rendered from a template rather than
+kept as a file per host, so two hosts cannot drift apart:
 
 ```bash
-sudo cp infra/docker/nginx-dev.conf /etc/nginx/sites-available/dev.delicatecourier.co.za
-sudo ln -s /etc/nginx/sites-available/dev.delicatecourier.co.za /etc/nginx/sites-enabled/
-sudo nginx -t                      # parses every site: catches anything that would break the others
-sudo systemctl reload nginx
-sudo certbot --nginx -d dev.delicatecourier.co.za
+HOST=dev.delicatecourier.co.za     # or driver.delicatecourier.co.za, or whatever you point here
+infra/scripts/nginx-vhost.sh "$HOST" | sudo tee "/etc/nginx/sites-available/$HOST" >/dev/null
+sudo ln -sfn "/etc/nginx/sites-available/$HOST" "/etc/nginx/sites-enabled/$HOST"
+sudo certbot certonly --webroot -w /var/www/html -d "$HOST"   # BEFORE the reload
+sudo nginx -t && sudo systemctl reload nginx
 ```
+
+The certificate must exist **before** the reload. nginx will not start a vhost whose
+`ssl_certificate` file is missing, and on a shared box that failure takes every other site with
+it. `certonly --webroot` matches how this box's other sites are issued; the `--nginx` plugin is
+not installed here.
+
+The script reads `WEB_BIND_PORT` and `API_BIND_PORT` from `infra/docker/.env` when it is there,
+so the vhost and the stack cannot disagree about which port the web app is on — the mismatch
+that produces a 502 and twenty minutes of reading the wrong logs. It gives each host its own
+TLS session-cache zone, because two vhosts sharing one name is a duplicate-zone error that
+stops nginx starting at all. Add `--public` for a host that should be indexed; by default it
+carries `X-Robots-Tag: noindex`.
 
 `nginx -t` before every reload, without exception. It validates the whole configuration, so it
 also catches a mistake that would have taken the other sites down with it.
+
+### A second hostname on the same box
+
+Each host needs its own stack, because `.env` carries the hostname the engine believes it lives
+at (`API_PUBLIC_URL`, `WEB_PUBLIC_URL`, `CORS_ORIGINS`) and those are compiled into the browser
+bundle. Use a separate directory, a different compose project name, and different bind ports:
+
+```bash
+# e.g. /opt/delicate-driver, alongside /opt/delicate-dev
+cp infra/docker/.env.dev.example infra/docker/.env
+$EDITOR infra/docker/.env
+#   DEV_HOST=driver.delicatecourier.co.za
+#   WEB_BIND_PORT=8092          # must not collide with the other stack
+#   API_BIND_PORT=8093
+#   API_PUBLIC_URL=https://driver.delicatecourier.co.za/api
+#   WEB_PUBLIC_URL=https://driver.delicatecourier.co.za
+#   CORS_ORIGINS=https://driver.delicatecourier.co.za
+COMPOSE_PROJECT_NAME=delicate-driver infra/scripts/deploy-dev.sh --seed
+```
+
+Two stacks on one two-core box is tight. If this is replacing the dev host rather than joining
+it, change `DEV_HOST` in the existing `.env` and redeploy instead — one stack, one database, one
+set of ports.
 
 On a machine where nothing else serves the web, `deploy-dev.sh --edge` runs Caddy on 80/443 and
 handles TLS itself instead. It refuses to start if either port is already in use.
