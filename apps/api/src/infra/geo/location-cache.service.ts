@@ -83,9 +83,10 @@ export class LocationCacheService {
       .where(eq(geocodedAddresses.fingerprint, fingerprint));
     if (!row) return null;
 
-    // Counted without awaiting: a hit should not pay for its own bookkeeping, and losing a
-    // count to a crash costs nothing but a slightly understated saving.
-    void this.dbs.db
+    // Awaited. It is one small UPDATE against a network call we just avoided, so the cost is
+    // nothing — and a write that outlives the request that started it holds locks after the
+    // caller has gone, which is a whole class of strange behaviour bought for no gain.
+    await this.dbs.db
       .update(geocodedAddresses)
       .set({ hitCount: sql`${geocodedAddresses.hitCount} + 1`, lastUsedAt: this.clock.now() })
       .where(eq(geocodedAddresses.id, row.id))
@@ -155,7 +156,7 @@ export class LocationCacheService {
         .where(and(eq(routeLegs.fingerprint, fingerprint), gte(routeLegs.measuredAt, cutoff)));
       results.push(row ? row.metres / 1000 : null);
       if (row) {
-        void this.dbs.db
+        await this.dbs.db
           .update(routeLegs)
           .set({ hitCount: sql`${routeLegs.hitCount} + 1`, lastUsedAt: this.clock.now() })
           .where(eq(routeLegs.id, row.id))

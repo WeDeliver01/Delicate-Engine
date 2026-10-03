@@ -67,6 +67,22 @@ export class BookingService {
     const quote = await this.quotes.get(input.quoteId, accountId);
     if (quote.status !== "priced")
       throw AppError.conflict("quote_used", "this quote has already been booked");
+    // Before anything is reserved or held. A quote may have been priced on addresses alone, so
+    // the recipients arrive with the booking -- and finding that out after taking a slot and
+    // holding the customer's money means relying on a rollback to undo work that never needed
+    // to start.
+    const missing = (quote.request.drops as { recipient: unknown }[])
+      .map((drop, i) => ((drop.recipient ?? input.drops?.[i]?.recipient) ? null : i + 1))
+      .filter((n): n is number => n !== null);
+    if (missing.length > 0) {
+      throw AppError.validation(
+        missing.map((n) => ({
+          path: ["drops", n - 1, "recipient"],
+          message: `drop ${n} needs a recipient name and contact number before it can be booked`,
+        })),
+      );
+    }
+
     const serviceLevel = await this.catalog.serviceLevelByCode(quote.serviceLevelCode);
     if (serviceLevel.requiresSlot && !input.slot) {
       throw AppError.validation([
@@ -155,6 +171,19 @@ export class BookingService {
 
         const created: { shipmentId: string; waybill: string }[] = [];
         for (const [i, drop] of req.drops.entries()) {
+          // A quote needs only an address; a shipment needs somebody to hand the parcel to.
+          // Whoever the quote named wins, and the booking fills the rest — this is the point
+          // where a driver would otherwise arrive at a door with no name and no number.
+          const recipient = drop.recipient ?? input.drops?.[i]?.recipient ?? null;
+          if (!recipient) {
+            throw new AppError(
+              "recipient_required",
+              `drop ${i + 1} has no recipient; a delivery needs a name and a contact number`,
+              422,
+              { dropIndex: i },
+            );
+          }
+          const instructions = drop.instructions ?? input.drops?.[i]?.instructions ?? null;
           const waybill = await this.nextWaybill(tx);
           const [s] = await tx
             .insert(shipments)
@@ -168,9 +197,9 @@ export class BookingService {
               slotWindowKey: slot?.windowKey ?? null,
               deliveryWindowStartMinute: timedWindow?.delivery?.startMinute ?? null,
               deliveryWindowEndMinute: timedWindow?.delivery?.endMinute ?? null,
-              recipient: drop.recipient,
+              recipient,
               deliveryAddress: drop.address,
-              instructions: drop.instructions,
+              instructions,
               parcels: drop.parcels,
             })
             .returning();

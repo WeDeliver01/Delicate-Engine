@@ -53,6 +53,24 @@ export const CreateBookingRequest = z.object({
   /** The customer's own identifier for this job, searchable and printed on their invoice. */
   customerReference: z.string().trim().max(60).optional(),
   /**
+   * Recipient details for the quote's drops, in the same order, for anything the quote did
+   * not carry.
+   *
+   * A quote only needs an address to produce a price, so the people are usually named here
+   * instead — at the point someone commits to the delivery, which is when a driver actually
+   * needs a name and a number to knock on a door with. Anything already on the quote wins;
+   * this fills the gaps.
+   */
+  drops: z
+    .array(
+      z.object({
+        recipient: Contact,
+        instructions: z.string().max(500).nullable().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  /**
    * The narrow windows to hold. Must match what the quote was priced with, or the booking is
    * refused: a window the customer did not pay for is one we have not agreed to keep.
    */

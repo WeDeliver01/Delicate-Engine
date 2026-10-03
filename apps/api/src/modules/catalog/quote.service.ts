@@ -60,6 +60,9 @@ export class QuoteService {
       parcels: packageTypes.map((packageType) => ({ packageType, quantity: 1 })),
       options: input.options,
       vatBps,
+      // A Saturday costs more than a Tuesday, so an estimate that ignores the day is an
+      // estimate for a different job than the one being asked about.
+      ...(input.deliveryDate ? { dateFlags: dateFlagsFor(input.deliveryDate) } : {}),
     });
     // The public estimator is the most exposed surface there is -- no sign-in at all -- so
     // it gets the same projection as everything else.

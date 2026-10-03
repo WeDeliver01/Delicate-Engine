@@ -11,11 +11,24 @@ export const Contact = z.object({
 });
 export type Contact = z.infer<typeof Contact>;
 
+/**
+ * A delivery, as much as is known when the question is asked.
+ *
+ * Only the address is required, because the point of a quote is a price and an address is all
+ * a price needs. Who is receiving it and what is in the box do not change the distance; the
+ * parcels change the price a little, and the recipient not at all.
+ *
+ * So a customer can get a number by typing one thing. The details become compulsory at the
+ * moment they actually matter — booking it — and `CreateBookingRequest` carries whatever the
+ * quote did not.
+ */
 export const DropInput = z.object({
   address: Address,
-  recipient: Contact,
+  /** Null while this is only a quote. Required before the shipment exists. */
+  recipient: Contact.nullable().default(null),
   instructions: z.string().max(500).nullable().default(null),
-  parcels: z.array(QuoteParcel).min(1).max(20),
+  /** Empty prices as a plain delivery; package surcharges are added once they are known. */
+  parcels: z.array(QuoteParcel).max(20).default([]),
 });
 export type DropInput = z.infer<typeof DropInput>;
 
@@ -71,6 +84,8 @@ export const EstimateRequest = z.object({
   drops: z.array(Address).min(1).max(20),
   packageTypeCodes: z.array(z.string()).default([]),
   options: QuoteOptions.default({}),
+  /** Weekends and public holidays can carry a surcharge, so the day changes the number. */
+  deliveryDate: IsoDate.optional(),
 });
 export type EstimateRequest = z.infer<typeof EstimateRequest>;
 
