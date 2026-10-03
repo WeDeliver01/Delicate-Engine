@@ -57,12 +57,27 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is miss
 # shellcheck disable=SC1090
 set -a; source "$ENV_FILE"; set +a
 
-for required in DEV_HOST POSTGRES_PASSWORD DATABASE_URL SUPABASE_URL; do
+for required in DEV_HOST POSTGRES_PASSWORD DATABASE_URL SUPABASE_URL SUPABASE_JWT_SECRET; do
   [[ -n "${!required:-}" ]] || die "$required is empty in $ENV_FILE."
 done
 if [[ "$DATABASE_URL" == *REPLACE_WITH_POSTGRES_PASSWORD* ]]; then
   die "DATABASE_URL still has the placeholder password in it."
 fi
+# Anything NEXT_PUBLIC_ is compiled into the browser bundle when the web image is built, not
+# read at run time. Missing them produces a site that looks fine and that nobody can sign in
+# to, and the only fix is another build — so fail here instead, while it is cheap.
+for required in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
+  [[ -n "${!required:-}" ]] || die "$required is empty in $ENV_FILE.
+  It is baked into the browser bundle at build time, so sign-in would fail and setting it
+  afterwards would not help without rebuilding. Fill it in first."
+done
+# The hostname the engine believes it lives at is also compiled in, by way of CORS. A mismatch
+# here is a browser console full of CORS errors and a login that goes nowhere.
+case "${CORS_ORIGINS:-}" in
+  *"$DEV_HOST"*) ;;
+  *) die "CORS_ORIGINS (${CORS_ORIGINS:-empty}) does not mention $DEV_HOST. The browser will be
+  refused by the engine. Set CORS_ORIGINS=https://$DEV_HOST." ;;
+esac
 echo "  host      $DEV_HOST"
 echo "  database  container postgres"
 echo "  auth      ${SUPABASE_URL}"
