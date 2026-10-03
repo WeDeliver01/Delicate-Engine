@@ -85,6 +85,9 @@ export const rateCards = pgTable(
     weekendSurchargeCents: integer("weekend_surcharge_cents").notNull().default(0),
     publicHolidaySurchargeBps: integer("public_holiday_surcharge_bps").notNull().default(0),
     publicHolidaySurchargeCents: integer("public_holiday_surcharge_cents").notNull().default(0),
+    /** What a narrow window costs on top of the slot. Zero until the business prices it. */
+    timedWindowSurchargeBps: integer("timed_window_surcharge_bps").notNull().default(0),
+    timedWindowSurchargeCents: integer("timed_window_surcharge_cents").notNull().default(0),
     ...timestamps(),
   },
   (t) => [

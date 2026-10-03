@@ -68,6 +68,14 @@ export const RateCard = z.object({
   weekendSurchargeCents: NonNegativeCents,
   publicHolidaySurchargeBps: Bps,
   publicHolidaySurchargeCents: NonNegativeCents,
+  /**
+   * What a customer pays to be promised a narrow window rather than half a day. Charged on the
+   * distance component plus a flat amount, like the dated surcharges, and zero until the
+   * business prices it. Flat across widths: the policy sets how narrow a window may be, so
+   * every one sold is worth about the same promise. Tiering by width can come later.
+   */
+  timedWindowSurchargeBps: Bps,
+  timedWindowSurchargeCents: NonNegativeCents,
   /** Road-distance factor applied to straight-line km when no routing provider is available. */
   roadFactorBps: z.number().int().min(10_000).max(30_000),
   createdAt: z.string().datetime(),

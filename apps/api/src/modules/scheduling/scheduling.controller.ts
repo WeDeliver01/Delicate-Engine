@@ -23,6 +23,16 @@ export class PublicSlotsController {
   availability(@Query(AvailabilityQuery) q: AvailabilityQuery) {
     return this.scheduling.availability(q.dateFrom, q.dateTo);
   }
+
+  /**
+   * The narrow windows on offer for a date, band by band. Empty when timed windows are off,
+   * so a booking form that asks is simply shown nothing rather than an error.
+   */
+  @Public()
+  @Get("windows/:date")
+  windows(@Params(z.object({ date: IsoDate })) p: { date: string }) {
+    return this.scheduling.windowAvailability(p.date);
+  }
 }
 
 @ApiTags("admin")
@@ -45,6 +55,11 @@ export class AdminCapacityController {
   @Get("slots")
   slots(@Query(AvailabilityQuery) q: AvailabilityQuery) {
     return this.scheduling.availability(q.dateFrom, q.dateTo);
+  }
+
+  @Get("windows/:date")
+  windowBands(@Params(z.object({ date: IsoDate })) p: { date: string }) {
+    return this.scheduling.windowAvailability(p.date);
   }
 
   /** Close/reopen or override capacity for one slot. */

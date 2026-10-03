@@ -116,6 +116,9 @@ export class QuoteService {
       // Only set when the caller said which day the job is for. Every rate card carries zero
       // for both surcharges, so this changes no price until the business decides it should.
       ...(input.deliveryDate ? { dateFlags: dateFlagsFor(input.deliveryDate) } : {}),
+      // A narrow window is a different promise from a half-day slot, so it is priced. Also zero
+      // on every rate card until someone sets it.
+      timedWindow: !!(input.timedWindow?.collection || input.timedWindow?.delivery),
     });
 
     const reference = await this.nextReference();

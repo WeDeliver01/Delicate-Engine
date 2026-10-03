@@ -17,9 +17,10 @@ import { Uuid } from "./dto/common.js";
  *   extraDrops  = (N − 1) × extraDropFee
  *   parcels     = Σ packageType.surcharge
  *   options     = liability cover (% of declared value, min) + early collection + signature + wedding venue
+ *   window      = timed-window surcharge, when the customer buys a narrow window
  *   dated       = weekend / public-holiday surcharge, when the caller says the date qualifies
  *                 (zero on every rate card until the business decides otherwise)
- *   subtotal    = max(base + fuel + extraDrops + parcels + options + dated, minFee)
+ *   subtotal    = max(base + fuel + extraDrops + parcels + options + window + dated, minFee)
  *   vat         = subtotal × vatBps (only when registered)
  *   total       = subtotal + vat
  *
@@ -87,6 +88,12 @@ export interface PricingInput {
   vatBps: Bps; // 0 when not VAT registered
   /** Defaults to neither, which is what keeps date-conditional pricing switched off. */
   dateFlags?: DateFlags;
+  /**
+   * True when the customer is buying a narrow window rather than the whole slot. Priced here
+   * so a booking can always explain its total; whether the window is *available* is a capacity
+   * question the booking transaction answers.
+   */
+  timedWindow?: boolean;
 }
 
 export const QuoteLine = z.object({
@@ -250,6 +257,16 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
       rateCard.publicHolidaySurchargeCents;
     if (amount > 0) {
       lines.push({ code: "public_holiday", label: "Public holiday delivery", amountCents: amount });
+    }
+  }
+
+  // A promise to be somewhere inside an hour, rather than inside half a day. Zero until the
+  // business prices it, like the surcharges above.
+  if (input.timedWindow) {
+    const amount =
+      applyBps(baseCents, rateCard.timedWindowSurchargeBps) + rateCard.timedWindowSurchargeCents;
+    if (amount > 0) {
+      lines.push({ code: "timed_window", label: "Timed delivery window", amountCents: amount });
     }
   }
 

@@ -63,6 +63,9 @@ export const bookings = pgTable(
     slotDate: date("slot_date", { mode: "string" }),
     slotWindowKey: text("slot_window_key"),
     collection: jsonb("collection").notNull(),
+    /** Minutes past midnight, local. Set only when a timed window was sold. */
+    collectionWindowStartMinute: integer("collection_window_start_minute"),
+    collectionWindowEndMinute: integer("collection_window_end_minute"),
     options: jsonb("options").notNull(),
     breakdown: jsonb("breakdown").notNull(),
     totalCents: bigint("total_cents", { mode: "number" }).notNull(),
@@ -111,6 +114,8 @@ export const shipments = pgTable(
     serviceLevelCode: text("service_level_code").notNull(),
     slotDate: date("slot_date", { mode: "string" }),
     slotWindowKey: text("slot_window_key"),
+    deliveryWindowStartMinute: integer("delivery_window_start_minute"),
+    deliveryWindowEndMinute: integer("delivery_window_end_minute"),
     recipient: jsonb("recipient").notNull(),
     deliveryAddress: jsonb("delivery_address").notNull(),
     instructions: text("instructions"),

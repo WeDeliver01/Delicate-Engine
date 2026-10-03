@@ -276,6 +276,8 @@ export function toRateCard(r: typeof rateCards.$inferSelect): RateCard {
     weekendSurchargeCents: r.weekendSurchargeCents,
     publicHolidaySurchargeBps: r.publicHolidaySurchargeBps,
     publicHolidaySurchargeCents: r.publicHolidaySurchargeCents,
+    timedWindowSurchargeBps: r.timedWindowSurchargeBps,
+    timedWindowSurchargeCents: r.timedWindowSurchargeCents,
     roadFactorBps: r.roadFactorBps,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),

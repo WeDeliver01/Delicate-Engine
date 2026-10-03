@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { BlackoutDate, SlotAvailability, SlotPolicy } from "@delicate/contracts";
+import Link from "next/link";
+import type {
+  BlackoutDate,
+  SlotAvailability,
+  SlotPolicy,
+  WindowBandAvailability,
+} from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { minutesToClock } from "@/lib/money";
 
@@ -109,6 +115,8 @@ export default function AdminCapacity() {
           ))}
         </div>
       </section>
+
+      {policy.data?.timedWindow.enabled && <WindowBands onError={onError} />}
 
       <section className="panel p-5 text-sm">
         <h2 className="section-title">Blackout dates</h2>
@@ -227,6 +235,60 @@ function PolicyForm({
         {num("minLeadDays")}
         {num("cutoffMinutesBefore")}
         {num("horizonDays")}
+      </div>
+
+      {/*
+        Volume and concurrency are different constraints. The capacity above answers "how much
+        work exists this half-day", which is what drivers on shift can cover. It cannot answer
+        "how many promises are there for 09:00" — four drivers can cover forty morning stops and
+        still not be in four places at a quarter past nine.
+      */}
+      <div className="mt-6 border-t border-line pt-4">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={p.timedWindow.enabled}
+            onChange={(e) =>
+              setP({ ...p, timedWindow: { ...p.timedWindow, enabled: e.target.checked } })
+            }
+          />
+          <span className="font-medium">Sell timed delivery windows</span>
+        </label>
+        <p className="mt-1 text-xs text-muted">
+          A customer picks an hour and pays for it. Price the surcharge under{" "}
+          <Link href="/admin/catalog" className="link-quiet">
+            Pricing
+          </Link>
+          ; until you do, a window is free. Leave the places per hour at zero and nothing can be
+          sold, which is the safe default.
+        </p>
+        {p.timedWindow.enabled && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+            {(
+              [
+                ["capacityPerBand", "Places per hour"],
+                ["bandMinutes", "Hour length (min)"],
+                ["minMinutes", "Narrowest window (min)"],
+                ["maxMinutes", "Widest window (min)"],
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="block text-sm">
+                <span className="text-[#6B6661]">{label}</span>
+                <input
+                  type="number"
+                  value={p.timedWindow[key]}
+                  onChange={(e) =>
+                    setP({
+                      ...p,
+                      timedWindow: { ...p.timedWindow, [key]: Number(e.target.value) },
+                    })
+                  }
+                  className="mt-1 w-full input px-2 py-1.5 font-mono"
+                />
+              </label>
+            ))}
+          </div>
+        )}
       </div>
       <h3 className="mt-4 section-title">Windows</h3>
       {p.windows.map((w, i) => (
@@ -347,4 +409,63 @@ function PolicyForm({
 function toMinutes(clock: string): number {
   const [h, m] = clock.split(":").map(Number);
   return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * Which hours are already promised away.
+ *
+ * Separate from the slot table above because it answers a different question: not how much work
+ * there is that morning, but how many places are left at a quarter past nine.
+ */
+function WindowBands({ onError }: { onError: (e: unknown) => void }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const bands = useQuery({
+    queryKey: ["admin", "capacity", "windows", date],
+    queryFn: () => api<WindowBandAvailability[]>(`/v1/admin/capacity/windows/${date}`),
+  });
+  useEffect(() => {
+    if (bands.error) onError(bands.error);
+  }, [bands.error, onError]);
+
+  const clock = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+  return (
+    <section className="panel p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="section-title">Timed windows sold</h2>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="input"
+          aria-label="Window date"
+        />
+      </div>
+      {(bands.data ?? []).length === 0 ? (
+        <p className="mt-3 text-sm text-muted">
+          No hours configured for this date. Set the places per hour in the policy above.
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(bands.data ?? []).map((b) => (
+            <div
+              key={b.startMinute}
+              className={`rounded border px-3 py-2 text-sm ${
+                b.remaining === 0 ? "border-[#C13B73] bg-[#FDF2F6]" : "border-[#DAD6CF]"
+              }`}
+            >
+              <div className="font-mono text-xs">
+                {clock(b.startMinute)}–{clock(b.endMinute)}
+              </div>
+              <div className={b.remaining === 0 ? "text-[#C13B73]" : "text-muted"}>
+                {b.booked}/{b.capacity}
+                {b.remaining === 0 && " · full"}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }

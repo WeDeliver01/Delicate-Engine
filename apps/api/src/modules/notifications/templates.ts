@@ -89,6 +89,26 @@ Track it at {{trackUrl}}.
     body: `Hi {{recipientName}}, your delivery from {{customerName}} is on the way with {{driverName}}. Track: {{trackUrl}}`,
   },
   {
+    kind: "shipment.driver_arriving",
+    channel: "sms",
+    audience: "recipient",
+    subject: null,
+    body: `Hi {{recipientName}}, your driver {{driverName}} has arrived with your delivery from {{customerName}}.`,
+  },
+  {
+    kind: "shipment.at_risk",
+    channel: "email",
+    audience: "customer",
+    subject: "{{waybill}} may miss its window",
+    body: `Hi {{customerName}},
+
+{{waybill}} to {{recipientName}} was promised by {{windowEnd}} and is running late. We are on it, and you are hearing from us before the recipient calls you.
+
+{{reasonText}}
+
+Track it: {{trackUrl}}`,
+  },
+  {
     kind: "shipment.delivered",
     channel: "email",
     audience: "customer",

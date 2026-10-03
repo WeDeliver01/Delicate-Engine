@@ -4,7 +4,7 @@ import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js
 import { Uuid } from "./common.js";
 import { Address } from "./geo.js";
 import { Contact } from "./quotes.js";
-import { IsoDate, SlotRef } from "./slots.js";
+import { IsoDate, SlotRef, TimedWindow } from "./slots.js";
 
 /**
  * Bookings & Shipments. A booking is the commercial unit (one collection, N drops, one price,
@@ -52,6 +52,16 @@ export const CreateBookingRequest = z.object({
   idempotencyKey: z.string().min(8).max(120).optional(),
   /** The customer's own identifier for this job, searchable and printed on their invoice. */
   customerReference: z.string().trim().max(60).optional(),
+  /**
+   * The narrow windows to hold. Must match what the quote was priced with, or the booking is
+   * refused: a window the customer did not pay for is one we have not agreed to keep.
+   */
+  timedWindow: z
+    .object({
+      collection: TimedWindow.nullable().default(null),
+      delivery: TimedWindow.nullable().default(null),
+    })
+    .optional(),
 });
 export type CreateBookingRequest = z.infer<typeof CreateBookingRequest>;
 
@@ -73,6 +83,8 @@ export const Shipment = z.object({
   serviceLevelCode: z.string(),
   slotDate: IsoDate.nullable(),
   slotWindowKey: z.string().nullable(),
+  /** The narrow window promised for this drop, when one was sold. */
+  deliveryWindow: TimedWindow.nullable().default(null),
   recipient: Contact,
   deliveryAddress: Address,
   instructions: z.string().nullable(),
@@ -98,6 +110,8 @@ export const Booking = z.object({
     contact: Contact.nullable(),
     instructions: z.string().nullable(),
   }),
+  /** The narrow collection window promised, when one was sold. */
+  collectionWindow: TimedWindow.nullable().default(null),
   options: QuoteOptions,
   breakdown: CustomerQuoteBreakdown,
   totalCents: Cents,

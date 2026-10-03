@@ -1,0 +1,1 @@
+ALTER TYPE "public"."trip_stop_window_source" ADD VALUE 'sold' BEFORE 'dispatcher';

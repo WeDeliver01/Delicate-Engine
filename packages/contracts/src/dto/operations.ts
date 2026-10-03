@@ -26,7 +26,12 @@ export type TripStopKind = z.infer<typeof TripStopKind>;
 export const TripStopStatus = z.enum(["pending", "arrived", "done", "skipped"]);
 export type TripStopStatus = z.infer<typeof TripStopStatus>;
 
-export const WindowSource = z.enum(["slot", "dispatcher", "pinned"]);
+/**
+ * Where a stop's window came from: inherited from the slot, bought by the customer, narrowed
+ * by a dispatcher, or pinned to an exact minute. Overriding a `sold` window is a different act
+ * from tightening a `slot` one, and the board says which.
+ */
+export const WindowSource = z.enum(["slot", "sold", "dispatcher", "pinned"]);
 export type WindowSource = z.infer<typeof WindowSource>;
 
 /** Minutes past midnight, local. 540 = 09:00. */

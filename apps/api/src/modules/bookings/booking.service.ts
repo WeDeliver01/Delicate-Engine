@@ -10,6 +10,7 @@ import {
   toCustomerBreakdown,
   type Shipment,
   type ShipmentStatus,
+  type TimedWindow,
   type TrackingView,
 } from "@delicate/contracts";
 import {
@@ -86,11 +87,38 @@ export class BookingService {
       throw AppError.conflict("quote_expired", "this quote has expired; please re-quote");
     }
 
+    /**
+     * A window the customer did not pay for is one we never agreed to keep, so the booking must
+     * ask for exactly what the quote was priced with. Comparing against the quote rather than
+     * trusting the request is what stops a client buying a half-day slot and submitting an hour.
+     */
+    const quoted = (quote.request as QuoteRequest).timedWindow ?? null;
+    const timedWindow = input.timedWindow ?? null;
+    if (!sameWindows(quoted, timedWindow)) {
+      throw AppError.conflict(
+        "window_not_quoted",
+        "this booking asks for a different window from the one it was priced with; please re-quote",
+      );
+    }
+
     try {
       const bookingId = await this.dbs.transaction(async (tx) => {
         await this.quotes.markBooked(tx, quote.id); // row lock + single use
         const slot = serviceLevel.requiresSlot ? input.slot! : null;
+        // Lock order is fixed and must stay that way: quote, then slot, then the capacity bands
+        // in ascending start minute, then the wallet. Two bookings racing for the last 09:00 and
+        // 10:00 places would otherwise each hold one and wait for the other; one of them has to
+        // lose cleanly instead of both hanging.
         if (slot) await this.scheduling.reserve(tx, slot);
+        if (timedWindow?.collection || timedWindow?.delivery) {
+          const windowDate = slot?.date ?? (await this.scheduling.localNow()).date;
+          // Both windows in one call, so the bands are taken in a single ascending pass.
+          await this.scheduling.reserveWindows(
+            tx,
+            windowDate,
+            [timedWindow.collection, timedWindow.delivery].filter((w) => !!w),
+          );
+        }
 
         const reference = await this.nextReference(tx, "BK");
         const hold = await this.wallet.placeHold(tx, {
@@ -113,6 +141,8 @@ export class BookingService {
             slotDate: slot?.date ?? null,
             slotWindowKey: slot?.windowKey ?? null,
             collection: req.collection,
+            collectionWindowStartMinute: timedWindow?.collection?.startMinute ?? null,
+            collectionWindowEndMinute: timedWindow?.collection?.endMinute ?? null,
             options: req.options,
             breakdown: quote.breakdown,
             totalCents: quote.breakdown.totalCents,
@@ -136,6 +166,8 @@ export class BookingService {
               serviceLevelCode: quote.serviceLevelCode,
               slotDate: slot?.date ?? null,
               slotWindowKey: slot?.windowKey ?? null,
+              deliveryWindowStartMinute: timedWindow?.delivery?.startMinute ?? null,
+              deliveryWindowEndMinute: timedWindow?.delivery?.endMinute ?? null,
               recipient: drop.recipient,
               deliveryAddress: drop.address,
               instructions: drop.instructions,
@@ -300,6 +332,18 @@ export class BookingService {
           windowKey: booking.slotWindowKey,
         });
       }
+      // Band capacity goes back too, or a cancelled 09:00 keeps blocking the next customer.
+      // The delivery window is read off the shipments rather than the booking, because that is
+      // where it was written.
+      const windowDate = booking.slotDate ?? (await this.scheduling.localNow()).date;
+      const held = [
+        toWindow(booking.collectionWindowStartMinute, booking.collectionWindowEndMinute),
+        toWindow(
+          rows[0]?.deliveryWindowStartMinute ?? null,
+          rows[0]?.deliveryWindowEndMinute ?? null,
+        ),
+      ].filter((w): w is TimedWindow => !!w);
+      if (held.length > 0) await this.scheduling.releaseWindows(tx, windowDate, held);
       await tx
         .update(bookings)
         .set({ status: "cancelled", cancelledAt: new Date() })
@@ -619,6 +663,7 @@ export function toShipment(
     serviceLevelCode: r.serviceLevelCode,
     slotDate: r.slotDate,
     slotWindowKey: r.slotWindowKey,
+    deliveryWindow: toWindow(r.deliveryWindowStartMinute, r.deliveryWindowEndMinute),
     recipient: r.recipient as Shipment["recipient"],
     deliveryAddress: r.deliveryAddress as Shipment["deliveryAddress"],
     instructions: r.instructions,
@@ -650,6 +695,7 @@ export function toBooking(r: typeof bookings.$inferSelect, ships: Shipment[]): B
     slotDate: r.slotDate,
     slotWindowKey: r.slotWindowKey,
     collection: r.collection as Booking["collection"],
+    collectionWindow: toWindow(r.collectionWindowStartMinute, r.collectionWindowEndMinute),
     options: r.options as Booking["options"],
     // The stored row keeps the kilometres, the cost and the margin; the customer gets the
     // prices. Projected here so every booking response goes through it.
@@ -661,4 +707,24 @@ export function toBooking(r: typeof bookings.$inferSelect, ships: Shipment[]): B
     cancelledAt: r.cancelledAt?.toISOString() ?? null,
     shipments: ships,
   };
+}
+
+/** Two nullable columns in, one window or nothing out. Half a window is not a promise. */
+export function toWindow(startMinute: number | null, endMinute: number | null): TimedWindow | null {
+  return startMinute == null || endMinute == null ? null : { startMinute, endMinute };
+}
+
+/**
+ * Whether a booking asks for the same windows its quote was priced with.
+ *
+ * Both absent is a match: a booking with no window is what the engine did before windows
+ * existed, and that path must stay exactly as it was.
+ */
+function sameWindows(
+  a: { collection: TimedWindow | null; delivery: TimedWindow | null } | null,
+  b: { collection: TimedWindow | null; delivery: TimedWindow | null } | null,
+): boolean {
+  const one = (x: TimedWindow | null | undefined, y: TimedWindow | null | undefined) =>
+    (!x && !y) || (!!x && !!y && x.startMinute === y.startMinute && x.endMinute === y.endMinute);
+  return one(a?.collection, b?.collection) && one(a?.delivery, b?.delivery);
 }

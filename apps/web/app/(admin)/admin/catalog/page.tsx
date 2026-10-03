@@ -66,11 +66,13 @@ const MONEY: (keyof RateCard)[] = [
   "earlyCollectionFeeCents",
   "signatureFeeCents",
   "weddingVenueFeeCents",
+  "timedWindowSurchargeCents",
 ];
 const PCT: (keyof RateCard)[] = [
   "marginBps",
   "fuelSurchargeBps",
   "liabilityCoverBps",
+  "timedWindowSurchargeBps",
   "roadFactorBps",
 ];
 const LABELS: Partial<Record<keyof RateCard, string>> = {
@@ -85,6 +87,10 @@ const LABELS: Partial<Record<keyof RateCard, string>> = {
   signatureFeeCents: "Signature on delivery (R)",
   weddingVenueFeeCents: "Wedding venue (R)",
   roadFactorBps: "Road factor (% of straight line)",
+  // Zero means a timed window is free. It is on sale the moment capacity allows it, priced or
+  // not, so this is the lever that makes the promise worth making.
+  timedWindowSurchargeCents: "Timed window (R)",
+  timedWindowSurchargeBps: "Timed window (% of distance)",
 };
 
 function RateCardForm({

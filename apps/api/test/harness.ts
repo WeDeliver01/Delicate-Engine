@@ -21,6 +21,7 @@ export interface Harness {
 const TRUNCATE = [
   "trip_stops",
   "trips",
+  "window_bands",
   "geocoded_addresses",
   "route_legs",
   "geo_usage_daily",

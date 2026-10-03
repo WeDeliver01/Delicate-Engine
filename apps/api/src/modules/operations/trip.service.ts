@@ -12,6 +12,7 @@ import {
   type TripSheet,
   type TripStop,
   type DayStop,
+  type WindowSource,
   haversineKm,
   sequenceDay,
   serviceMinutes,
@@ -158,7 +159,26 @@ export class TripService {
         // One shipment, one trip: take it off whichever other trip holds it first.
         await this.detach(tx, s.id, `moved to ${trip.reference}`);
 
+        // A window the customer actually bought beats the slot it sits inside: that is the
+        // promise, and it is what lateness has to be measured against. The slot is the fallback
+        // for everyone who did not buy one.
         const slotWindow = await this.slotWindow(b.slotWindowKey);
+        const fallback = {
+          startMinute: slotWindow?.startMinutes ?? null,
+          endMinute: slotWindow?.endMinutes ?? null,
+          source: "slot" as const,
+        };
+        const collectionWindow = windowOr(
+          b.collectionWindowStartMinute,
+          b.collectionWindowEndMinute,
+          fallback,
+        );
+        const dropWindow = windowOr(
+          s.deliveryWindowStartMinute,
+          s.deliveryWindowEndMinute,
+          fallback,
+        );
+
         if (
           !(await tx.query.tripStops.findFirst({
             where: and(
@@ -174,8 +194,9 @@ export class TripService {
             sequence: await this.nextSequence(tx, tripId),
             bookingId: b.id,
             shipmentId: null,
-            windowStartMinute: slotWindow?.startMinutes ?? null,
-            windowEndMinute: slotWindow?.endMinutes ?? null,
+            windowStartMinute: collectionWindow.startMinute,
+            windowEndMinute: collectionWindow.endMinute,
+            windowSource: collectionWindow.source,
           });
         }
         await tx.insert(tripStops).values({
@@ -184,8 +205,9 @@ export class TripService {
           sequence: await this.nextSequence(tx, tripId),
           bookingId: b.id,
           shipmentId: s.id,
-          windowStartMinute: slotWindow?.startMinutes ?? null,
-          windowEndMinute: slotWindow?.endMinutes ?? null,
+          windowStartMinute: dropWindow.startMinute,
+          windowEndMinute: dropWindow.endMinute,
+          windowSource: dropWindow.source,
         });
 
         // The trip says this driver does this drop, so the assignment must agree. Dispatch stays
@@ -1074,4 +1096,21 @@ function minuteOfDay(instant: Date, timeZone: string): number {
 
 function round2(km: number): number {
   return Math.round(km * 100) / 100;
+}
+
+/**
+ * A sold window if there is one, otherwise the slot it sits in.
+ *
+ * `source` is the part that matters later: the board and the trip sheet show what was promised
+ * differently from what was merely inherited, and a dispatcher narrowing a slot-derived window
+ * is a different act from one overriding a window a customer paid for.
+ */
+function windowOr(
+  startMinute: number | null,
+  endMinute: number | null,
+  fallback: { startMinute: number | null; endMinute: number | null; source: WindowSource },
+): { startMinute: number | null; endMinute: number | null; source: WindowSource } {
+  return startMinute != null && endMinute != null
+    ? { startMinute, endMinute, source: "sold" }
+    : fallback;
 }

@@ -8,6 +8,8 @@ import { TripPlanRegistry } from "../../infra/trip-plan.registry.js";
 import { TripService } from "./trip.service.js";
 import { BoardService } from "./board.service.js";
 import { PlanService } from "./plan.service.js";
+import { RiskService } from "./risk.service.js";
+import { RiskDispatcher } from "./risk.dispatcher.js";
 import {
   AdminBoardController,
   AdminPlanController,
@@ -34,8 +36,8 @@ import {
     AdminTripStopController,
     DriverTripController,
   ],
-  providers: [TripService, BoardService, PlanService, DriverGuard],
-  exports: [TripService, BoardService, PlanService],
+  providers: [TripService, BoardService, PlanService, RiskService, RiskDispatcher, DriverGuard],
+  exports: [TripService, BoardService, PlanService, RiskService, RiskDispatcher],
 })
 export class OperationsModule implements OnModuleInit {
   constructor(

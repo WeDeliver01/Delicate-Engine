@@ -132,6 +132,61 @@ export class NotificationModule implements OnModuleInit {
       });
     });
 
+    /**
+     * "Your driver is here."
+     *
+     * Only on a drop. Nobody waiting for a parcel cares that the driver reached the shop it is
+     * being collected from, and a message that says nothing useful teaches people to ignore the
+     * ones that do.
+     */
+    this.registry.register("trip.stop_arrived", async (e) => {
+      if (e.payload.kind !== "drop" || !e.payload.shipmentId) return;
+      const shipmentId = e.payload.shipmentId;
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, shipmentId);
+        if (!ctx) return;
+        const driverName = await this.driverName(tx, e.payload.driverId);
+        await this.notifications.enqueue(tx, {
+          kind: "shipment.driver_arriving",
+          audience: "recipient",
+          to: ctx.recipientPhone,
+          accountId: ctx.accountId,
+          shipmentId,
+          dedupeKey: `shipment:${shipmentId}:arriving:${e.payload.stopId}`,
+          payload: { ...ctx.payload, driverName },
+        });
+      });
+    });
+
+    /**
+     * The customer hears it from us before the recipient phones them.
+     *
+     * The sweep that raises this already emits at most one event per shipment per window, so
+     * there is no risk of mailing someone every minute about the same late parcel.
+     */
+    this.registry.register("shipment.at_risk", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        if (!ctx) return;
+        await this.notifications.enqueue(tx, {
+          kind: "shipment.at_risk",
+          audience: "customer",
+          to: ctx.accountEmail,
+          accountId: ctx.accountId,
+          shipmentId: e.payload.shipmentId,
+          dedupeKey: `shipment:${e.payload.shipmentId}:at_risk:${e.payload.windowEndMinute ?? "none"}`,
+          payload: {
+            ...ctx.payload,
+            windowEnd:
+              e.payload.windowEndMinute == null
+                ? "today"
+                : `${String(Math.floor(e.payload.windowEndMinute / 60)).padStart(2, "0")}:${String(e.payload.windowEndMinute % 60).padStart(2, "0")}`,
+            reasonText: AT_RISK_REASONS[e.payload.reason],
+          },
+        });
+      });
+    });
+
     this.registry.register("delivery.completed", async (e) => {
       await this.dbs.transaction(async (tx) => {
         const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
@@ -377,3 +432,10 @@ const CHANGE_KIND_WORDS: Record<string, string> = {
 function humanise(reason: string): string {
   return reason.replace(/_/g, " ");
 }
+
+/** Why a shipment is at risk, in a sentence a customer reads without decoding it. */
+const AT_RISK_REASONS: Record<string, string> = {
+  window_passed: "The driver has not reached it inside the window we promised.",
+  eta_after_window: "The driver's route now runs past the window we promised.",
+  unassigned_near_cutoff: "It is not yet on a driver's round for today.",
+};

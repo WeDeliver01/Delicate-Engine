@@ -6,8 +6,11 @@ import type {
   SlotAvailability,
   SlotPolicy,
   SlotRef,
+  TimedWindow,
+  TimedWindowPolicy,
+  WindowBandAvailability,
 } from "@delicate/contracts";
-import { blackoutDates, deliverySlots, type DbExecutor } from "@delicate/db";
+import { blackoutDates, deliverySlots, windowBands, type DbExecutor } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
@@ -170,6 +173,159 @@ export class SchedulingService {
 
   // ── admin ──────────────────────────────────────────────────────────────────
 
+  // ── timed windows ───────────────────────────────────────────────────────────
+
+  /**
+   * Which hour bands a window covers.
+   *
+   * A window consumes every band it touches, which is conservative: a 10:00–12:00 promise might
+   * be kept at either end, so both hours have to be able to absorb it. Over-promising a window
+   * costs a customer; under-selling capacity is recoverable by putting another driver on. When
+   * the two are not symmetrical, be careful in the direction that keeps promises.
+   */
+  bandsFor(window: TimedWindow, policy: TimedWindowPolicy): number[] {
+    const width = policy.bandMinutes;
+    const first = Math.floor(window.startMinute / width) * width;
+    const out: number[] = [];
+    // `endMinute` is exclusive as a boundary: a 09:00–10:00 window is the 09:00 band alone.
+    for (let at = first; at < window.endMinute; at += width) out.push(at);
+    return out;
+  }
+
+  /** Whether a window is one we are willing to sell at all. */
+  checkWindow(window: TimedWindow, policy: TimedWindowPolicy): void {
+    if (!policy.enabled) {
+      throw AppError.conflict("timed_windows_off", "timed windows are not on sale");
+    }
+    const width = window.endMinute - window.startMinute;
+    if (width <= 0) {
+      throw AppError.validation([
+        { path: ["endMinute"], message: "a window cannot end before it starts" },
+      ]);
+    }
+    if (width < policy.minMinutes) {
+      throw AppError.validation([
+        {
+          path: ["endMinute"],
+          message: `the narrowest window we promise is ${policy.minMinutes} minutes`,
+        },
+      ]);
+    }
+    if (width > policy.maxMinutes) {
+      throw AppError.validation([
+        {
+          path: ["endMinute"],
+          message: `a window wider than ${policy.maxMinutes} minutes is the slot; do not ask for one`,
+        },
+      ]);
+    }
+  }
+
+  /**
+   * Hold a place in every band the given windows cover.
+   *
+   * Takes every window at once, on purpose. Locking a collection's bands and then a delivery's
+   * would not be globally ascending, and that is all a deadlock needs: one booking holding the
+   * 09:00 band and wanting 14:00 while another holds 14:00 and wants 09:00. Gathering the bands
+   * first and taking them in one ascending pass means two bookings racing for the same hour
+   * always queue, and the loser is refused cleanly rather than both hanging.
+   *
+   * Two windows that fall in the same band consume two places: they are two promises to be
+   * somewhere, and the driver cannot keep both by being in one place.
+   */
+  async reserveWindows(tx: DbExecutor, date: string, windows: TimedWindow[]): Promise<void> {
+    const live = windows.filter((w): w is TimedWindow => !!w);
+    if (live.length === 0) return;
+    const policy = (await this.policy()).timedWindow;
+    for (const window of live) this.checkWindow(window, policy);
+
+    const wanted = new Map<number, number>();
+    for (const window of live) {
+      for (const band of this.bandsFor(window, policy)) {
+        wanted.set(band, (wanted.get(band) ?? 0) + 1);
+      }
+    }
+
+    for (const startMinute of [...wanted.keys()].sort((a, b) => a - b)) {
+      const take = wanted.get(startMinute)!;
+      await tx
+        .insert(windowBands)
+        .values({ date, startMinute, capacity: policy.capacityPerBand })
+        .onConflictDoNothing();
+      const [row] = await tx
+        .select()
+        .from(windowBands)
+        .where(and(eq(windowBands.date, date), eq(windowBands.startMinute, startMinute)))
+        .for("update");
+      if (!row) throw AppError.notFound("capacity band");
+      if (row.bookedCount + take > row.capacity) {
+        throw new AppError(
+          "window_unavailable",
+          `we are full between ${clock(startMinute)} and ${clock(startMinute + policy.bandMinutes)}`,
+          409,
+          { date, startMinute, capacity: row.capacity, booked: row.bookedCount },
+        );
+      }
+      await tx
+        .update(windowBands)
+        .set({ bookedCount: row.bookedCount + take })
+        .where(eq(windowBands.id, row.id));
+    }
+  }
+
+  /** Give those places back. Same ascending pass, for the same reason. */
+  async releaseWindows(tx: DbExecutor, date: string, windows: TimedWindow[]): Promise<void> {
+    const live = windows.filter((w): w is TimedWindow => !!w);
+    if (live.length === 0) return;
+    const policy = (await this.policy()).timedWindow;
+    const wanted = new Map<number, number>();
+    for (const window of live) {
+      for (const band of this.bandsFor(window, policy)) {
+        wanted.set(band, (wanted.get(band) ?? 0) + 1);
+      }
+    }
+    for (const startMinute of [...wanted.keys()].sort((a, b) => a - b)) {
+      const [row] = await tx
+        .select()
+        .from(windowBands)
+        .where(and(eq(windowBands.date, date), eq(windowBands.startMinute, startMinute)))
+        .for("update");
+      if (!row || row.bookedCount === 0) continue;
+      await tx
+        .update(windowBands)
+        .set({ bookedCount: Math.max(0, row.bookedCount - wanted.get(startMinute)!) })
+        .where(eq(windowBands.id, row.id));
+    }
+  }
+
+  /** What a customer can be offered on a date, band by band. */
+  async windowAvailability(date: string): Promise<WindowBandAvailability[]> {
+    const policy = await this.policy();
+    const timed = policy.timedWindow;
+    if (!timed.enabled) return [];
+    const rows = await this.dbs.db.select().from(windowBands).where(eq(windowBands.date, date));
+    const booked = new Map(rows.map((r) => [r.startMinute, r]));
+
+    const first = policy.windows[0]?.startMinutes ?? 0;
+    const last = policy.windows[policy.windows.length - 1]?.endMinutes ?? 1440;
+    const out: WindowBandAvailability[] = [];
+    for (let at = first; at + timed.bandMinutes <= last; at += timed.bandMinutes) {
+      const row = booked.get(at);
+      const capacity = row?.capacity ?? timed.capacityPerBand;
+      const used = row?.bookedCount ?? 0;
+      out.push({
+        date,
+        startMinute: at,
+        endMinute: at + timed.bandMinutes,
+        capacity,
+        booked: used,
+        remaining: Math.max(0, capacity - used),
+        bookable: capacity - used > 0,
+      });
+    }
+    return out;
+  }
+
   async updatePolicy(policy: SlotPolicy): Promise<SlotPolicy> {
     for (const w of policy.windows) {
       if (w.endMinutes <= w.startMinutes)
@@ -320,4 +476,9 @@ export function daysBetween(from: string, to: string): number {
 export function weekday(date: string): number {
   const [y, m, d] = date.split("-").map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** Minutes past midnight as a clock a customer can read. */
+function clock(minutes: number): string {
+  return `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }

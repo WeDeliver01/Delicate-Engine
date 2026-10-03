@@ -419,6 +419,28 @@ export const TripStopResequenced = defineEvent(
   }),
 );
 
+/**
+ * A shipment that is going to miss what was promised, said before the customer phones.
+ *
+ * Emitted once per shipment per window by a sweep, not per tick: a dispatcher who gets the same
+ * alert every thirty seconds stops reading alerts.
+ */
+export const ShipmentAtRisk = defineEvent(
+  "shipment.at_risk",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    waybill: z.string(),
+    tripId: z.string().uuid().nullable(),
+    driverId: z.string().uuid().nullable(),
+    reason: z.enum(["window_passed", "eta_after_window", "unassigned_near_cutoff"]),
+    /** Minutes past the promise, or until it, depending on the reason. */
+    minutes: z.number().int(),
+    windowEndMinute: z.number().int().nullable(),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -453,6 +475,7 @@ export const DomainEvent = z.discriminatedUnion("type", [
   TripCompleted,
   TripStopArrived,
   TripStopResequenced,
+  ShipmentAtRisk,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

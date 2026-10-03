@@ -95,12 +95,23 @@ export const tripStopStatusEnum = pgEnum("trip_stop_status", [
 ]);
 
 /**
- * Where the window on a stop came from. `slot` is the commercial promise the customer bought,
- * widened to the whole slot window; `dispatcher` is a narrowed target; `pinned` is an exact
- * minute the dispatcher anchored. Keeping the source means the board can show "was 14:00–17:00"
- * rather than quietly losing what was sold.
+ * Where the window on a stop came from.
+ *
+ *  - `slot`       inherited from the half-day the booking sits in; nobody promised an hour.
+ *  - `sold`       the customer bought this window and paid for it.
+ *  - `dispatcher` narrowed by ops, as a target rather than a promise.
+ *  - `pinned`     anchored by ops to an exact minute; the sequencer will not move it.
+ *
+ * Keeping the source is what lets the board show "was 14:00–17:00" rather than quietly losing
+ * what was agreed — and it is the difference between tightening a slot, which costs nothing,
+ * and overriding something a customer paid for, which someone should see.
  */
-export const windowSourceEnum = pgEnum("trip_stop_window_source", ["slot", "dispatcher", "pinned"]);
+export const windowSourceEnum = pgEnum("trip_stop_window_source", [
+  "slot",
+  "sold",
+  "dispatcher",
+  "pinned",
+]);
 
 export const tripStops = pgTable(
   "trip_stops",

@@ -4,6 +4,7 @@ import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module.js";
 import { OutboxDispatcher } from "./worker/outbox-dispatcher.js";
 import { NotificationDispatcher } from "./modules/notifications/notification.dispatcher.js";
+import { RiskDispatcher } from "./modules/operations/risk.dispatcher.js";
 
 /**
  * Worker entrypoint: same module graph as the API, no HTTP listener. Runs the outbox
@@ -23,9 +24,14 @@ async function main(): Promise<void> {
   const notifications = app.get(NotificationDispatcher);
   notifications.start();
 
+  // Also its own loop: a missed window is a fact about the clock, so no event can announce it.
+  const risk = app.get(RiskDispatcher);
+  risk.start();
+
   const shutdown = async (signal: string) => {
     app.get(Logger).log(`${signal} received; draining`);
     notifications.stop();
+    risk.stop();
     await dispatcher.stop();
     await app.close();
     process.exit(0);

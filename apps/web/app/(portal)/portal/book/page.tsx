@@ -9,6 +9,8 @@ import type {
   CatalogResponse,
   Quote,
   SlotAvailability,
+  TimedWindow,
+  WindowBandAvailability,
   WalletSummary,
 } from "@delicate/contracts";
 import { useMe } from "@/components/use-me";
@@ -95,6 +97,14 @@ function Book() {
 
   const [quote, setQuote] = useState<Quote | null>(null);
   const [slot, setSlot] = useState<{ date: string; windowKey: string } | null>(null);
+  /**
+   * The narrow window the customer wants, when they want one.
+   *
+   * It has to be chosen before the quote, not after: a timed window is priced, and a price the
+   * customer did not see is one they did not agree to. The engine refuses a booking whose
+   * window differs from the one its quote was priced with, so the two cannot drift.
+   */
+  const [timedWindow, setTimedWindow] = useState<TimedWindow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [idempotencyKey] = useState(() => `web-${crypto.randomUUID()}`);
@@ -145,6 +155,13 @@ function Book() {
 
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
   const needsSlot = sl?.requiresSlot ?? true;
+  const windowDate = slot?.date ?? new Date().toISOString().slice(0, 10);
+  const bands = useQuery({
+    queryKey: ["window-bands", windowDate],
+    queryFn: () =>
+      api<WindowBandAvailability[]>(`/v1/public/slots/windows/${windowDate}`, { account: null }),
+  });
+
   const slots = useQuery({
     queryKey: ["slots"],
     queryFn: () => api<SlotAvailability[]>("/v1/public/slots/availability", { account: null }),
@@ -205,6 +222,7 @@ function Book() {
             signatureOnDelivery: opts.signatureOnDelivery,
             weddingVenue: opts.weddingVenue,
           },
+          ...(timedWindow ? { timedWindow: { collection: null, delivery: timedWindow } } : {}),
         },
       });
       setQuote(q);
@@ -228,6 +246,8 @@ function Book() {
           slot: needsSlot ? slot : undefined,
           idempotencyKey,
           customerReference: customerReference.trim() || undefined,
+          // Must match what the quote was priced with, or the engine refuses it.
+          ...(timedWindow ? { timedWindow: { collection: null, delivery: timedWindow } } : {}),
         },
       });
       await qc.invalidateQueries({ queryKey: ["account", account?.id] });
@@ -237,6 +257,12 @@ function Book() {
       if (err instanceof ApiRequestError && err.code === "slot_unavailable") {
         void slots.refetch();
         setSlot(null);
+      }
+      // Somebody else took the last place in that hour between the quote and the confirm.
+      if (err instanceof ApiRequestError && err.code === "window_unavailable") {
+        void bands.refetch();
+        setTimedWindow(null);
+        setQuote(null);
       }
     } finally {
       setBusy(false);
@@ -514,6 +540,25 @@ function Book() {
           ))}
         </div>
 
+        {/* A narrow window is priced, so it is chosen before the price, not after. */}
+        {(bands.data ?? []).length > 0 && (
+          <section className="panel p-5 xl:col-span-8">
+            <h2 className="section-title">Delivery window</h2>
+            <p className="lede mt-1">
+              Optional. Pick an hour and we will be there inside it; leave it and we will come some
+              time in your slot.
+            </p>
+            <WindowPicker
+              bands={bands.data ?? []}
+              value={timedWindow}
+              onChange={(w) => {
+                setTimedWindow(w);
+                clearQuote();
+              }}
+            />
+          </section>
+        )}
+
         {/* Price: in view the whole time, not waiting at the bottom. */}
         <aside className="xl:col-span-3">
           <div className="space-y-4 xl:sticky xl:top-6">
@@ -715,4 +760,53 @@ function describeError(err: ApiRequestError): string {
     return issues?.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") ?? err.message;
   }
   return err.message;
+}
+
+/**
+ * Pick an hour, or none.
+ *
+ * Full hours are shown and disabled rather than hidden: "10:00 is taken" is useful, and a
+ * silently missing option reads as a bug. Choosing one re-prices, because it is a different
+ * promise and it costs differently.
+ */
+function WindowPicker({
+  bands,
+  value,
+  onChange,
+}: {
+  bands: WindowBandAvailability[];
+  value: TimedWindow | null;
+  onChange: (w: TimedWindow | null) => void;
+}) {
+  const clock = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  const chosen = (b: WindowBandAvailability) =>
+    value?.startMinute === b.startMinute && value?.endMinute === b.endMinute;
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={`chip ${value === null ? "chip-info" : "chip-outline"}`}
+      >
+        Any time in my slot
+      </button>
+      {bands.map((b) => (
+        <button
+          key={b.startMinute}
+          type="button"
+          disabled={!b.bookable}
+          onClick={() => onChange({ startMinute: b.startMinute, endMinute: b.endMinute })}
+          title={b.bookable ? `${b.remaining} left` : "fully booked"}
+          className={`chip ${chosen(b) ? "chip-info" : "chip-outline"} ${
+            b.bookable ? "" : "opacity-40"
+          }`}
+        >
+          {clock(b.startMinute)}–{clock(b.endMinute)}
+          {!b.bookable && " · full"}
+        </button>
+      ))}
+    </div>
+  );
 }

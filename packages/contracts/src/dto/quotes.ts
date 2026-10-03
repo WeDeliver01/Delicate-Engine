@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Address } from "./geo.js";
 import { Uuid } from "./common.js";
-import { IsoDate } from "./slots.js";
+import { IsoDate, TimedWindow } from "./slots.js";
 import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js";
 
 export const Contact = z.object({
@@ -42,6 +42,20 @@ export const QuoteRequest = z.object({
    * exactly as before.
    */
   deliveryDate: IsoDate.optional(),
+  /**
+   * The narrow windows the customer wants, when they want them.
+   *
+   * One pair per booking rather than per drop: a booking already has one collection and one
+   * slot that every drop inherits, and per-drop windows would mean per-drop pricing. A
+   * dispatcher can still narrow an individual stop afterwards, and a customer who needs two
+   * genuinely different promises books twice.
+   */
+  timedWindow: z
+    .object({
+      collection: TimedWindow.nullable().default(null),
+      delivery: TimedWindow.nullable().default(null),
+    })
+    .optional(),
 });
 export type QuoteRequest = z.infer<typeof QuoteRequest>;
 
