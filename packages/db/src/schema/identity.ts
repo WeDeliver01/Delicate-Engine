@@ -72,6 +72,14 @@ export const accounts = pgTable(
     billingEmail: text("billing_email"),
     billingAddress: jsonb("billing_address"),
     status: accountStatusEnum("status").notNull().default("active"),
+    /**
+     * This customer's work only goes on a vehicle of this class.
+     *
+     * A real rule from the old planner, where it lived as `acc === "SWE001"` in a scoring
+     * function. The customer was right to insist and the rule was right to exist; hard-coding
+     * one account code was the mistake.
+     */
+    requiresVehicleClass: text("requires_vehicle_class"),
     ...timestamps(),
   },
   (t) => [index("accounts_org_idx").on(t.organizationId)],

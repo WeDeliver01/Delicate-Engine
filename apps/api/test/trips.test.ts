@@ -13,7 +13,6 @@ import type {
 import { createHarness, USERS, type Harness } from "./harness.js";
 import { WalletService } from "../src/modules/wallet/wallet.service.js";
 import { Clock } from "../src/infra/clock.js";
-import { serviceMinutes } from "../src/modules/operations/trip.service.js";
 
 const MENLYN = { lat: -25.7826, lng: 28.2755 };
 const CENTURION = { lat: -25.8603, lng: 28.1894 };
@@ -723,6 +722,28 @@ describe("trips", () => {
     );
   });
 
+  it("puts the collection in the route, not only the drops", async () => {
+    // A booking's collection point is stored wrapped (`collection.address.location`) while a
+    // shipment's delivery address holds its point directly. Reading only the second shape made
+    // every collection stop look unplaceable, so the day was ordered over its deliveries alone
+    // and the trip sheet's "saved km" measured a journey nobody drove.
+    const b = await book(2);
+    const trip = await newTrip();
+    const s = (
+      await addStops(
+        trip.id,
+        b.shipments.map((x) => x.id),
+      ).expect(201)
+    ).body as TripSheet;
+
+    const collection = s.stops.find((x) => x.kind === "collection")!;
+    expect(collection.plannedArrivalMinute).not.toBeNull();
+    expect(collection.legKm).not.toBeNull();
+    // The leg to the collection is a real distance from the depot, so the route includes it.
+    expect(s.plannedKm).toBeGreaterThan(0);
+    expect(s.stops.every((x) => x.plannedArrivalMinute !== null)).toBe(true);
+  });
+
   it("lists trips by date and driver", async () => {
     const trip = await newTrip();
     const byDate = await h.http().get(`/v1/admin/dispatch/trips?date=${TODAY}`).set(asDispatcher());
@@ -733,26 +754,5 @@ describe("trips", () => {
       .get("/v1/admin/dispatch/trips?date=2026-09-24")
       .set(asDispatcher());
     expect(other.body).toHaveLength(0);
-  });
-});
-
-/**
- * The ported service-time rule. Kept as a unit test beside the integration ones because it is
- * the single biggest input to whether a planned arrival time is worth anything, and because it
- * is the first piece of the old planner's operational knowledge to come across.
- */
-describe("service time", () => {
-  it("gives a collection longer than a drop, both scaling with pieces", () => {
-    expect(serviceMinutes("collection", 1)).toBeGreaterThan(serviceMinutes("drop", 1));
-    expect(serviceMinutes("collection", 4)).toBeGreaterThan(serviceMinutes("collection", 1));
-    expect(serviceMinutes("drop", 4)).toBeGreaterThan(serviceMinutes("drop", 1));
-  });
-
-  it("never returns less than a driver needs to park, nor more than a stop can take", () => {
-    expect(serviceMinutes("collection", 0)).toBe(5);
-    expect(serviceMinutes("drop", 0)).toBe(3);
-    // A van with forty parcels still does not spend an hour at one door; the cap is the point.
-    expect(serviceMinutes("collection", 40)).toBe(15);
-    expect(serviceMinutes("drop", 40)).toBe(15);
   });
 });

@@ -32,6 +32,8 @@ export const vehicles = pgTable(
     model: text("model"),
     fuelType: fuelTypeEnum("fuel_type").notNull().default("petrol"),
     litresPer100Km: numeric("litres_per_100km", { precision: 5, scale: 2 }),
+    /** What this vehicle may carry. See `VehicleConstraints` in contracts. */
+    constraints: jsonb("constraints"),
     active: boolean("active").notNull().default(true),
     ...timestamps(),
   },

@@ -7,8 +7,10 @@ import { EventHandlerRegistry } from "../../worker/event-handlers.js";
 import { TripPlanRegistry } from "../../infra/trip-plan.registry.js";
 import { TripService } from "./trip.service.js";
 import { BoardService } from "./board.service.js";
+import { PlanService } from "./plan.service.js";
 import {
   AdminBoardController,
+  AdminPlanController,
   AdminTripController,
   AdminTripStopController,
   DriverTripController,
@@ -27,12 +29,13 @@ import {
   imports: [FleetModule, SchedulingModule],
   controllers: [
     AdminBoardController,
+    AdminPlanController,
     AdminTripController,
     AdminTripStopController,
     DriverTripController,
   ],
-  providers: [TripService, BoardService, DriverGuard],
-  exports: [TripService, BoardService],
+  providers: [TripService, BoardService, PlanService, DriverGuard],
+  exports: [TripService, BoardService, PlanService],
 })
 export class OperationsModule implements OnModuleInit {
   constructor(

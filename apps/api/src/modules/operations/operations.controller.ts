@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   AbandonTripRequest,
   AddStopsRequest,
+  ApplyDayPlanRequest,
   AssignToDayRequest,
   BoardQuery,
   ArriveRequest,
@@ -20,6 +21,7 @@ import { Body, Params, Query } from "../../common/zod.js";
 import { CurrentDriver, DriverGuard } from "../fleet/driver.guard.js";
 import { TripService } from "./trip.service.js";
 import { BoardService } from "./board.service.js";
+import { PlanService } from "./plan.service.js";
 
 const IdParam = z.object({ id: Uuid });
 const StopParam = z.object({ id: Uuid });
@@ -58,6 +60,30 @@ export class AdminBoardController {
     return this.board
       .assignToDay(body.shipmentId, body.driverId, body.date ?? undefined)
       .then((tripId) => ({ tripId }));
+  }
+}
+
+/**
+ * "You have 23 shipments and 3 drivers — recommend the allocation."
+ *
+ * A proposal and nothing more: reading it changes nothing, and applying it is a second call
+ * that leaves the trips unreleased so a dispatcher still signs off each day.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/dispatch/plan")
+@PlatformRoles("super_admin", "dispatcher")
+export class AdminPlanController {
+  constructor(private readonly plans: PlanService) {}
+
+  @Get()
+  plan(@Query(BoardQuery) q: BoardQuery) {
+    return this.plans.plan(q.date);
+  }
+
+  @Post("apply")
+  apply(@Body(ApplyDayPlanRequest) body: ApplyDayPlanRequest) {
+    return this.plans.apply(body.date, body.driverIds);
   }
 }
 

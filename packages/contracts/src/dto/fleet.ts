@@ -12,6 +12,26 @@ import { IsoDate } from "./slots.js";
 export const DriverStatus = z.enum(["active", "inactive"]);
 export type DriverStatus = z.infer<typeof DriverStatus>;
 
+/**
+ * What a vehicle may carry.
+ *
+ * The route planner this replaces knew these rules — a three-tier cake does not travel in a
+ * hatchback — but held them as constants against specific vehicle ids, where only a developer
+ * could change them and a sold car left a lie behind. They are data now, edited on the fleet
+ * desk, and the allocator reads them.
+ */
+export const VehicleConstraints = z.object({
+  /** Free-text class, e.g. "cargo". An account can insist on one. */
+  class: z.string().trim().max(32).nullable().default(null),
+  /** Most parcels this vehicle takes in a day's load. */
+  maxParcels: z.number().int().min(1).max(500).nullable().default(null),
+  /** Package type codes it must never carry. */
+  excludedPackageTypes: z.array(z.string().trim().max(48)).max(50).default([]),
+  /** Per-package-type ceilings across the whole load, e.g. three platters. */
+  maxByPackageType: z.record(z.string().max(48), z.number().int().min(0).max(500)).default({}),
+});
+export type VehicleConstraints = z.infer<typeof VehicleConstraints>;
+
 export const Vehicle = z.object({
   id: Uuid,
   registration: z.string().min(3).max(16),
@@ -20,6 +40,7 @@ export const Vehicle = z.object({
   fuelType: z.enum(["petrol", "diesel", "electric"]),
   /** Fuel consumption in litres per 100 km, used for fuel-cost forecasts. */
   litresPer100Km: z.number().positive().max(50).nullable(),
+  constraints: VehicleConstraints.nullable(),
   active: z.boolean(),
 });
 export type Vehicle = z.infer<typeof Vehicle>;
@@ -29,6 +50,7 @@ export const UpsertVehicleRequest = Vehicle.omit({ id: true }).partial({
   make: true,
   model: true,
   litresPer100Km: true,
+  constraints: true,
 });
 export type UpsertVehicleRequest = z.infer<typeof UpsertVehicleRequest>;
 

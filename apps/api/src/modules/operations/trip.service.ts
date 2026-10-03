@@ -11,8 +11,10 @@ import {
   type TripQuery,
   type TripSheet,
   type TripStop,
+  type DayStop,
   haversineKm,
-  optimiseRoute,
+  sequenceDay,
+  serviceMinutes,
 } from "@delicate/contracts";
 import {
   assignments,
@@ -346,73 +348,59 @@ export class TripService {
       const trip = await this.lockMutable(tx, tripId);
       if (trip.sequenceSource === "dispatcher" && !force) return;
 
-      const stops = await this.stopRows(tx, tripId);
-      if (stops.length < 2) return;
+      const rows = await this.stopRows(tx, tripId);
+      if (rows.length < 2) return;
       const depot = await this.settings.get("company.depot_address");
       const policy = await this.scheduling.policy();
+      const shift = await this.fleet.shiftFor(trip.driverId, trip.date, tx);
       const startMinute = policy.windows[0]?.startMinutes ?? 0;
+      const endMinute = policy.windows[policy.windows.length - 1]?.endMinutes ?? null;
 
       // A stop whose address was never geocoded is left where it is rather than guessed at: an
       // address we could not place is a data problem to fix, not one to paper over.
-      const placed = stops.filter((s) => s.location);
+      const placed = rows.filter((r) => r.location);
       if (placed.length < 2) return;
 
-      const result = optimiseRoute({
-        depot: depot.location,
-        stops: placed.map((s) => ({
-          id: s.stop.id,
-          location: s.location!,
-          afterStopId:
-            s.stop.kind === "drop"
-              ? (stops.find(
-                  (c) => c.stop.kind === "collection" && c.stop.bookingId === s.stop.bookingId,
-                )?.stop.id ?? null)
-              : null,
-          earliestMinute: s.stop.windowStartMinute,
-          latestMinute: s.stop.windowEndMinute,
-          serviceMinutes: s.serviceMinutes,
-        })),
-        roadFactorBps: ROAD_FACTOR * 10_000,
-        startMinute,
-      });
-
-      const position = new Map(result.order.map((id, i) => [id, i]));
-      const ordered = [...stops].sort((a, b) => {
-        const pa = position.get(a.stop.id);
-        const pb = position.get(b.stop.id);
-        if (pa === undefined || pb === undefined) return a.stop.sequence - b.stop.sequence;
-        return pa - pb;
-      });
-      await this.writeSequence(
-        tx,
-        tripId,
-        ordered.map((s) => s.stop.id),
+      const collectionOf = new Map(
+        rows.filter((r) => r.stop.kind === "collection").map((r) => [r.stop.bookingId, r.stop.id]),
       );
+      const stops: DayStop[] = placed.map((r) => ({
+        id: r.stop.id,
+        kind: r.stop.kind,
+        location: r.location!,
+        afterStopId: r.stop.kind === "drop" ? (collectionOf.get(r.stop.bookingId) ?? null) : null,
+        earliestMinute: r.stop.windowStartMinute,
+        latestMinute: r.stop.windowEndMinute,
+        pieces: r.pieces,
+        pinnedMinute: r.stop.windowSource === "pinned" ? r.stop.windowStartMinute : null,
+        // Already picked up: it is on the vehicle, so it is not collected again.
+        alreadyOnBoard:
+          r.stop.kind === "drop" &&
+          !!r.shipment &&
+          ["collected", "in_transit"].includes(r.shipment.status),
+      }));
 
-      // Walk the chosen order once to record the plan each stop is measured against.
-      const speed = 35;
-      let minute = startMinute;
-      let from = depot.location;
-      let totalMinutes = 0;
-      for (const s of ordered) {
-        const legKm = s.location ? haversineKm(from, s.location) * ROAD_FACTOR : 0;
-        const legMinutes = Math.round((legKm / speed) * 60);
-        minute += legMinutes;
-        if (s.stop.windowStartMinute != null && minute < s.stop.windowStartMinute) {
-          minute = s.stop.windowStartMinute;
-        }
+      const result = sequenceDay({
+        depot: depot.location,
+        stops,
+        startMinute: shift?.startedAt ? startMinute : startMinute,
+        endMinute,
+        roadFactor: ROAD_FACTOR,
+      });
+
+      const unplaced = rows.filter((r) => !r.location).map((r) => r.stop.id);
+      await this.writeSequence(tx, tripId, [...result.stops.map((s) => s.id), ...unplaced]);
+
+      for (const stop of result.stops) {
         await tx
           .update(tripStops)
           .set({
-            plannedArrivalMinute: Math.min(1440, Math.round(minute)),
-            plannedServiceMinutes: s.serviceMinutes,
-            legKm: legKm.toFixed(2),
-            legMinutes,
+            plannedArrivalMinute: Math.min(1440, stop.arrivalMinute),
+            plannedServiceMinutes: stop.serviceMinutes,
+            legKm: stop.legKm.toFixed(2),
+            legMinutes: stop.legMinutes,
           })
-          .where(eq(tripStops.id, s.stop.id));
-        minute += s.serviceMinutes;
-        totalMinutes += legMinutes + s.serviceMinutes;
-        if (s.location) from = s.location;
+          .where(eq(tripStops.id, stop.id));
       }
 
       await tx
@@ -420,12 +408,15 @@ export class TripService {
         .set({
           sequenceSource: "auto",
           plannedKm: result.totalKm.toFixed(2),
-          plannedMinutes: Math.round(totalMinutes),
+          plannedMinutes: result.totalMinutes,
           routeSnapshot: {
             totalKm: result.totalKm,
-            originalKm: result.originalKm,
-            savedKm: result.savedKm,
+            // The order the stops were added in, for the "saved X km" line on the sheet.
+            originalKm: this.originalKm(rows, depot.location),
+            savedKm: Math.max(0, round2(this.originalKm(rows, depot.location) - result.totalKm)),
             lateStops: result.lateStops,
+            overtimeMinutes: result.overtimeMinutes,
+            waitMinutes: result.waitMinutes,
           },
         })
         .where(eq(trips.id, tripId));
@@ -438,7 +429,7 @@ export class TripService {
           reference: trip.reference,
           driverId: trip.driverId,
           date: trip.date,
-          stopCount: stops.length,
+          stopCount: rows.length,
           plannedKm: result.totalKm,
           sequenceSource: "auto" as SequenceSource,
         },
@@ -446,6 +437,25 @@ export class TripService {
       );
     });
     return this.sheet(tripId);
+  }
+
+  /** What the day would have cost in the order the stops happened to be added. */
+  private originalKm(
+    rows: { stop: { sequence: number }; location: LatLng | null }[],
+    depot: LatLng,
+  ): number {
+    const points = [...rows]
+      .sort((a, b) => a.stop.sequence - b.stop.sequence)
+      .map((r) => r.location)
+      .filter((l): l is LatLng => !!l);
+    if (points.length === 0) return 0;
+    let total = 0;
+    let from = depot;
+    for (const point of points) {
+      total += haversineKm(from, point) * ROAD_FACTOR;
+      from = point;
+    }
+    return round2(total + haversineKm(from, depot) * ROAD_FACTOR);
   }
 
   /** Hand the trip to the driver. Until this, it is a dispatcher's draft the app cannot see. */
@@ -901,6 +911,7 @@ export class TripService {
         booking: r.b,
         shipment: r.s,
         location: addressLocation(r.stop.kind === "drop" ? r.s?.deliveryAddress : r.b.collection),
+        pieces,
         serviceMinutes: serviceMinutes(r.stop.kind, pieces),
       };
     });
@@ -1036,18 +1047,17 @@ export class TripService {
 }
 
 /**
- * How long a driver spends at a stop, from the old planner's measured numbers: a collection
- * takes longer than a drop (paperwork, loading) and both scale with the number of pieces.
- * Ported as a rule rather than a constant because it is the single biggest input to whether a
- * planned arrival time is worth anything.
+ * Pull coordinates out of either shape we store them in.
+ *
+ * A shipment's `delivery_address` *is* an address, so the point is at `.location`. A booking's
+ * `collection` is a wrapper around one, so it is at `.address.location`. Reading only the first
+ * meant every collection stop looked unplaceable and was quietly left out of the route — the
+ * day was being ordered over its deliveries alone, and the "saved km" on the trip sheet was
+ * measuring the wrong journey.
  */
-export function serviceMinutes(kind: "collection" | "drop", pieces: number): number {
-  if (kind === "collection") return Math.min(15, Math.max(5, 5 + Math.ceil(pieces * 1.5)));
-  return Math.min(15, Math.max(3, 3 + pieces));
-}
-
-function addressLocation(address: unknown): LatLng | null {
-  const loc = (address as { location?: LatLng } | null | undefined)?.location;
+function addressLocation(value: unknown): LatLng | null {
+  const node = (value ?? null) as { location?: LatLng; address?: { location?: LatLng } } | null;
+  const loc = node?.location ?? node?.address?.location;
   return loc && typeof loc.lat === "number" && typeof loc.lng === "number" ? loc : null;
 }
 
@@ -1060,4 +1070,8 @@ function minuteOfDay(instant: Date, timeZone: string): number {
   }).formatToParts(instant);
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
   return get("hour") * 60 + get("minute");
+}
+
+function round2(km: number): number {
+  return Math.round(km * 100) / 100;
 }

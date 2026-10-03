@@ -29,3 +29,4 @@ export * from "./dto/change-requests.js";
 export * from "./dto/waybill.js";
 export * from "./dto/service-access.js";
 export * from "./dto/operations.js";
+export * from "./operations.js";

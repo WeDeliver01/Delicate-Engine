@@ -62,6 +62,14 @@ export default function AdminDrivers() {
     vehicleId: "",
     dailyStopCapacity: "25",
   });
+  const [limits, setLimits] = useState<Vehicle | null>(null);
+  const saveLimits = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) =>
+      api(`/v1/admin/fleet/vehicles/${id}`, { method: "PUT", json: body }),
+    onSuccess: invalidate,
+    onError,
+  });
+
   const [v, setV] = useState({
     registration: "",
     make: "",
@@ -192,12 +200,24 @@ export default function AdminDrivers() {
         <h2 className="panel-head section-title">Vehicles</h2>
         <ul className="divide-y divide-[#F0EDE9] text-sm">
           {vehicles.data?.map((x) => (
-            <li key={x.id} className="flex justify-between px-5 py-2">
-              <span className="font-mono">{x.registration}</span>
-              <span className="text-[#6B6661]">
-                {[x.make, x.model].filter(Boolean).join(" ")} · {x.fuelType}
-                {x.litresPer100Km ? ` · ${x.litresPer100Km} L/100km` : ""}
-              </span>
+            <li key={x.id} className="px-5 py-2">
+              <div className="flex justify-between">
+                <span className="font-mono">{x.registration}</span>
+                <span className="text-[#6B6661]">
+                  {[x.make, x.model].filter(Boolean).join(" ")} · {x.fuelType}
+                  {x.litresPer100Km ? ` · ${x.litresPer100Km} L/100km` : ""}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="text-xs text-[#6B6661]">{describeLoad(x.constraints)}</span>
+                <button
+                  type="button"
+                  onClick={() => setLimits(x)}
+                  className="link-quiet text-xs shrink-0"
+                >
+                  what it carries
+                </button>
+              </div>
             </li>
           ))}
         </ul>
@@ -244,6 +264,27 @@ export default function AdminDrivers() {
         </form>
       </section>
 
+      {limits && (
+        <LoadLimits
+          vehicle={limits}
+          onClose={() => setLimits(null)}
+          onSave={(constraints) => {
+            saveLimits.mutate({
+              id: limits.id,
+              body: {
+                registration: limits.registration,
+                make: limits.make,
+                model: limits.model,
+                fuelType: limits.fuelType,
+                litresPer100Km: limits.litresPer100Km,
+                constraints,
+              },
+            });
+            setLimits(null);
+          }}
+        />
+      )}
+
       <section className="panel p-5 text-sm">
         <h2 className="section-title">Recent fuel logs</h2>
         <ul className="mt-3 divide-y divide-[#F0EDE9]">
@@ -286,5 +327,133 @@ function Field(props: {
         className="mt-1 block input px-2 py-1.5 text-sm"
       />
     </label>
+  );
+}
+
+/** What a vehicle carries, in a line someone can read at a glance. */
+function describeLoad(c: Vehicle["constraints"]): string {
+  if (!c) return "no limits recorded — it will be offered anything";
+  const bits: string[] = [];
+  if (c.class) bits.push(c.class);
+  if (c.maxParcels) bits.push(`up to ${c.maxParcels} parcels`);
+  for (const [code, cap] of Object.entries(c.maxByPackageType ?? {})) {
+    bits.push(`max ${cap} × ${code}`);
+  }
+  if (c.excludedPackageTypes?.length) bits.push(`never ${c.excludedPackageTypes.join(", ")}`);
+  return bits.length > 0 ? bits.join(" · ") : "no limits recorded";
+}
+
+/**
+ * What a vehicle may carry.
+ *
+ * These rules are real — a three-tier cake does not travel in a hatchback — and the planner
+ * this replaces had them compiled in against specific registrations, where nobody but a
+ * developer could change them and a sold car left a lie behind.
+ */
+function LoadLimits({
+  vehicle,
+  onClose,
+  onSave,
+}: {
+  vehicle: Vehicle;
+  onClose: () => void;
+  onSave: (c: NonNullable<Vehicle["constraints"]>) => void;
+}) {
+  const current = vehicle.constraints;
+  const [cls, setCls] = useState(current?.class ?? "");
+  const [maxParcels, setMaxParcels] = useState(
+    current?.maxParcels == null ? "" : String(current.maxParcels),
+  );
+  const [excluded, setExcluded] = useState((current?.excludedPackageTypes ?? []).join(", "));
+  const [caps, setCaps] = useState(
+    Object.entries(current?.maxByPackageType ?? {})
+      .map(([code, n]) => `${code}:${n}`)
+      .join(", "),
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="panel w-full max-w-md p-5">
+        <h2 className="section-title">
+          What <span className="font-mono">{vehicle.registration}</span> carries
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          The day planner respects these. Leave a field empty for no limit.
+        </p>
+        <div className="mt-4 space-y-3 text-sm">
+          <label className="block">
+            <span className="field-label">Class</span>
+            <input
+              value={cls}
+              onChange={(e) => setCls(e.target.value)}
+              placeholder="cargo"
+              className="input"
+            />
+            <span className="field-hint">
+              A customer can insist on a class. Matched exactly, so keep the spelling consistent.
+            </span>
+          </label>
+          <label className="block">
+            <span className="field-label">Most parcels in a load</span>
+            <input
+              type="number"
+              value={maxParcels}
+              onChange={(e) => setMaxParcels(e.target.value)}
+              className="input"
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Never carries</span>
+            <input
+              value={excluded}
+              onChange={(e) => setExcluded(e.target.value)}
+              placeholder="cake_3_tier, fragile_art"
+              className="input"
+            />
+            <span className="field-hint">Package type codes, comma separated.</span>
+          </label>
+          <label className="block">
+            <span className="field-label">Per-type ceilings</span>
+            <input
+              value={caps}
+              onChange={(e) => setCaps(e.target.value)}
+              placeholder="platter:3"
+              className="input"
+            />
+            <span className="field-hint">
+              Counted across the whole load, as <code>code:number</code>.
+            </span>
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="btn btn-secondary btn-sm">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onSave({
+                class: cls.trim() || null,
+                maxParcels: maxParcels ? Number(maxParcels) : null,
+                excludedPackageTypes: excluded
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+                maxByPackageType: Object.fromEntries(
+                  caps
+                    .split(",")
+                    .map((pair) => pair.split(":").map((s) => s.trim()))
+                    .filter((parts) => parts.length === 2 && parts[0] && Number(parts[1]) >= 0)
+                    .map(([code, n]) => [code as string, Number(n)]),
+                ),
+              })
+            }
+            className="btn btn-primary btn-sm"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

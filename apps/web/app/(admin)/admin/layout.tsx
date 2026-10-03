@@ -18,6 +18,7 @@ const NAV: NavSection[] = [
       { href: "/admin/shipments", label: "Shipments", icon: "local_shipping" },
       { href: "/admin/bookings", label: "Bookings", icon: "receipt_long" },
       { href: "/admin/changes", label: "Change requests", icon: "edit_note" },
+      { href: "/admin/plan", label: "Plan the day", icon: "auto_awesome" },
       { href: "/admin/trips", label: "Trips", icon: "route" },
       { href: "/admin/capacity", label: "Capacity", icon: "event_available" },
       { href: "/admin/drivers", label: "Drivers", icon: "directions_car" },

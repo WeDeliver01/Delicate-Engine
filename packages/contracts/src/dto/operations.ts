@@ -344,3 +344,49 @@ export const AssignToDayRequest = z.object({
   date: IsoDate.nullable().default(null),
 });
 export type AssignToDayRequest = z.infer<typeof AssignToDayRequest>;
+
+// ── planning a whole day ──────────────────────────────────────────────────────
+
+/**
+ * A proposed division of a day between drivers.
+ *
+ * The brief's "you have 23 shipments and 3 drivers, recommend the allocation" — answered from
+ * the operational data rather than guessed at. It is a proposal: nothing is assigned until a
+ * dispatcher applies it, and applying it is a separate, explicit call.
+ */
+export const DayPlanDriver = z.object({
+  driverId: Uuid,
+  name: z.string(),
+  vehicleRegistration: z.string().nullable(),
+  tripId: Uuid.nullable(),
+  tripReference: z.string().nullable(),
+  shipmentIds: z.array(Uuid),
+  waybills: z.array(z.string()),
+  stopCount: z.number().int().nonnegative(),
+  plannedKm: z.number().nonnegative(),
+  plannedMinutes: z.number().int().nonnegative(),
+  finishMinute: MinuteOfDay,
+  overtimeMinutes: z.number().int().nonnegative(),
+  lateStopCount: z.number().int().nonnegative(),
+});
+export type DayPlanDriver = z.infer<typeof DayPlanDriver>;
+
+export const DayPlan = z.object({
+  date: IsoDate,
+  /** Shipments the plan could not place, and why nobody could take them. */
+  unplaced: z.array(z.object({ shipmentId: Uuid, waybill: z.string(), reason: z.string() })),
+  drivers: z.array(DayPlanDriver),
+  totalKm: z.number().nonnegative(),
+  lateMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  /** Rules the plan would break, named. Empty means it breaks none. */
+  warnings: z.array(z.string()),
+});
+export type DayPlan = z.infer<typeof DayPlan>;
+
+export const ApplyDayPlanRequest = z.object({
+  date: IsoDate,
+  /** Only these drivers' portions are applied; omit for all of them. */
+  driverIds: z.array(Uuid).max(50).optional(),
+});
+export type ApplyDayPlanRequest = z.infer<typeof ApplyDayPlanRequest>;

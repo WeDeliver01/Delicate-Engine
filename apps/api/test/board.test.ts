@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { sql } from "drizzle-orm";
 import { users } from "@delicate/db";
 import type {
   AssignmentRecommendation,
   Booking,
   CatalogResponse,
+  DayPlan,
   DispatchBoard,
   Driver,
   Quote,
@@ -435,6 +437,116 @@ describe("dispatch board", () => {
       .send({ shipmentId: b2.shipments[0]!.id, driverId: driver.id, date: TODAY });
     expect(again.status).toBe(201);
     expect(again.body.tripId).toBe(res.body.tripId);
+  });
+
+  it("plans the whole day across drivers, and changes nothing until it is applied", async () => {
+    const a = await book(2);
+    const bb = await book(1);
+    await openShift();
+    const second = (
+      await h.http().post("/v1/admin/fleet/drivers").set(asDispatcher()).send({
+        email: "thabo@delicatecourier.local",
+        fullName: "Thabo M",
+        phone: "0830000000",
+        dailyStopCapacity: 10,
+      })
+    ).body as Driver;
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: second.id, date: TODAY })
+      .expect(201);
+
+    const plan = (await h.http().get(`/v1/admin/dispatch/plan?date=${TODAY}`).set(asDispatcher()))
+      .body as DayPlan;
+    expect(plan.date).toBe(TODAY);
+    expect(plan.drivers).toHaveLength(2);
+    const placed = plan.drivers.flatMap((d) => d.shipmentIds);
+    expect(placed.sort()).toEqual([...a.shipments, ...bb.shipments].map((s) => s.id).sort());
+    // Both drivers get work: an idle driver while a customer waits is the costliest mistake.
+    expect(plan.drivers.every((d) => d.shipmentIds.length > 0)).toBe(true);
+    expect(plan.unplaced).toHaveLength(0);
+    expect(plan.totalKm).toBeGreaterThan(0);
+
+    // Reading a plan assigns nothing.
+    expect(
+      ((await h.http().get("/v1/admin/dispatch/unassigned").set(asDispatcher())).body as unknown[])
+        .length,
+    ).toBe(3);
+
+    // The same morning proposes the same plan; advice that moves every time is noise.
+    const again = (await h.http().get(`/v1/admin/dispatch/plan?date=${TODAY}`).set(asDispatcher()))
+      .body as DayPlan;
+    expect(again.drivers.map((d) => d.shipmentIds)).toEqual(plan.drivers.map((d) => d.shipmentIds));
+  });
+
+  it("applies a plan into trips and leaves them unreleased for a dispatcher to sign off", async () => {
+    const a = await book(2);
+    await openShift();
+    const applied = (
+      await h
+        .http()
+        .post("/v1/admin/dispatch/plan/apply")
+        .set(asDispatcher())
+        .send({ date: TODAY })
+        .expect(201)
+    ).body as DayPlan;
+    expect(applied.drivers.find((d) => d.driverId === driver.id)!.tripReference).toBeTruthy();
+
+    const trips = (await h.http().get(`/v1/admin/dispatch/trips?date=${TODAY}`).set(asDispatcher()))
+      .body as Trip[];
+    expect(trips).toHaveLength(1);
+    // Planned, not released: the driver cannot see it until a person says so.
+    expect(trips[0]!.status).toBe("planned");
+    expect(trips[0]!.progress.total).toBe(3);
+    expect((await h.http().get("/v1/driver/trip").set(asDriver())).body).toEqual({ trip: null });
+    expect(a.shipments).toHaveLength(2);
+  });
+
+  it("says plainly that nobody is on shift rather than planning an empty day", async () => {
+    await book(1);
+    const plan = (await h.http().get(`/v1/admin/dispatch/plan?date=${TODAY}`).set(asDispatcher()))
+      .body as DayPlan;
+    expect(plan.drivers).toHaveLength(0);
+    expect(plan.warnings.join(" ")).toContain("Nobody is on shift");
+    expect(plan.unplaced).toHaveLength(1);
+    expect(plan.unplaced[0]!.reason).toContain("no driver has a shift");
+  });
+
+  it("keeps a customer's work off a vehicle class they will not accept", async () => {
+    const b = await book(1);
+    await openShift();
+    // The driver's van is a hatchback; this customer insists on a cargo vehicle.
+    const vehicles = (await h.http().get("/v1/admin/fleet/vehicles").set(asDispatcher())).body as {
+      id: string;
+      registration: string;
+    }[];
+    await h
+      .http()
+      .put(`/v1/admin/fleet/vehicles/${vehicles[0]!.id}`)
+      .set(asDispatcher())
+      .send({
+        registration: vehicles[0]!.registration,
+        fuelType: "petrol",
+        constraints: {
+          class: "hatchback",
+          maxParcels: null,
+          excludedPackageTypes: [],
+          maxByPackageType: {},
+        },
+      })
+      .expect(200);
+    await h.db.db.execute(
+      sql`update accounts set requires_vehicle_class = 'cargo' where id = ${accountId}`,
+    );
+
+    const plan = (await h.http().get(`/v1/admin/dispatch/plan?date=${TODAY}`).set(asDispatcher()))
+      .body as DayPlan;
+    // It still has to go somewhere — there is only one driver — but the rule it breaks is named
+    // rather than silently accepted.
+    expect(plan.warnings.join(" ")).toContain("cargo");
+    expect(plan.warnings.join(" ")).toContain(b.shipments[0]!.waybill);
   });
 
   it("reports the operating clock so the board does not have to guess it", async () => {

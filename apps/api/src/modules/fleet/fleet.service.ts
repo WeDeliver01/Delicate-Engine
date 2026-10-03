@@ -459,6 +459,7 @@ export function toVehicle(r: typeof vehicles.$inferSelect): Vehicle {
     model: r.model,
     fuelType: r.fuelType,
     litresPer100Km: r.litresPer100Km == null ? null : Number(r.litresPer100Km),
+    constraints: (r.constraints as Vehicle["constraints"]) ?? null,
     active: r.active,
   };
 }
