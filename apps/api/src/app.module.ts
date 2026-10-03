@@ -17,6 +17,7 @@ import { SchedulingModule } from "./modules/scheduling/scheduling.module.js";
 import { BookingModule } from "./modules/bookings/booking.module.js";
 import { LedgerModule } from "./modules/ledger/ledger.module.js";
 import { FleetModule } from "./modules/fleet/fleet.module.js";
+import { OperationsModule } from "./modules/operations/operations.module.js";
 import { TreasuryModule } from "./modules/treasury/treasury.module.js";
 import { PaymentsModule } from "./modules/payments/payments.module.js";
 import { BillingModule } from "./modules/billing/billing.module.js";
@@ -70,6 +71,7 @@ export class AppModule {
         SchedulingModule,
         BookingModule,
         FleetModule,
+        OperationsModule,
         TreasuryModule,
         PaymentsModule,
         BillingModule,

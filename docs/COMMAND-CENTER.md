@@ -231,34 +231,69 @@ holds unchanged: the Command Center proposes work, never a payment.
 
 ---
 
-## 7. Decisions needed before building
+## 7. Decisions — signed off 2026-10-03
 
-Four of these are genuine forks. The first is the only one that blocks a start.
+| #   | Decision                        | Ashley's call                                                                                                                                                  |
+| --- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Per-shipment time windows       | **Real windows, sold to the customer.** Not the operational-target option this document first recommended. See §7.1 — it is its own sub-phase.                 |
+| 2   | Vehicle and account constraints | Config, seeded from the old constants. Current fleet list still to confirm.                                                                                    |
+| 3   | Handoffs                        | **Rare, handled ad hoc.** Model as dispatcher reassignment mid-trip. No handoff points, no custody proof step, and the old handoff code is not carried across. |
+| 4   | Who sequences                   | Auto-propose, dispatcher confirms, `sequenceSource` records which.                                                                                             |
+| 5   | Where to start                  | **7a — trips and trip sheets.**                                                                                                                                |
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                    | Recommendation                                                                                                                                                                                                                                                           |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | **Per-shipment time windows.** The brief's board shows "requested collection 09:00–10:00, delivery 11:00–13:00". The engine has no such field: it has a _slot window_ (`morning`, `afternoon`) shared by the whole booking, and slot capacity, cut-offs and pricing all hang off it. The old planner had real per-shipment `cAfter/cBefore/dAfter/dBefore`. These are different businesses. | Keep the slot as the **commercial promise** (what the customer bought, what capacity is gated on) and add the narrow window as an **operational target** on `trip_stops`, defaulted from the slot and overridable by a dispatcher. Nothing in pricing or capacity moves. |
-| 2   | **Vehicle and account constraints.** The real rules exist (no 3-tier cake in a Vitz; SWE001 only on the i10) but as constants against specific vehicle ids.                                                                                                                                                                                                                                 | `vehicles.constraints` jsonb + account `requiresVehicleClass`, seeded from the old constants, editable in the console. Needs the current list confirmed — vehicles change.                                                                                               |
-| 3   | **Handoffs.** Does a parcel ever change hands between drivers today, in practice?                                                                                                                                                                                                                                                                                                           | If no: drop it entirely, do not carry the code. If yes: it needs custody events and its own POD step, and that is its own phase — not a routing feature.                                                                                                                 |
-| 4   | **Who sequences.** Auto-sequence on release with dispatcher override, or dispatcher-first?                                                                                                                                                                                                                                                                                                  | Auto-propose, dispatcher confirms, `sequenceSource` records which. Matches the existing auto-assign posture and the old planner's own dispatcher-authority philosophy.                                                                                                   |
+### 7.1 Timed windows are a commercial change, not a field
 
-Also carried forward, unchanged, from `ARCHITECTURE.md` §7: the Google Maps key matters more
-here than anywhere so far. Sequencing a day on straight-line distance with a road factor is
-acceptable for _ordering_; quoting an ETA to a recipient on it is not.
+Decision 1 was taken against the recommendation above, with the trade-off stated. Recording what
+it costs, because it is the one piece of this phase that reaches outside operations:
+
+Today a booking takes a **slot**: `(date, windowKey)` — `morning` or `afternoon`. That row is the
+capacity gate. `SchedulingService.reserve` locks it `FOR UPDATE` inside the booking transaction,
+checks `capacity - bookedCount`, increments, and flips it to `closed_full`. It is reserved **once
+per booking**, not per shipment, and invariant 4 ("a booking is confirmed only inside one
+transaction that locks the wallet and the slot") is that lock.
+
+Selling a 09:00–10:00 promise means capacity stops being one number per half-day. Four drivers
+can cover forty stops across a morning and still not be in four places at 09:15. Volume and
+concurrency are different constraints, and only the first is modelled.
+
+What this touches, in dependency order:
+
+1. **Capacity** — a second gate per hour band, sized from drivers on shift, beside the existing
+   per-window volume gate. The open question is how much a window consumes: reserving a unit in
+   every hour it spans is conservative and penalises wide windows; reserving only its first hour
+   under-promises. Recommendation when 7d starts: **only windows of 2 hours or less hit the new
+   gate**, and a booking that takes the plain half-day slot behaves exactly as it does today and
+   touches no hour band. The new product gets the new gate; the money path that works keeps
+   working.
+2. **Pricing** — a narrow window is worth more and the rate card already has surcharges. A
+   window must be priced in the quote, before confirm, or it cannot be sold.
+3. **Cut-offs** — `cutoffMinutesBefore` is relative to window start and still works unchanged.
+4. **The booking transaction** — it must now lock two rows, in a fixed order, or two bookings
+   racing for the last 09:00 slot can deadlock instead of one losing cleanly.
+5. **The shipment** — collection window on the booking (one collection), delivery window on the
+   shipment (one drop each), matching §2.
+
+None of this blocks 7a: a trip stop carries `windowStartMinute`/`windowEndMinute` whatever fills
+them, defaulted from the slot until sold windows exist. It does mean **7d cannot be skipped
+before the exception lane and `shipment.at_risk` mean anything** — lateness needs a promise to be
+late against, and `morning` is not one.
 
 ---
 
 ## 8. Sub-phases
 
-Each ends with tests green and a demo, as every other phase has.
+Each ends with tests green and a demo, as every other phase has. 7a is signed off to start.
 
-| Sub-phase                   | Outcome                                                                                      | Contents                                                                                                                                                  |
-| --------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **7a Trips**                | A dispatcher builds tomorrow's trips and prints a trip sheet; the driver app reads the trip. | `operations` module, `trips` + `trip_stops`, plan/release/resequence, `day()` reads the trip, trip events, trip sheet UI.                                 |
-| **7b Dispatch board**       | One screen runs the day.                                                                     | `/v1/admin/dispatch/board`, the nine lanes, exception derivation, driver rail, drag-to-assign onto a trip, assignment recommendations with a reason.      |
-| **7c Operational logic**    | Sequencing respects how the business actually works.                                         | `serviceMinutes`, `groupCollections`, `sequenceDay`, `scoreAllocation`, `vehicleConstraints`, `groupingAdvisories` — ported as pure functions with tests. |
-| **7d Exceptions & windows** | Lateness is seen before the customer phones.                                                 | Window targets on stops, dispatcher overrides with pinned times and preserved originals, `shipment.at_risk`, arrival events, recipient "driver is here".  |
-| **7e Live operations**      | The map.                                                                                     | Live positions on a map, ETA from the trail, route deviation, late-stop detection, dispatcher advisories from `generateInsights`.                         |
+| Sub-phase                | Outcome                                                                                      | Contents                                                                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **7a Trips** ← starting  | A dispatcher builds tomorrow's trips and prints a trip sheet; the driver app reads the trip. | `operations` module, `trips` + `trip_stops`, plan/release/resequence/start/complete, `day()` reads the trip, trip events, trip sheet UI.                                                                     |
+| **7b Dispatch board**    | One screen runs the day.                                                                     | `/v1/admin/dispatch/board`, the nine lanes, exception derivation, driver rail, drag-to-assign onto a trip, recommendations with a reason.                                                                    |
+| **7c Operational logic** | Sequencing respects how the business actually works.                                         | `serviceMinutes`, `groupCollections`, `sequenceDay`, `scoreAllocation`, `vehicleConstraints`, `groupingAdvisories` — pure functions with tests.                                                              |
+| **7d Timed windows**     | A customer buys 09:00–10:00 and ops can see it slipping.                                     | Per-hour capacity gate, window surcharge in the quote, windows on booking + shipment, dispatcher overrides with pinned times, `shipment.at_risk`, arrival events, recipient "driver is here". The §7.1 work. |
+| **7e Live operations**   | The map.                                                                                     | Live positions, ETA from the trail, route deviation, late-stop detection, dispatcher advisories from `generateInsights`.                                                                                     |
+
+7d is larger than it looks and carries the only changes in this phase that touch pricing and the
+booking transaction. 7b and 7c can be built in either order once 7a lands.
 
 The brief's Phase 5 (AI allocation advice, at-risk triage) is a phase of its own after this, and
 genuinely belongs last: it is only as good as `trip_stops` and the at-risk signal beneath it.

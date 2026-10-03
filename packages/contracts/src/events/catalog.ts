@@ -4,6 +4,8 @@ import { Cents } from "../money.js";
 import { AccountRole, AccountType, BillingMode } from "../enums.js";
 import { ShipmentStatus } from "../dto/bookings.js";
 import { ChangeRequestKind } from "../dto/change-requests.js";
+import { SequenceSource, TripStopKind } from "../dto/operations.js";
+import { LatLng } from "../dto/geo.js";
 
 /**
  * The event catalog. Every event the engine emits is declared here so producers (API) and
@@ -328,6 +330,95 @@ export const ShipmentChangeDecided = defineEvent(
   }),
 );
 
+/**
+ * Operations (Phase 7). A trip is the unit of dispatch: one driver, one date, one ordered list
+ * of stops. None of these events moves money — settlement stays triggered by `delivery.completed`
+ * with actual km, and invariant 7 is unchanged.
+ */
+
+export const TripPlanned = defineEvent(
+  "trip.planned",
+  z.object({
+    tripId: z.string().uuid(),
+    reference: z.string(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    stopCount: z.number().int().nonnegative(),
+    plannedKm: z.number().nonnegative(),
+    sequenceSource: SequenceSource,
+  }),
+);
+
+/** Handed to the driver: until this, the trip is a dispatcher's draft and the app cannot see it. */
+export const TripReleased = defineEvent(
+  "trip.released",
+  z.object({
+    tripId: z.string().uuid(),
+    reference: z.string(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    stopCount: z.number().int().nonnegative(),
+  }),
+);
+
+export const TripStarted = defineEvent(
+  "trip.started",
+  z.object({
+    tripId: z.string().uuid(),
+    reference: z.string(),
+    driverId: z.string().uuid(),
+    shiftId: z.string().uuid().nullable(),
+    date: z.string(),
+  }),
+);
+
+export const TripCompleted = defineEvent(
+  "trip.completed",
+  z.object({
+    tripId: z.string().uuid(),
+    reference: z.string(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    stopsDone: z.number().int().nonnegative(),
+    stopsSkipped: z.number().int().nonnegative(),
+    plannedKm: z.number().nonnegative(),
+  }),
+);
+
+/**
+ * The driver is at a stop. One event with a `kind` rather than separate arrival events for a
+ * collection and a drop: two code paths whose only difference is a field they both already carry
+ * is two paths to keep in step for no gain.
+ */
+export const TripStopArrived = defineEvent(
+  "trip.stop_arrived",
+  z.object({
+    tripId: z.string().uuid(),
+    stopId: z.string().uuid(),
+    kind: TripStopKind,
+    sequence: z.number().int().positive(),
+    bookingId: z.string().uuid(),
+    shipmentId: z.string().uuid().nullable(),
+    driverId: z.string().uuid(),
+    /** Minutes late against the planned arrival; negative is early. Null when unplanned. */
+    varianceMinutes: z.number().int().nullable(),
+    location: LatLng.nullable(),
+  }),
+);
+
+/** The order changed after the trip was released. Audited, because a driver may be mid-route. */
+export const TripStopResequenced = defineEvent(
+  "trip.stop_resequenced",
+  z.object({
+    tripId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    sequenceSource: SequenceSource,
+    /** Stop ids, in the order they were and the order they now are. */
+    from: z.array(z.string().uuid()),
+    to: z.array(z.string().uuid()),
+  }),
+);
+
 export const DomainEvent = z.discriminatedUnion("type", [
   AccountCreated,
   MembershipGranted,
@@ -356,6 +447,12 @@ export const DomainEvent = z.discriminatedUnion("type", [
   PaymentExecuted,
   ShipmentChangeRequested,
   ShipmentChangeDecided,
+  TripPlanned,
+  TripReleased,
+  TripStarted,
+  TripCompleted,
+  TripStopArrived,
+  TripStopResequenced,
 ]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export type DomainEventType = DomainEvent["type"];

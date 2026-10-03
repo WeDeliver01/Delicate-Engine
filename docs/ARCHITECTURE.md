@@ -275,20 +275,21 @@ planner's constraint logic rebuilt as pure functions against this domain model.
 
 Full design: [COMMAND-CENTER.md](COMMAND-CENTER.md). The shape of it:
 
-| Item                                                                                                                 | State                       |
-| -------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `trips` + `trip_stops` — a persisted, owned sequence instead of one recomputed per request                           | Proposed (7a)               |
-| Dispatch board: nine lanes, derived exception lane, driver rail, recommendations                                     | Proposed (7b)               |
-| Ported operational logic: service time, collection grouping, day sequencing, allocation scoring, vehicle constraints | Proposed (7c)               |
-| Window targets on stops, dispatcher overrides, `shipment.at_risk`, arrival events                                    | Proposed (7d)               |
-| Live map, ETA from the trail, route deviation, dispatcher advisories                                                 | Proposed (7e)               |
-| Per-shipment operational windows vs. commercial slot windows                                                         | **Decision outstanding**    |
-| Vehicle/account constraints as config rather than hard-coded ids                                                     | **Needs the current fleet** |
-| Driver-to-driver handoffs — custody, not routing                                                                     | **Decision outstanding**    |
+| Item                                                                                                                                                   | State                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `trips` + `trip_stops` — a persisted, owned sequence instead of one recomputed per request                                                             | Proposed (7a)                                      |
+| Dispatch board: nine lanes, derived exception lane, driver rail, recommendations                                                                       | Proposed (7b)                                      |
+| Ported operational logic: service time, collection grouping, day sequencing, allocation scoring, vehicle constraints                                   | Proposed (7c)                                      |
+| Live map, ETA from the trail, route deviation, dispatcher advisories                                                                                   | Proposed (7e)                                      |
+| Timed windows sold to the customer: per-hour capacity gate, window surcharge, two locks in the booking transaction, `shipment.at_risk`, arrival events | Signed off 2026-10-03 (7d)                         |
+| Vehicle/account constraints as config rather than hard-coded ids                                                                                       | **Needs the current fleet**                        |
+| Driver-to-driver handoffs                                                                                                                              | Dropped — rare, handled as dispatcher reassignment |
 
-Collection stays on the booking and the shipment stays the unit of delivery and of money; the
-trip is added beside them, so nothing in this phase reaches into the ledger. No Phase 7 event
-moves money: invariant 7 holds unchanged.
+Building starts at 7a (trips). Collection stays on the booking and the shipment stays the unit
+of delivery and of money; the trip is added beside them, so nothing in this phase reaches into
+the ledger. No Phase 7 event moves money: invariant 7 holds unchanged. Timed windows (7d) are
+the one part that touches pricing and the booking transaction, and the exception lane has
+nothing to measure against until they land.
 
 ---
 
