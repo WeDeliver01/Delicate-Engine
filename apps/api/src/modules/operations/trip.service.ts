@@ -747,10 +747,17 @@ export class TripService {
 
   /** The trip a driver is working, or the next one released to them. */
   async currentFor(driver: Driver): Promise<TripSheet | null> {
-    const date = await this.fleet.localDate();
+    return this.forDriver(driver.id, await this.fleet.localDate());
+  }
+
+  /**
+   * The day a driver has been handed for a date. A planned trip is deliberately not returned:
+   * until a dispatcher releases it, it is a draft and the driver must not be working from it.
+   */
+  async forDriver(driverId: string, date: string): Promise<TripSheet | null> {
     const row = await this.dbs.db.query.trips.findFirst({
       where: and(
-        eq(trips.driverId, driver.id),
+        eq(trips.driverId, driverId),
         eq(trips.date, date),
         inArray(trips.status, ["released", "started"]),
       ),

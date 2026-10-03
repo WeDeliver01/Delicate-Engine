@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Cents } from "../money.js";
 import { Uuid } from "./common.js";
 import { Address, LatLng } from "./geo.js";
 import { Contact } from "./quotes.js";
@@ -173,3 +174,173 @@ export const TripQuery = z.object({
   status: TripStatus.optional(),
 });
 export type TripQuery = z.infer<typeof TripQuery>;
+
+// ── the dispatch board ────────────────────────────────────────────────────────
+
+/**
+ * The lanes the board is divided into. Mutually exclusive and derived from the shipment's own
+ * status plus where it sits on a started trip — a shipment is in exactly one of them.
+ *
+ * Three are not statuses and cannot be stored, because they stop being true the moment the
+ * driver moves: `en_route_collection` and `out_for_delivery` are read off the trip's current
+ * stop, and `awaiting_driver` is "assigned, but nobody has handed the driver a day yet".
+ */
+export const BoardLane = z.enum([
+  "unassigned",
+  "awaiting_driver",
+  "en_route_collection",
+  "collected",
+  "in_transit",
+  "out_for_delivery",
+  "delivered",
+  "failed",
+]);
+export type BoardLane = z.infer<typeof BoardLane>;
+
+export const BOARD_LANE_LABELS: Record<BoardLane, string> = {
+  unassigned: "Unassigned",
+  awaiting_driver: "Assigned",
+  en_route_collection: "Going to collect",
+  collected: "Collected",
+  in_transit: "In transit",
+  out_for_delivery: "Out for delivery",
+  delivered: "Delivered",
+  failed: "Failed",
+};
+
+/**
+ * Why a shipment needs a person to look at it.
+ *
+ * Deliberately *not* a lane. A shipment that is late is still in transit, and moving its card
+ * out of the lane it is actually in to a bin called "exception" loses the one fact a dispatcher
+ * needs in order to act on it. So this rides on the card, and the board also counts them.
+ */
+export const BoardExceptionKind = z.enum([
+  /** Past the window it is working to, and not finished. Needs a trip to be meaningful. */
+  "behind_schedule",
+  /** Scheduled for a day already gone and still not finished. */
+  "overdue",
+  /** A delivery was attempted and failed; somebody has to decide what happens next. */
+  "failed_attempt",
+  /** Today's work with no driver on it. */
+  "no_driver",
+  /** Something was changed after the driver was assigned, so they may be driving to the old one. */
+  "changed_after_assignment",
+  /** A customer is waiting on ops to rule on a change. */
+  "change_awaiting_decision",
+]);
+export type BoardExceptionKind = z.infer<typeof BoardExceptionKind>;
+
+export const BOARD_EXCEPTION_LABELS: Record<BoardExceptionKind, string> = {
+  behind_schedule: "Behind schedule",
+  overdue: "Overdue",
+  failed_attempt: "Failed attempt",
+  no_driver: "No driver",
+  changed_after_assignment: "Changed after assignment",
+  change_awaiting_decision: "Change awaiting decision",
+};
+
+/** One shipment on the board. Everything a dispatcher needs before opening anything. */
+export const BoardCard = z.object({
+  shipmentId: Uuid,
+  waybill: z.string(),
+  bookingId: Uuid,
+  bookingReference: z.string(),
+  customerReference: z.string().nullable(),
+  accountId: Uuid,
+  accountName: z.string(),
+  lane: BoardLane,
+  status: ShipmentStatus,
+  serviceLevelCode: z.string(),
+  slotDate: IsoDate.nullable(),
+  slotWindowKey: z.string().nullable(),
+  collection: z.object({ address: Address, contact: Contact.nullable() }),
+  delivery: z.object({ address: Address, contact: Contact.nullable() }),
+  instructions: z.string().nullable(),
+  parcels: z.array(QuoteParcel),
+  /** Integer cents, from the parcels that declared one. Null when nothing was declared. */
+  declaredValueCents: Cents.nullable(),
+  priceCents: Cents,
+  driverId: Uuid.nullable(),
+  driverName: z.string().nullable(),
+  tripId: Uuid.nullable(),
+  tripReference: z.string().nullable(),
+  /** Where this shipment's drop sits on the driver's day, when it is on one. */
+  stopSequence: z.number().int().positive().nullable(),
+  window: TripStopWindow.nullable(),
+  plannedArrivalMinute: MinuteOfDay.nullable(),
+  etaMinute: MinuteOfDay.nullable(),
+  exceptions: z.array(BoardExceptionKind),
+  updatedAt: z.string().datetime(),
+});
+export type BoardCard = z.infer<typeof BoardCard>;
+
+/** A driver's day at a glance: the right-hand rail of the board. */
+export const BoardDriver = z.object({
+  driverId: Uuid,
+  name: z.string(),
+  vehicleRegistration: z.string().nullable(),
+  shiftStatus: z.enum(["none", "scheduled", "open", "closed"]),
+  tripId: Uuid.nullable(),
+  tripReference: z.string().nullable(),
+  tripStatus: TripStatus.nullable(),
+  progress: TripProgress.nullable(),
+  /** What they are doing right now, in words, for the rail. */
+  activity: z.enum(["available", "no_shift", "planned", "ready", "working", "finished"]),
+  currentStop: z
+    .object({
+      kind: TripStopKind,
+      sequence: z.number().int().positive(),
+      address: z.string(),
+      waybill: z.string().nullable(),
+      windowEndMinute: MinuteOfDay.nullable(),
+    })
+    .nullable(),
+  lastSeen: z
+    .object({ at: z.string().datetime(), location: LatLng, ageMinutes: z.number().int() })
+    .nullable(),
+  behindCount: z.number().int().nonnegative(),
+});
+export type BoardDriver = z.infer<typeof BoardDriver>;
+
+export const DispatchBoard = z.object({
+  date: IsoDate,
+  /** Minutes past midnight in the operating timezone, so the client need not guess the clock. */
+  nowMinute: MinuteOfDay,
+  cards: z.array(BoardCard),
+  drivers: z.array(BoardDriver),
+  laneCounts: z.record(BoardLane, z.number().int().nonnegative()),
+  exceptionCounts: z.record(BoardExceptionKind, z.number().int().nonnegative()),
+});
+export type DispatchBoard = z.infer<typeof DispatchBoard>;
+
+export const BoardQuery = z.object({ date: IsoDate.optional() });
+export type BoardQuery = z.infer<typeof BoardQuery>;
+
+/**
+ * Who should take this shipment, and why.
+ *
+ * The reason is the whole point. A dispatcher who cannot see why a name was suggested either
+ * follows it blindly or ignores the feature, and both are worse than no suggestion.
+ */
+export const AssignmentRecommendation = z.object({
+  driverId: Uuid,
+  name: z.string(),
+  /** Lower is better. Exposed so the ordering is not a mystery, not for display. */
+  score: z.number(),
+  distanceKm: z.number().nonnegative(),
+  load: z.number().int().nonnegative(),
+  capacity: z.number().int().nonnegative(),
+  tripId: Uuid.nullable(),
+  tripReference: z.string().nullable(),
+  reason: z.string(),
+});
+export type AssignmentRecommendation = z.infer<typeof AssignmentRecommendation>;
+
+/** Put a shipment on a driver's day, making the trip if they do not have one for that date. */
+export const AssignToDayRequest = z.object({
+  shipmentId: Uuid,
+  driverId: Uuid,
+  date: IsoDate.nullable().default(null),
+});
+export type AssignToDayRequest = z.infer<typeof AssignToDayRequest>;

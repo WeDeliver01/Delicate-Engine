@@ -4,8 +4,11 @@ import { FleetModule } from "../fleet/fleet.module.js";
 import { DriverGuard } from "../fleet/driver.guard.js";
 import { SchedulingModule } from "../scheduling/scheduling.module.js";
 import { EventHandlerRegistry } from "../../worker/event-handlers.js";
+import { TripPlanRegistry } from "../../infra/trip-plan.registry.js";
 import { TripService } from "./trip.service.js";
+import { BoardService } from "./board.service.js";
 import {
+  AdminBoardController,
   AdminTripController,
   AdminTripStopController,
   DriverTripController,
@@ -22,13 +25,19 @@ import {
  */
 @Module({
   imports: [FleetModule, SchedulingModule],
-  controllers: [AdminTripController, AdminTripStopController, DriverTripController],
-  providers: [TripService, DriverGuard],
-  exports: [TripService],
+  controllers: [
+    AdminBoardController,
+    AdminTripController,
+    AdminTripStopController,
+    DriverTripController,
+  ],
+  providers: [TripService, BoardService, DriverGuard],
+  exports: [TripService, BoardService],
 })
 export class OperationsModule implements OnModuleInit {
   constructor(
     private readonly registry: EventHandlerRegistry,
+    private readonly plans: TripPlanRegistry,
     private readonly trips: TripService,
     private readonly logger: PinoLogger,
   ) {
@@ -36,6 +45,10 @@ export class OperationsModule implements OnModuleInit {
   }
 
   onModuleInit(): void {
+    // Dispatch asks for the driver's planned day through this rather than importing operations,
+    // which would be a cycle: operations already needs fleet for drivers and shifts.
+    this.plans.register((driverId, date) => this.trips.forDriver(driverId, date));
+
     this.registry.register("collection.completed", async (e) => {
       await this.trips.closeCollection(e.payload.bookingId, e.payload.driverId);
     });

@@ -10,6 +10,7 @@ import {
   ProofOfDelivery,
   Shipment,
   ShipmentStatus,
+  TripSheet,
 } from "@delicate/contracts";
 import { optimiseRoute } from "@delicate/contracts";
 import {
@@ -24,6 +25,7 @@ import {
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
+import { TripPlanRegistry } from "../../infra/trip-plan.registry.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
@@ -47,6 +49,7 @@ export class DispatchService {
     private readonly settlement: SettlementService,
     private readonly bookingsSvc: BookingService,
     private readonly settings: SettingsService,
+    private readonly plans: TripPlanRegistry,
   ) {}
 
   /** Today's work for a driver: one collection stop per booking, then one drop per shipment. */
@@ -186,10 +189,11 @@ export class DispatchService {
         });
       }
     }
-    // Put the day in a sensible order. The stops arrive in the order the bookings happened to
-    // be made, which has nothing to do with geography; reordering them costs nothing and comes
-    // straight off fuel and hours. A parcel is never delivered before it has been collected.
-    const ordered = await this.orderStops(stops);
+    // Put the day in a sensible order. A released trip is a dispatcher's decision about that
+    // order, so it wins; without one, the stops arrive in the order the bookings happened to be
+    // made, which has nothing to do with geography, and we order them ourselves.
+    const plan = await this.plans.forDriver(driver.id, date);
+    const ordered = plan ? orderByPlan(stops, plan) : await this.orderStops(stops);
 
     return {
       date,
@@ -212,8 +216,6 @@ export class DispatchService {
     if (stops.length < 2) return { stops, route: null };
     const depot = await this.settings.get("company.depot_address");
 
-    const key = (s: DriverStop) =>
-      s.kind === "collection" ? `collect:${s.bookingId}` : `drop:${s.shipmentId}`;
     const placed = stops.filter((s) => s.address?.location);
     if (placed.length < 2) return { stops, route: null };
 
@@ -221,7 +223,7 @@ export class DispatchService {
       depot: depot.location,
       // A drop waits for its own booking's collection, when that collection is still on the run.
       stops: placed.map((s) => ({
-        id: key(s),
+        id: stopKey(s),
         location: s.address.location,
         afterStopId: s.kind === "drop" ? `collect:${s.bookingId}` : null,
       })),
@@ -230,8 +232,8 @@ export class DispatchService {
 
     const position = new Map(result.order.map((id, i) => [id, i]));
     const sorted = [...stops].sort((a, b) => {
-      const pa = position.get(key(a));
-      const pb = position.get(key(b));
+      const pa = position.get(stopKey(a));
+      const pb = position.get(stopKey(b));
       if (pa === undefined || pb === undefined) return 0;
       return pa - pb;
     });
@@ -542,6 +544,35 @@ export class DispatchService {
     const km = await this.fleet.trailDistanceKm(driverId, collected.occurredAt, new Date());
     return km && km > 0 ? km : plannedKm;
   }
+}
+
+/**
+ * One key for a stop, used by both the live ordering and a stored trip, so the two cannot
+ * disagree about which row is which stop.
+ */
+function stopKey(s: Pick<DriverStop, "kind" | "bookingId" | "shipmentId">): string {
+  return s.kind === "collection" ? `collect:${s.bookingId}` : `drop:${s.shipmentId}`;
+}
+
+/**
+ * Order a driver's day by the trip a dispatcher released.
+ *
+ * Anything the trip does not know about is kept, after the planned stops and in its own order,
+ * rather than hidden: a shipment assigned to this driver but never put on the trip is a mistake
+ * to notice, and dropping it off the driver's screen is how a parcel spends the day in a van.
+ */
+function orderByPlan(
+  stops: DriverStop[],
+  plan: TripSheet,
+): { stops: DriverStop[]; route: DriverDay["route"] } {
+  const position = new Map(
+    [...plan.stops].sort((a, b) => a.sequence - b.sequence).map((s, i) => [stopKey(s), i] as const),
+  );
+  const planned: DriverStop[] = [];
+  const extra: DriverStop[] = [];
+  for (const s of stops) (position.has(stopKey(s)) ? planned : extra).push(s);
+  planned.sort((a, b) => position.get(stopKey(a))! - position.get(stopKey(b))!);
+  return { stops: [...planned, ...extra], route: plan.route };
 }
 
 export function toPod(r: typeof proofsOfDelivery.$inferSelect): ProofOfDelivery {

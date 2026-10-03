@@ -14,9 +14,11 @@ const NAV: NavSection[] = [
     group: "Today",
     items: [
       { href: "/admin", label: "Overview", icon: "space_dashboard", exact: true },
+      { href: "/admin/dispatch", label: "Dispatch board", icon: "dashboard" },
       { href: "/admin/shipments", label: "Shipments", icon: "local_shipping" },
       { href: "/admin/bookings", label: "Bookings", icon: "receipt_long" },
       { href: "/admin/changes", label: "Change requests", icon: "edit_note" },
+      { href: "/admin/trips", label: "Trips", icon: "route" },
       { href: "/admin/capacity", label: "Capacity", icon: "event_available" },
       { href: "/admin/drivers", label: "Drivers", icon: "directions_car" },
     ],

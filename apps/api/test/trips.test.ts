@@ -5,6 +5,7 @@ import type {
   CatalogResponse,
   CurrentTripResponse,
   Driver,
+  DriverDay,
   Quote,
   Trip,
   TripSheet,
@@ -649,6 +650,77 @@ describe("trips", () => {
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY });
     expect(replacement.status).toBe(201);
+  });
+
+  it("gives the driver the order the dispatcher decided, not the one the optimiser likes", async () => {
+    const b = await book(2);
+    const trip = await newTrip();
+    const built = (
+      await addStops(
+        trip.id,
+        b.shipments.map((x) => x.id),
+      ).expect(201)
+    ).body as TripSheet;
+
+    // Reverse the two drops behind the collection — an order the optimiser would not pick.
+    const collection = built.stops.find((x) => x.kind === "collection")!;
+    const drops = built.stops.filter((x) => x.kind === "drop");
+    const chosen = [collection.id, drops[1]!.id, drops[0]!.id];
+    await h
+      .http()
+      .put(`/v1/admin/dispatch/trips/${trip.id}/sequence`)
+      .set(asDispatcher())
+      .send({ stopIds: chosen })
+      .expect(200);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/trips/${trip.id}/release`)
+      .set(asDispatcher())
+      .expect(201);
+
+    // The invariant is that the day matches the trip, whatever the optimiser would have picked.
+    const released = await sheet(trip.id);
+    const key = (s: { kind: string; bookingId: string; shipmentId: string | null }) =>
+      s.kind === "collection" ? `collect:${s.bookingId}` : `drop:${s.shipmentId}`;
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(day.stops.map(key)).toEqual(
+      [...released.stops].sort((a, b2) => a.sequence - b2.sequence).map(key),
+    );
+    // And that order is the dispatcher's, not the one the stops were built in.
+    expect(released.sequenceSource).toBe("dispatcher");
+    expect(released.stops.map((s) => s.id).sort()).toEqual([...chosen].sort());
+    expect([...released.stops].sort((a, b2) => a.sequence - b2.sequence).map((s) => s.id)).toEqual(
+      chosen,
+    );
+  });
+
+  it("keeps an assigned shipment on the driver's day even when no trip knows about it", async () => {
+    // A parcel assigned but never put on a trip is a mistake to notice, not one to hide: a stop
+    // dropped off the driver's screen is how a parcel spends the day in the van.
+    const onTrip = await book(1);
+    const offTrip = await book(1);
+    const trip = await newTrip();
+    await addStops(trip.id, [onTrip.shipments[0]!.id]).expect(201);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/trips/${trip.id}/release`)
+      .set(asDispatcher())
+      .expect(201);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${offTrip.shipments[0]!.id}/assign`)
+      .set(asDispatcher())
+      .send({ driverId: driver.id })
+      .expect(201);
+
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    const waybills = day.stops.map((s) => s.waybill).filter(Boolean);
+    expect(waybills).toContain(onTrip.shipments[0]!.waybill);
+    expect(waybills).toContain(offTrip.shipments[0]!.waybill);
+    // The planned stop comes first; the stray one is appended rather than interleaved.
+    expect(waybills.indexOf(onTrip.shipments[0]!.waybill)).toBeLessThan(
+      waybills.indexOf(offTrip.shipments[0]!.waybill),
+    );
   });
 
   it("lists trips by date and driver", async () => {

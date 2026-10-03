@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   AbandonTripRequest,
   AddStopsRequest,
+  AssignToDayRequest,
+  BoardQuery,
   ArriveRequest,
   CreateTripRequest,
   RemoveStopsRequest,
@@ -17,9 +19,47 @@ import { PlatformRoles } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { CurrentDriver, DriverGuard } from "../fleet/driver.guard.js";
 import { TripService } from "./trip.service.js";
+import { BoardService } from "./board.service.js";
 
 const IdParam = z.object({ id: Uuid });
 const StopParam = z.object({ id: Uuid });
+
+/**
+ * The board itself: one screen that runs the day.
+ *
+ * A read model assembled per request. Polled rather than pushed — a dispatcher refreshing a
+ * board is not worth a socket layer the engine does not otherwise have.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/dispatch/board")
+@PlatformRoles("super_admin", "dispatcher")
+export class AdminBoardController {
+  constructor(private readonly board: BoardService) {}
+
+  @Get()
+  get(@Query(BoardQuery) q: BoardQuery) {
+    return this.board.board(q.date);
+  }
+
+  /** Who should take this, and why. The reason is the point; a bare name gets ignored. */
+  @Get("recommendations/:id")
+  recommendations(@Params(IdParam) p: { id: string }) {
+    return this.board.recommendations(p.id);
+  }
+
+  /**
+   * Put a shipment on a driver's day in one move, making the trip if they have none yet. This
+   * is what the board's drag-onto-a-driver does, and it saves a dispatcher the two-step of
+   * creating a trip before they can use it.
+   */
+  @Post("assign")
+  assign(@Body(AssignToDayRequest) body: AssignToDayRequest) {
+    return this.board
+      .assignToDay(body.shipmentId, body.driverId, body.date ?? undefined)
+      .then((tripId) => ({ tripId }));
+  }
+}
 
 /**
  * The dispatcher's side of the Command Center: building a day, ordering it, handing it over.
