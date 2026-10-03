@@ -16,6 +16,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { rands } from "@/lib/money";
 import { AddressInput } from "@/components/booking/address-input";
 import { Breakdown } from "@/components/booking/breakdown";
+import { useCollectionPoint } from "@/components/booking/use-collection-point";
 
 type Drop = {
   address: Address | null;
@@ -93,6 +94,21 @@ function Book() {
     weddingVenue: false,
   });
 
+  /**
+   * The customer's side of the form fills itself in. They collect from the same place every
+   * time, and asking again on every booking is a question we already know the answer to.
+   * Only applied while the fields are untouched, so it never overwrites something typed.
+   */
+  const collectionPoint = useCollectionPoint();
+  useEffect(() => {
+    const point = collectionPoint.point;
+    if (!point || collection) return;
+    setCollection(point.address);
+    setCollectionName(point.contact.name);
+    setCollectionPhone(point.contact.phone);
+    setCollectionNotes(point.instructions ?? "");
+  }, [collectionPoint.point, collection]);
+
   const [quote, setQuote] = useState<Quote | null>(null);
   const [slot, setSlot] = useState<{ date: string; windowKey: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -122,9 +138,11 @@ function Book() {
     setDrops(
       r.drops.map((d) => ({
         address: d.address,
-        name: d.recipient.name,
-        phone: d.recipient.phone,
-        email: d.recipient.email ?? "",
+        // A quote may have been priced on the address alone, so these are often blank and
+        // the booking form is where they get filled in.
+        name: d.recipient?.name ?? "",
+        phone: d.recipient?.phone ?? "",
+        email: d.recipient?.email ?? "",
         instructions: d.instructions ?? "",
         packageTypeId: d.parcels[0]?.packageTypeId ?? "",
         quantity: d.parcels[0]?.quantity ?? 1,

@@ -7,6 +7,7 @@ import type { Quote } from "@delicate/contracts";
 import { useMe } from "@/components/use-me";
 import { api, ApiRequestError } from "@/lib/api";
 import { rands } from "@/lib/money";
+import { QuickQuote } from "@/components/booking/quick-quote";
 
 /**
  * Saved quotes.
@@ -59,10 +60,12 @@ export default function QuotesPage() {
             again.
           </p>
         </div>
-        <Link href="/portal/book" className="btn btn-primary">
-          New quote
+        <Link href="/portal/book" className="btn btn-secondary">
+          Full booking form
         </Link>
       </header>
+
+      <QuickQuote onQuoted={() => quotes.refetch()} />
 
       {error && <p className="alert-error">{error}</p>}
 

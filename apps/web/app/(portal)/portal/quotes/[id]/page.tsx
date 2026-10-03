@@ -121,7 +121,9 @@ export default function QuoteDocumentPage({ params }: { params: Promise<{ id: st
                 <tr key={i} className="border-b border-[#F0EDE9]">
                   <td className="py-1.5 pr-2 text-muted">{i + 1}</td>
                   <td className="py-1.5 pr-2">{d.address.formatted}</td>
-                  <td className="py-1.5 pr-2">{d.recipient.name}</td>
+                  <td className="py-1.5 pr-2">
+                    {d.recipient?.name ?? <span className="text-muted">To be confirmed</span>}
+                  </td>
                   <td className="figure py-1.5 text-right">
                     {d.parcels.reduce((n, p) => n + p.quantity, 0)}
                   </td>

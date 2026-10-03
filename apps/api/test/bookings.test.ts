@@ -336,4 +336,64 @@ describe("bookings & shipments", () => {
     ).toBe(403);
     expect((await h.http().get("/v1/public/track/DC-000000-99999")).status).toBe(404);
   });
+
+  it("books a quote that was priced on the address alone, with the people named at booking", async () => {
+    // The fast path: a customer gets a price by typing one address, then names the recipient
+    // when they commit. The shipment still ends up with somebody to deliver to.
+    await wallet.adjust(accountId, 1_000_000, "funds");
+    const q = (
+      await h
+        .http()
+        .post("/v1/account/quotes")
+        .set(asOwner())
+        .send({
+          serviceLevelCode: "standard",
+          collection: { address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn") },
+          drops: [{ address: addr("12 Oak St, Centurion", CENTURION) }],
+        })
+    ).body as Quote;
+    expect(q.request.drops[0]!.recipient).toBeNull();
+
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({
+        quoteId: q.id,
+        slot: SLOT,
+        drops: [{ recipient: { name: "Jane Dlamini", phone: "0821234567", email: null } }],
+      });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const booking = res.body as Booking;
+    expect(booking.shipments[0]!.recipient.name).toBe("Jane Dlamini");
+  });
+
+  it("refuses to book a nameless delivery, before taking a slot or holding funds", async () => {
+    // A driver cannot knock on a door with no name and no number. Refused up front rather
+    // than rolled back, so nothing is reserved on the way to finding out.
+    await wallet.adjust(accountId, 1_000_000, "funds");
+    const q = (
+      await h
+        .http()
+        .post("/v1/account/quotes")
+        .set(asOwner())
+        .send({
+          serviceLevelCode: "standard",
+          collection: { address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn") },
+          drops: [{ address: addr("12 Oak St, Centurion", CENTURION) }],
+        })
+    ).body as Quote;
+
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+
+    expect(res.status).toBe(422);
+    // Nothing was taken on the way to refusing.
+    const after = await summary();
+    expect(after.heldCents).toBe(0);
+  });
 });
