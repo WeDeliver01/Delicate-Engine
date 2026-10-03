@@ -265,6 +265,31 @@ The last two are not engineering work and no amount of code removes them. Every 
 passes the wallet gate, so a merchant cannot be migrated until its account is funded or on
 credit terms.
 
+### Phase 7 — the Command Center (proposed, not yet signed off)
+
+Added 2026-10-03, from Ashley's operations brief. Phases 0-6 built an engine that prices, gates,
+books, delivers and accounts for a job; it has drivers, shifts, assignment and a driver app, but
+no single place a dispatcher stands all day. Phase 7 builds the operational cockpit: a **trip**
+as the unit of dispatch, a dispatch board, arrival and at-risk events, and the old route
+planner's constraint logic rebuilt as pure functions against this domain model.
+
+Full design: [COMMAND-CENTER.md](COMMAND-CENTER.md). The shape of it:
+
+| Item                                                                                                                 | State                       |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `trips` + `trip_stops` — a persisted, owned sequence instead of one recomputed per request                           | Proposed (7a)               |
+| Dispatch board: nine lanes, derived exception lane, driver rail, recommendations                                     | Proposed (7b)               |
+| Ported operational logic: service time, collection grouping, day sequencing, allocation scoring, vehicle constraints | Proposed (7c)               |
+| Window targets on stops, dispatcher overrides, `shipment.at_risk`, arrival events                                    | Proposed (7d)               |
+| Live map, ETA from the trail, route deviation, dispatcher advisories                                                 | Proposed (7e)               |
+| Per-shipment operational windows vs. commercial slot windows                                                         | **Decision outstanding**    |
+| Vehicle/account constraints as config rather than hard-coded ids                                                     | **Needs the current fleet** |
+| Driver-to-driver handoffs — custody, not routing                                                                     | **Decision outstanding**    |
+
+Collection stays on the booking and the shipment stays the unit of delivery and of money; the
+trip is added beside them, so nothing in this phase reaches into the ledger. No Phase 7 event
+moves money: invariant 7 holds unchanged.
+
 ---
 
 ## 7. Open items to confirm
