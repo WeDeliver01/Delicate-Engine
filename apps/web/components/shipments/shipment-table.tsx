@@ -5,6 +5,10 @@ import type { Shipment } from "@delicate/contracts";
 import { StatusBadge } from "@/components/booking/status-badge";
 
 export interface ShipmentRow extends Shipment {
+  /** The order this parcel belongs to, so the booking is reachable without its own menu. */
+  bookingReference?: string;
+  /** What the customer filed it under, shown in preference to ours when they set one. */
+  customerReference?: string | null;
   driver: { id: string; name: string | null } | null;
   hasPod: boolean;
   hasPendingChange: boolean;
@@ -67,6 +71,15 @@ export function ShipmentTable({
                 <Link href={`${hrefBase}/${s.id}`} className="font-mono hover:underline">
                   {s.waybill}
                 </Link>
+                {s.bookingReference && (
+                  <Link
+                    href={`/portal/bookings/${s.bookingId}`}
+                    className="mt-0.5 block truncate text-xs text-muted hover:text-ink hover:underline"
+                    title="The order this delivery belongs to"
+                  >
+                    {s.customerReference ?? s.bookingReference}
+                  </Link>
+                )}
               </td>
               <td className="whitespace-nowrap">
                 {s.slotDate ? (

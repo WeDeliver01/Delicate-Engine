@@ -219,14 +219,25 @@ export class ShipmentQueryService {
     const where = this.conditions(accountId, q);
     const cursorDate = q.cursor ? new Date(q.cursor) : null;
 
+    // The booking reference rides along: with Bookings gone from the navigation, this is how
+    // a customer gets from the parcel they are looking at to the order they paid for.
     const rows = await this.dbs.db
-      .select()
+      .select({
+        shipment: shipments,
+        bookingReference: bookings.reference,
+        customerReference: bookings.customerReference,
+      })
       .from(shipments)
+      .innerJoin(bookings, eq(bookings.id, shipments.bookingId))
       .where(and(where, cursorDate ? lt(shipments.createdAt, cursorDate) : undefined))
       .orderBy(...this.ordering(q.sort))
       .limit(q.limit + 1);
 
-    const page = rows.slice(0, q.limit);
+    const page = rows.slice(0, q.limit).map((r) => ({
+      ...r.shipment,
+      bookingReference: r.bookingReference,
+      customerReference: r.customerReference,
+    }));
     const ids = page.map((r) => r.id);
     const [assigned, pods, pending] = await Promise.all([
       ids.length
@@ -267,6 +278,8 @@ export class ShipmentQueryService {
 
     const items = page.map((r) => ({
       ...toShipment(r),
+      bookingReference: r.bookingReference,
+      customerReference: r.customerReference,
       driver: driverBy.get(r.id)
         ? { id: driverBy.get(r.id)!.driverId, name: driverBy.get(r.id)!.driverName }
         : null,

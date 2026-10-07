@@ -16,8 +16,13 @@ const NAV: NavSection[] = [
     items: [
       { href: "/portal", label: "Dashboard", icon: "space_dashboard", exact: true },
       { href: "/portal/book", label: "Book a delivery", icon: "add_box" },
-      { href: "/portal/shipments", label: "Shipments", icon: "local_shipping" },
-      { href: "/portal/bookings", label: "Bookings", icon: "receipt_long" },
+      /*
+        One entry, not two. A booking and a shipment are different objects to the engine --
+        one order, N parcels -- but a customer who sent one cake sent one thing, and two menu
+        items listing the same row is a distinction we are asking them to care about for our
+        benefit. The order is still there, reached from the delivery that belongs to it.
+      */
+      { href: "/portal/shipments", label: "All deliveries", icon: "local_shipping" },
       { href: "/portal/addresses", label: "Addresses", icon: "book_2" },
     ],
   },

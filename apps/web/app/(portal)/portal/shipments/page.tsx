@@ -72,7 +72,7 @@ function Shipments() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="eyebrow">{me.activeAccount?.name}</p>
-          <h1 className="page-title mt-1">Shipments</h1>
+          <h1 className="page-title mt-1">Deliveries</h1>
         </div>
         <p className="lede">{counts.isLoading ? "Counting…" : `${total} matching this period`}</p>
       </header>
