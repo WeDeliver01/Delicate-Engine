@@ -77,7 +77,7 @@ export function AppShell({
                   }`}
                 >
                   <span
-                    className="material-symbols-outlined text-[19px] leading-none"
+                    className="material-symbols-outlined text-[17px] leading-none"
                     aria-hidden="true"
                   >
                     {item.icon}

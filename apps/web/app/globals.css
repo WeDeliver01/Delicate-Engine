@@ -43,7 +43,9 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ─── Material Symbols (outlined icons) ────────────────────────── */
 .material-symbols-outlined {
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  /* opsz matches the size we actually render at, so strokes stay even instead of looking
+     like a 24px icon squeezed down. */
+  font-variation-settings: 'FILL' 0, 'wght' 350, 'GRAD' 0, 'opsz' 20;
   line-height: 1;
   vertical-align: middle;
 }
@@ -289,8 +291,16 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* Money and counts: tabular, so figures do not shuffle as they update */
+  /*
+     Money and counts. Manrope, the display face, with tabular figures so columns still line
+     up — a dashboard full of prices should read as part of the brand, not as terminal output.
+     JetBrains Mono stays for identifiers (.font-mono): a waybill is compared character by
+     character, and that is the one place a code face earns its keep.
+  */
   .figure {
-    @apply font-mono tabular-nums;
+    @apply font-display tabular-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+    letter-spacing: -0.01em;
   }
 }
 
