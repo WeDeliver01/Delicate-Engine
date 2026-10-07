@@ -80,6 +80,36 @@ const TRUNCATE = [
   "idempotency_keys",
 ];
 
+/**
+ * Empty every table between tests.
+ *
+ * `TRUNCATE` takes an AccessExclusiveLock on all of them at once, and the app under test keeps
+ * a connection pool: anything still in flight from the test that just finished — a request the
+ * assertion did not wait for, a handler finishing after its tick — holds a read lock on one of
+ * these tables and may want another, which is a deadlock rather than a wait. Postgres picks a
+ * victim and raises 40P01.
+ *
+ * Retrying is the right answer because truncation is idempotent: there is no half-done state to
+ * reason about, and the loser only has to go again once the other side has finished. Growing the
+ * table list makes the window wider, so this got easier to hit as the schema grew rather than
+ * appearing with any one change.
+ */
+async function truncateAll(db: DbService, attempts = 5): Promise<void> {
+  const statement = sql.raw(`truncate table ${TRUNCATE.join(", ")} restart identity cascade`);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await db.db.execute(statement);
+      return;
+    } catch (err) {
+      const code =
+        (err as { cause?: { code?: string }; code?: string }).cause?.code ??
+        (err as { code?: string }).code;
+      if (code !== "40P01" || attempt >= attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 50 * attempt));
+    }
+  }
+}
+
 /** Boots the real app (guards, filters, middleware) against the test database. */
 export async function createHarness(): Promise<Harness> {
   const url = process.env["DATABASE_URL"]!;
@@ -101,9 +131,7 @@ export async function createHarness(): Promise<Harness> {
     http: () => request.agent(app.getHttpServer()),
     tokenFor: (user) => verifier.signDevToken({ userId: user.id, email: user.email }),
     reset: async () => {
-      await db.db.execute(
-        sql.raw(`truncate table ${TRUNCATE.join(", ")} restart identity cascade`),
-      );
+      await truncateAll(db);
       await db.transaction((tx) => seedCatalog(tx));
       // The settings table was just truncated and re-seeded underneath the read cache.
       settings.invalidate();
