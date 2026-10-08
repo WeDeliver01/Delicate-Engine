@@ -95,6 +95,37 @@ Track it at {{trackUrl}}.
     body: `Hi {{recipientName}}, your delivery from {{customerName}} is on the way with {{driverName}}. Track: {{trackUrl}}`,
   },
   {
+    kind: "shipment.on_hold",
+    channel: "email",
+    audience: "customer",
+    subject: "{{waybill}} is on hold",
+    body: `Hi {{customerName}},
+
+{{waybill}} is on hold and is not moving at the moment.
+
+{{reasonText}}
+
+We will be in touch. You can see where it stands at any time at {{trackUrl}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.returned_to_sender",
+    channel: "email",
+    audience: "customer",
+    subject: "{{waybill}} has come back to you",
+    body: `Hi {{customerName}},
+
+We could not complete {{waybill}} and it is on its way back to you.
+
+{{reasonText}}
+
+Nothing further will happen to this waybill. If the parcel still needs to go out, book it again
+and we will collect it.
+
+— {{companyName}}`,
+  },
+  {
     kind: "shipment.driver_arriving",
     channel: "sms",
     audience: "recipient",

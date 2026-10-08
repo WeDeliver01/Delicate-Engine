@@ -110,6 +110,21 @@ export const DriverDay = z.object({
 });
 export type DriverDay = z.infer<typeof DriverDay>;
 
+/**
+ * A driver moving a shipment along.
+ *
+ * `delivered` is not reachable here — that goes through `DeliverRequest`, which carries the
+ * proof. The engine checks the target against `DRIVER_SETTABLE_STATUSES` rather than trusting
+ * the app's menu, because the app is on a phone somebody else holds.
+ */
+export const DriverStatusRequest = z.object({
+  shipmentId: Uuid,
+  status: ShipmentStatus,
+  location: LatLng.nullable().default(null),
+  note: z.string().max(300).nullable().default(null),
+});
+export type DriverStatusRequest = z.infer<typeof DriverStatusRequest>;
+
 export const CollectRequest = z.object({
   bookingId: Uuid,
   location: LatLng.nullable().default(null),

@@ -196,6 +196,18 @@ describe("notifications", () => {
       .expect(201);
     await h.dispatcher.tick();
 
+    // Collecting a booking says nothing about when any one parcel is on its way: a van with
+    // twelve drops collected them all at nine. The driver marks the parcel out for delivery
+    // when it is the one they are driving to, and that is what tells the person waiting.
+    expect((await sent()).find((n) => n.kind === "shipment.out_for_delivery")).toBeUndefined();
+    await h
+      .http()
+      .post("/v1/driver/status")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, status: "out_for_delivery" })
+      .expect(201);
+    await h.dispatcher.tick();
+
     let rows = await sent();
     const toRecipient = rows.find((n) => n.kind === "shipment.out_for_delivery")!;
     expect(toRecipient.audience).toBe("recipient");
@@ -316,6 +328,12 @@ describe("notifications", () => {
       .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
       .set(asStaff());
     await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id });
+    await h
+      .http()
+      .post("/v1/driver/status")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, status: "out_for_delivery" })
+      .expect(201);
     await h.dispatcher.tick();
 
     const toRecipient = (await sent()).find((n) => n.kind === "shipment.out_for_delivery")!;
