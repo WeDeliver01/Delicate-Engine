@@ -63,7 +63,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <AppShell
       home="/portal"
-      title="Delicate"
+      title="Delicate Courier"
       subtitle={active ? active.name : "Customer portal"}
       nav={NAV}
       aside={

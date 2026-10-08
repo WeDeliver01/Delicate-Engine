@@ -23,6 +23,9 @@ export class AuditService {
       actorUserId: ctx?.userId ?? null,
       actorServiceClientId: ctx?.serviceClientId ?? null,
       actorAccountId: ctx?.accountId ?? null,
+      // "Did the customer do this, or did we do it for them" is the question a disputed
+      // charge turns on, and it is asked long after the request is gone.
+      impersonated: ctx?.impersonating ?? false,
       action: entry.action,
       entityType: entry.entityType,
       entityId: entry.entityId ?? null,

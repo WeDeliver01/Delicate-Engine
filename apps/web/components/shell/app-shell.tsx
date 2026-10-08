@@ -129,8 +129,8 @@ export function AppShell({
         <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-line bg-white lg:flex">
           <div className="px-5 pt-5">
             <Link href={home} className="flex items-center gap-2.5">
-              <span className="font-display text-[17px] font-bold tracking-tight text-ink">
-                Delicate
+              <span className="whitespace-nowrap font-display text-[17px] font-bold tracking-tight text-ink">
+                Delicate Courier
               </span>
               <BrandDots />
             </Link>

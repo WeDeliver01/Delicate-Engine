@@ -15,6 +15,16 @@ export interface RequestContext {
   accountId?: string;
   /** Set instead of `userId` when another system is calling. */
   serviceClientId?: string;
+  /**
+   * True when a staff member is acting on an account they are not a member of.
+   *
+   * Carried here rather than passed down, because every audit row needs it and threading a
+   * flag through forty call sites to reach the one place that writes it is how it ends up
+   * being forgotten on the call that matters.
+   */
+  impersonating?: boolean;
+  /** The caller's platform role, for the few decisions only one role may make. */
+  platformRole?: string | null;
 }
 
 class RequestContextStore {

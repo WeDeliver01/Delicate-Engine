@@ -50,15 +50,20 @@ export class PrincipalService {
     if (!account) throw AppError.forbidden("unknown account");
     if (account.status !== "active") throw AppError.forbidden("account is not active");
 
-    if (isStaff({ user, service: null, account: null })) {
-      return { id: account.id, role: null };
-    }
-
     const membership = await db.query.memberships.findFirst({
       where: and(eq(memberships.accountId, accountId), eq(memberships.userId, user.id)),
       columns: { role: true },
     });
-    if (!membership) throw AppError.forbidden("not a member of this account");
-    return { id: account.id, role: membership.role };
+    if (membership) return { id: account.id, role: membership.role, impersonating: false };
+
+    // No membership. Staff may still act here — support cannot help with a booking they
+    // cannot see — but it is recorded as acting on someone's behalf rather than passed off
+    // as the customer's own doing. Their account role stays null: authority comes from the
+    // platform role, not from a membership they do not have.
+    if (isStaff({ user, service: null, account: null })) {
+      return { id: account.id, role: null, impersonating: true };
+    }
+
+    throw AppError.forbidden("not a member of this account");
   }
 }

@@ -53,6 +53,14 @@ export const CreateBookingRequest = z.object({
   /** The customer's own identifier for this job, searchable and printed on their invoice. */
   customerReference: z.string().trim().max(60).optional(),
   /**
+   * Book even though the wallet cannot cover it, taking the balance negative.
+   *
+   * Super admin only, and refused outright for anyone else rather than ignored — a flag that
+   * silently does nothing is how someone believes a booking went through on credit when it
+   * did not. Every booking made this way is marked in the audit log.
+   */
+  allowNegativeBalance: z.boolean().optional(),
+  /**
    * Recipient details for the quote's drops, in the same order, for anything the quote did
    * not carry.
    *

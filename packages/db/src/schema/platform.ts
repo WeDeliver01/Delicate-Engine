@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -102,6 +103,16 @@ export const auditLog = pgTable(
     actorAccountId: uuid("actor_account_id"),
     /** Set instead of `actorUserId` when a machine did it. Exactly one of the two is set. */
     actorServiceClientId: uuid("actor_service_client_id"),
+    /**
+     * True when a staff member did this while acting as a customer's account rather than from
+     * their own membership of it.
+     *
+     * Derivable — the actor is not a member of the account — but only by a join nobody will
+     * run while answering "did the customer do this, or did we do it for them". That question
+     * comes up when a customer disputes a charge, so the answer is stored rather than
+     * reconstructed.
+     */
+    impersonated: boolean("impersonated").notNull().default(false),
     action: text("action").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id"),

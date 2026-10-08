@@ -56,6 +56,8 @@ export class AuthGuard implements CanActivate {
     requestContext.assign({
       userId: principal.user?.id,
       accountId: principal.account?.id,
+      impersonating: principal.account?.impersonating ?? false,
+      platformRole: principal.user?.platformRole ?? null,
       serviceClientId: principal.service?.id,
     });
 
@@ -128,7 +130,10 @@ export class AuthGuard implements CanActivate {
       accountId,
       externalRef: header(req, ACCOUNT_REF_HEADER),
     });
-    return { user: null, service, account };
+    // Not impersonation: a service client holds an explicit grant to this account, which is a
+    // different thing from a person reaching into one they do not belong to. The audit trail
+    // already names the machine through `actorServiceClientId`.
+    return { user: null, service, account: account ? { ...account, impersonating: false } : null };
   }
 }
 

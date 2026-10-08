@@ -83,6 +83,14 @@ export class BookingService {
       );
     }
 
+    // Booking past what the wallet can cover is a commercial decision, so it is one person's
+    // to make. Refused rather than ignored for anyone else: a flag that quietly does nothing
+    // is how somebody believes an order went through on credit when it did not.
+    const overdraw = input.allowNegativeBalance === true;
+    if (overdraw && requestContext.get()?.platformRole !== "super_admin") {
+      throw AppError.forbidden("only a super admin can book past the available balance");
+    }
+
     const serviceLevel = await this.catalog.serviceLevelByCode(quote.serviceLevelCode);
     if (serviceLevel.requiresSlot && !input.slot) {
       throw AppError.validation([
@@ -138,6 +146,7 @@ export class BookingService {
 
         const reference = await this.nextReference(tx, "BK");
         const hold = await this.wallet.placeHold(tx, {
+          allowOverdraw: overdraw,
           accountId,
           amountCents: quote.breakdown.totalCents,
           reference,
