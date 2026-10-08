@@ -115,13 +115,19 @@ export class LiveTrackingService {
       };
     }
 
-    if (row.status !== "in_transit") {
+    // The status now says this rather than being inferred from `in_transit`, which covered
+    // both "in the van somewhere" and "on its way to you". A driver marks a parcel out for
+    // delivery when it is actually the one they are driving to, which is the only point at
+    // which their position is about this delivery rather than about their whole round.
+    if (row.status !== "out_for_delivery") {
       return {
         ...base,
         message:
-          row.status === "collected"
-            ? "Collected and on its way to our next run. Live tracking starts when it is out for delivery."
-            : "Live tracking starts when the driver sets off with your parcel.",
+          row.status === "collected" || row.status === "in_transit"
+            ? "Collected and with us. Live tracking starts when it is out for delivery."
+            : row.status === "on_hold"
+              ? "On hold at the moment. We will be in touch, and tracking resumes when it is moving again."
+              : "Live tracking starts when the driver sets off with your parcel.",
       };
     }
 

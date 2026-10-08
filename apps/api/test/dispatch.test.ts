@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { users, walletEntries } from "@delicate/db";
+import { shipmentEvents as shipmentEventsTable, users, walletEntries } from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -375,6 +375,93 @@ describe("fleet, dispatch & settlement", () => {
     });
     expect(fuel.status).toBe(201);
     expect(fuel.body.hasReceipt).toBe(true);
+  });
+
+  it("lets a driver move a shipment along their own statuses, and refuses the rest", async () => {
+    const b = await book("on_demand");
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY })
+      .expect(201);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asDispatcher())
+      .expect(201);
+    const id = b.shipments[0]!.id;
+    const setStatus = (status: string, extra: Record<string, unknown> = {}) =>
+      h
+        .http()
+        .post("/v1/driver/status")
+        .set(asDriver())
+        .send({ shipmentId: id, status, ...extra });
+
+    // Not yet collected: there is nowhere to go from `assigned` but into the driver's hands,
+    // and the refusal says which state it is actually in rather than only that it was refused.
+    const early = await setStatus("out_for_delivery");
+    expect(early.status).toBe(409);
+    expect(early.body.code).toBe("invalid_transition");
+
+    await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id }).expect(201);
+
+    const held = await setStatus("on_hold", { note: "Gate code needed" });
+    expect(held.status).toBe(201);
+    expect(held.body.status).toBe("on_hold");
+
+    const out = await setStatus("out_for_delivery", { location: MENLYN });
+    expect(out.status).toBe(201);
+    expect(out.body.status).toBe("out_for_delivery");
+
+    // A delivery carries proof, so it is not reachable as a bare status change however the
+    // request is shaped. The message says where to go instead.
+    const sneaky = await setStatus("delivered");
+    expect(sneaky.status).toBe(403);
+    expect(sneaky.body.message).toContain("proof");
+
+    // Ending the job bears on what the customer is charged, so it is not the driver's to make.
+    const returned = await setStatus("returned_to_sender");
+    expect(returned.status).toBe(403);
+
+    // Every step shows on the public timeline, in the order it happened. Only the status and
+    // the time: the driver's own note ("Gate code needed") stays off a page anyone holding a
+    // waybill can open, and the waybills are sequential.
+    const view = (await h.http().get(`/v1/public/track/${b.shipments[0]!.waybill}`)).body as {
+      timeline: { status: string }[];
+    };
+    const steps = view.timeline.map((t) => t.status);
+    expect(steps).toEqual(["booked", "assigned", "collected", "on_hold", "out_for_delivery"]);
+    expect(JSON.stringify(view)).not.toContain("Gate code needed");
+
+    // The note is kept, though — on the event, where staff and the customer's own email read
+    // it from.
+    const events = await h.db.db
+      .select()
+      .from(shipmentEventsTable)
+      .where(eq(shipmentEventsTable.shipmentId, id));
+    expect(events.map((e) => `${e.status}:${e.note}`)).toContain("on_hold:Gate code needed");
+    expect(events.map((e) => `${e.status}:${e.note}`)).toContain(
+      "out_for_delivery:Out for delivery",
+    );
+  });
+
+  it("will not let a driver touch a shipment that is not theirs", async () => {
+    const b = await book("on_demand");
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY })
+      .expect(201);
+    // Assigned to nobody, so not to this driver either.
+    const res = await h
+      .http()
+      .post("/v1/driver/status")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, status: "out_for_delivery" });
+    expect(res.status).toBe(403);
+    expect(res.body.message).toContain("not assigned to you");
   });
 
   it("has nowhere to put an odometer reading from a driver nobody rostered, and says so", async () => {

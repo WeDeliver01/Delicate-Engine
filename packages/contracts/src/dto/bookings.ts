@@ -82,11 +82,39 @@ export const SHIPMENT_TRANSITIONS: Record<ShipmentStatus, readonly ShipmentStatu
   cancelled: [],
 };
 
+/**
+ * Which statuses a shipment can be in and still reach `to`.
+ *
+ * Derived from `SHIPMENT_TRANSITIONS` rather than written out again, so a transition added in
+ * one place cannot be forgotten in the other. Used to tell a driver what is wrong when a status
+ * change is refused: "shipment is delivered" is worth more than "invalid transition".
+ */
+export function statusesThatCanBecome(to: ShipmentStatus): ShipmentStatus[] {
+  return (Object.keys(SHIPMENT_TRANSITIONS) as ShipmentStatus[]).filter((from) =>
+    SHIPMENT_TRANSITIONS[from].includes(to),
+  );
+}
+
 /** A shipment whose journey is over, one way or another. Nothing more will happen to it. */
 export const SHIPMENT_TERMINAL: readonly ShipmentStatus[] = [
   "delivered",
   "returned_to_sender",
   "cancelled",
+];
+
+/**
+ * The parcel is in the driver's keeping: picked up, not yet handed over.
+ *
+ * These are the statuses a delivery or a failed attempt can be recorded from. Named once
+ * because it was written out twice as `["collected", "in_transit"]`, and adding
+ * `out_for_delivery` to the journey without touching both copies made the ordinary path
+ * undeliverable — the driver marked a parcel out for delivery and the engine then refused to
+ * accept the delivery.
+ */
+export const IN_DRIVER_HANDS: readonly ShipmentStatus[] = [
+  "collected",
+  "in_transit",
+  "out_for_delivery",
 ];
 
 /**

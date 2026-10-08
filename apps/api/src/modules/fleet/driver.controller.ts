@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   CollectRequest,
   DeliverRequest,
+  DriverStatusRequest,
   FailRequest,
   FuelLogRequest,
   LocationPing,
@@ -68,6 +69,12 @@ export class DriverController {
   @Post("collect")
   collect(@CurrentDriver() d: Driver, @Body(CollectRequest) body: z.infer<typeof CollectRequest>) {
     return this.dispatch.collect(d, body.bookingId, body.location, body.note);
+  }
+
+  /** Move a shipment along: on its way, held up, out for delivery. */
+  @Post("status")
+  setStatus(@CurrentDriver() d: Driver, @Body(DriverStatusRequest) body: DriverStatusRequest) {
+    return this.dispatch.setStatus(d, body);
   }
 
   @Post("deliver")

@@ -4,6 +4,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { formatCents, formatOperatingDateTime } from "@delicate/contracts";
 import {
   accounts,
+  assignments,
   drivers,
   memberships,
   packageTypes,
@@ -134,17 +135,52 @@ export class NotificationModule implements OnModuleInit {
             dedupeKey: `shipment:${shipmentId}:collected`,
             payload: { ...ctx.payload, driverName },
           });
+        }
+      });
+    });
+
+    /**
+     * The driver moved it along, and the people waiting are told.
+     *
+     * Out for delivery used to be announced the moment a booking was collected, which was a
+     * guess: a parcel collected at nine in a van doing twelve drops is not on its way to the
+     * twelfth recipient. Now the driver says when it is true of a particular parcel, and this
+     * is what tells the person waiting. That is also the point the driver's position becomes
+     * visible, so the message and the map start saying the same thing at the same moment.
+     */
+    this.registry.register("shipment.status_changed", async (e) => {
+      const to = e.payload.to;
+      if (to !== "out_for_delivery" && to !== "on_hold" && to !== "returned_to_sender") return;
+      await this.dbs.transaction(async (tx) => {
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        if (!ctx) return;
+        if (to === "out_for_delivery") {
           // The person waiting for a cake is the one who most needs to know it is coming.
           await this.notifications.enqueue(tx, {
             kind: "shipment.out_for_delivery",
             audience: "recipient",
             to: ctx.recipientPhone,
             accountId: ctx.accountId,
-            shipmentId,
-            dedupeKey: `shipment:${shipmentId}:out_for_delivery`,
-            payload: { ...ctx.payload, driverName },
+            shipmentId: e.payload.shipmentId,
+            dedupeKey: `shipment:${e.payload.shipmentId}:out_for_delivery`,
+            payload: { ...ctx.payload, driverName: await this.driverFor(tx, e.payload.shipmentId) },
           });
+          return;
         }
+        // On hold and returned both go to the customer, not the recipient: these are about
+        // what the business is doing with their parcel, and the person waiting for it cannot
+        // act on either.
+        await this.notifications.enqueue(tx, {
+          kind: to === "on_hold" ? "shipment.on_hold" : "shipment.returned_to_sender",
+          audience: "customer",
+          to: ctx.accountEmail,
+          accountId: ctx.accountId,
+          shipmentId: e.payload.shipmentId,
+          // The note is part of the key: a parcel can go on hold twice in a day for different
+          // reasons, and the second reason is news.
+          dedupeKey: `shipment:${e.payload.shipmentId}:${to}:${e.payload.note ?? ""}`,
+          payload: { ...ctx.payload, reasonText: e.payload.note ?? "" },
+        });
       });
     });
 
@@ -566,6 +602,23 @@ export class NotificationModule implements OnModuleInit {
 
   private async driverName(tx: DbExecutor, driverId: string): Promise<string> {
     const row = await tx.query.drivers.findFirst({ where: eq(drivers.id, driverId) });
+    return row?.fullName ?? "Your driver";
+  }
+
+  /**
+   * Who is carrying this shipment, from its live assignment.
+   *
+   * A status change says nothing about who made it, so the driver is looked up rather than
+   * taken from the event. Falls back to "Your driver" rather than leaving the recipient a
+   * message with a hole in it.
+   */
+  private async driverFor(tx: DbExecutor, shipmentId: string): Promise<string> {
+    const [row] = await tx
+      .select({ fullName: drivers.fullName })
+      .from(assignments)
+      .innerJoin(drivers, eq(drivers.id, assignments.driverId))
+      .where(and(eq(assignments.shipmentId, shipmentId), eq(assignments.active, true)))
+      .limit(1);
     return row?.fullName ?? "Your driver";
   }
 

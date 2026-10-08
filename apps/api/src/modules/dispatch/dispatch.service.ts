@@ -11,8 +11,17 @@ import {
   Shipment,
   ShipmentStatus,
   TripSheet,
+  DriverStatusRequest,
 } from "@delicate/contracts";
-import { dayProgress, optimiseRoute, stopIsDone } from "@delicate/contracts";
+import {
+  dayProgress,
+  optimiseRoute,
+  statusesThatCanBecome,
+  stopIsDone,
+  IN_DRIVER_HANDS,
+  SHIPMENT_STATUS_LABELS,
+  DRIVER_SETTABLE_STATUSES,
+} from "@delicate/contracts";
 import {
   assignments,
   bookings,
@@ -38,6 +47,19 @@ import { BookingService, toShipment } from "../bookings/booking.service.js";
  * The driver-facing workflow. Every action is a transaction that changes the shipment state,
  * appends an event, stores evidence and — on delivery/failure — settles the money.
  */
+/**
+ * What goes in the timeline when the driver does not type a note.
+ *
+ * The timeline is read by customers chasing a parcel, so each one says what happened in the
+ * words someone outside the company would use.
+ */
+const STATUS_NOTES: Partial<Record<ShipmentStatus, string>> = {
+  collected: "Collected by the driver",
+  in_transit: "On its way",
+  out_for_delivery: "Out for delivery",
+  on_hold: "Held — we will be in touch",
+};
+
 @Injectable()
 export class DispatchService {
   constructor(
@@ -312,10 +334,7 @@ export class DispatchService {
       ]);
     }
     return this.dbs.transaction(async (tx) => {
-      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [
-        "collected",
-        "in_transit",
-      ]);
+      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [...IN_DRIVER_HANDS]);
       const signatureFileId = input.signatureDataUrl
         ? await this.fleet.storeDataUrl(tx, "pod_signature", input.signatureDataUrl)
         : null;
@@ -373,10 +392,7 @@ export class DispatchService {
   async fail(driver: Driver, input: FailRequest): Promise<Shipment> {
     const shift = await this.rosteredShift(driver);
     return this.dbs.transaction(async (tx) => {
-      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [
-        "collected",
-        "in_transit",
-      ]);
+      const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [...IN_DRIVER_HANDS]);
       const photoFileId = input.photoDataUrl
         ? await this.fleet.storeDataUrl(tx, "fail_photo", input.photoDataUrl)
         : null;
@@ -459,6 +475,54 @@ export class DispatchService {
       where: eq(proofsOfDelivery.shipmentId, shipmentId),
     });
     return { signatureFileId: row?.signatureFileId ?? null, photoFileId: row?.photoFileId ?? null };
+  }
+
+  /**
+   * The driver moves a shipment along their own tracking statuses.
+   *
+   * `collected` has its own endpoint because it covers a whole booking at once — a driver loads
+   * every parcel for a pickup into the van together. This is the per-shipment one, for the
+   * steps after that: on the way, held up, out for delivery.
+   *
+   * What the driver may set is checked here against `DRIVER_SETTABLE_STATUSES` and not taken
+   * from what the app offered. The app is on a phone in somebody else's hand, and an endpoint
+   * that trusts its own UI is not an endpoint, it is a suggestion. `delivered` is refused for
+   * the same reason it is absent from the driver's menu: it goes through the proof-of-delivery
+   * flow, which takes a name and a photograph.
+   */
+  async setStatus(driver: Driver, input: DriverStatusRequest): Promise<Shipment> {
+    if (!DRIVER_SETTABLE_STATUSES.includes(input.status)) {
+      throw AppError.forbidden(
+        input.status === "delivered"
+          ? "a delivery needs proof: use the delivery screen, which takes a name and a photo"
+          : `a driver cannot set a shipment to ${input.status}`,
+        { allowed: DRIVER_SETTABLE_STATUSES },
+      );
+    }
+    const shift = await this.rosteredShift(driver);
+    return this.dbs.transaction(async (tx) => {
+      const { s } = await this.ownedShipment(
+        tx,
+        driver,
+        input.shipmentId,
+        // Derived from the transition table, so the refusal can say what state the shipment is
+        // actually in rather than only that the move was not allowed.
+        statusesThatCanBecome(input.status),
+      );
+      const note = input.note ?? STATUS_NOTES[input.status] ?? SHIPMENT_STATUS_LABELS[input.status];
+      await this.transition(tx, s, input.status, note, {
+        location: input.location,
+      });
+      if (input.location)
+        await this.fleet.recordPosition(tx, driver.id, shift?.id ?? null, {
+          location: input.location,
+          accuracyM: null,
+          speedKmh: null,
+          recordedAt: new Date().toISOString(),
+        });
+      const [after] = await tx.select().from(shipments).where(eq(shipments.id, s.id));
+      return toShipment(after!);
+    });
   }
 
   // ── internals ───────────────────────────────────────────────────────────────
