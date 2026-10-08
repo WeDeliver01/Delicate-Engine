@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useMe } from "@/components/use-me";
+import { ActingAsBanner } from "@/components/shell/acting-as-banner";
 import { signOut } from "@/lib/session";
 import { AppShell, IdentityFooter, type NavSection } from "@/components/shell/app-shell";
 
@@ -94,6 +95,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         />
       }
     >
+      {me.data.actingAs && <ActingAsBanner account={me.data.actingAs} />}
       {children}
     </AppShell>
   );

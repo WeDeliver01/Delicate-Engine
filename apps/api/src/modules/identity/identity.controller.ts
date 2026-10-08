@@ -26,7 +26,7 @@ export class IdentityController {
 
   @Get("me")
   me(@CurrentPrincipal() p: Principal) {
-    return this.identity.me(requireUser(p));
+    return this.identity.me(requireUser(p), p.account?.impersonating ? p.account.id : null);
   }
 
   @Patch("me")
