@@ -132,7 +132,14 @@ describe("dispatch board", () => {
     (await h.http().get(`/v1/admin/dispatch/board?date=${TODAY}`).set(asDispatcher()))
       .body as DispatchBoard;
 
-  const openShift = async () => {
+  /**
+   * Roster the driver for the day and put their van on the map.
+   *
+   * The position used to arrive as a side effect of the driver starting a shift. They no
+   * longer start one, so it comes from where it comes from in life: the app reporting its
+   * location while the driver drives.
+   */
+  const rosterDriver = async () => {
     await h
       .http()
       .post("/v1/admin/fleet/shifts")
@@ -141,10 +148,10 @@ describe("dispatch board", () => {
       .expect(201);
     await h
       .http()
-      .post("/v1/driver/shift/start")
+      .post("/v1/driver/location")
       .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
-      .expect(201);
+      .send({ pings: [{ location: MENLYN, recordedAt: new Date().toISOString() }] })
+      .expect(202);
   };
 
   it("shows on-demand work on today's board even though it has no slot date", async () => {
@@ -175,7 +182,7 @@ describe("dispatch board", () => {
 
   it("moves a card from unassigned to assigned, then to going-to-collect once the trip starts", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
 
     // Assigned, but nobody has handed the driver a day.
     await h
@@ -227,7 +234,7 @@ describe("dispatch board", () => {
 
   it("calls a shipment out for delivery only when the driver is actually on its drop", async () => {
     const b = await book(2);
-    await openShift();
+    await rosterDriver();
     const trip = (
       await h
         .http()
@@ -279,7 +286,7 @@ describe("dispatch board", () => {
 
   it("flags a stop as behind schedule once its window has closed on a started trip", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
     const trip = (
       await h
         .http()
@@ -332,7 +339,7 @@ describe("dispatch board", () => {
 
   it("keeps a late shipment in the lane it is actually in rather than binning it as an exception", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
     await h
       .http()
       .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/assign`)
@@ -358,7 +365,7 @@ describe("dispatch board", () => {
       tripId: null,
     });
 
-    await openShift();
+    await rosterDriver();
     const trip = (
       await h
         .http()
@@ -401,7 +408,7 @@ describe("dispatch board", () => {
 
   it("recommends a driver with a reason a dispatcher can read", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
     const recs = (
       await h
         .http()
@@ -416,7 +423,7 @@ describe("dispatch board", () => {
 
   it("puts a shipment on a driver's day in one move, making the trip when they have none", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
     const res = await h
       .http()
       .post("/v1/admin/dispatch/board/assign")
@@ -443,7 +450,7 @@ describe("dispatch board", () => {
   it("plans the whole day across drivers, and changes nothing until it is applied", async () => {
     const a = await book(2);
     const bb = await book(1);
-    await openShift();
+    await rosterDriver();
     const second = (
       await h.http().post("/v1/admin/fleet/drivers").set(asDispatcher()).send({
         email: "thabo@delicatecourier.local",
@@ -484,7 +491,7 @@ describe("dispatch board", () => {
 
   it("applies a plan into trips and leaves them unreleased for a dispatcher to sign off", async () => {
     const a = await book(2);
-    await openShift();
+    await rosterDriver();
     const applied = (
       await h
         .http()
@@ -517,7 +524,7 @@ describe("dispatch board", () => {
 
   it("keeps a customer's work off a vehicle class they will not accept", async () => {
     const b = await book(1);
-    await openShift();
+    await rosterDriver();
     // The driver's van is a hatchback; this customer insists on a cargo vehicle.
     const vehicles = (await h.http().get("/v1/admin/fleet/vehicles").set(asDispatcher())).body as {
       id: string;
@@ -552,7 +559,7 @@ describe("dispatch board", () => {
 
   it("projects arrivals from where the van is, and says which windows will be missed", async () => {
     const b = await book(2);
-    await openShift();
+    await rosterDriver();
     const trip = (
       await h
         .http()
@@ -632,7 +639,7 @@ describe("dispatch board", () => {
   });
 
   it("says nothing at all about a day that is going fine", async () => {
-    await openShift();
+    await rosterDriver();
     const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
       .body as LiveOperations;
     // No work, nobody late, nothing unassigned: an empty list beats a reassuring one.
@@ -642,7 +649,7 @@ describe("dispatch board", () => {
 
   it("names the idle driver when work has nobody on it", async () => {
     await book(1);
-    await openShift();
+    await rosterDriver();
     const live = (await h.http().get("/v1/admin/dispatch/live").set(asDispatcher()))
       .body as LiveOperations;
     expect(live.unassignedCount).toBe(1);

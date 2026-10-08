@@ -21,7 +21,7 @@ expensive mistake available here, so this table is the starting point for the wh
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | Shipment queue                    | **Built.** `/v1/admin/shipment-search`, `/shipment-counts`, filter bar + table shared with the portal.                      |
 | Driver management                 | **Built.** `drivers`, `vehicles` (+ CRUD at `/v1/admin/drivers`, `/vehicles`).                                              |
-| Driver availability               | **Built.** `shifts` (scheduled · open · closed), one row per driver per date, odometer and fuel readings.                   |
+| Driver availability               | **Built.** `shifts` — a roster dispatch sets, one row per driver per date, carrying the day's odometer and fuel readings.   |
 | Assignment                        | **Built.** `AssignmentService`: auto-assign on `booking.confirmed`, dispatcher override, history kept, forecast written.    |
 | Trip sheets                       | **Not built.** This is the real gap — see §3.                                                                               |
 | Trip status                       | **Not built.** Follows from the trip not existing.                                                                          |

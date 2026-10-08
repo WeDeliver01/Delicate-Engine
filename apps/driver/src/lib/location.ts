@@ -48,7 +48,7 @@ export async function startTracking(): Promise<void> {
     showsBackgroundLocationIndicator: false,
     foregroundService: {
       notificationTitle: "Delicate Courier",
-      notificationBody: "Recording your route while you are on shift",
+      notificationBody: "Recording your route while you have stops to work",
       notificationColor: "#E84A8A",
     },
   });

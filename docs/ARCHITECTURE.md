@@ -35,7 +35,7 @@ Decisions taken with Ashley (2026-09-19):
 | Customers      | Businesses **and** individuals. A business can own **several accounts** and users toggle between them freely.                                                    |
 | Payments       | **Prepaid wallet + postpaid monthly account** (credit limit + statement). Providers: **PayFast, Yoco, BobPay, manual EFT** behind one adapter.                   |
 | Pricing        | **Admin-configurable rate-card engine**: zone tables and/or per-km rates, package types, service levels, surcharges, minimums.                                   |
-| Scheduling     | **Service levels + daily slots with capacity** derived from drivers on shift; cut-offs; blackouts.                                                               |
+| Scheduling     | **Service levels + daily slots with capacity** derived from rostered drivers; cut-offs; blackouts.                                                               |
 | Assignment     | **Auto-assign on confirmation, dispatcher can override.**                                                                                                        |
 | Driver pay     | **Per-delivery earning**; **fuel loaded to the driver's fuel card via PayCentral** (paycentral.co.za). Treasury computes delivery cost + earning per assignment. |
 | Money controls | **Always propose, human executes.** The engine never moves real money on its own.                                                                                |
@@ -112,7 +112,7 @@ _archive/     original zips
 
 - `slot_policies` (operating days, windows, default capacity, cut-off minutes),
   `delivery_slots` (date × window; capacity, booked_count, status), `blackout_dates`.
-- Capacity can be **derived from drivers on shift** (sum of per-driver stop capacity) or set
+- Capacity can be **derived from rostered drivers** (sum of per-driver stop capacity) or set
   manually. Slot rows are locked in the booking transaction; two clients cannot both take the
   last space.
 
@@ -129,11 +129,11 @@ _archive/     original zips
 - `drivers` (linked to a user, vehicle, fuel card ref, status), `vehicles`, `shifts`
   (start/end with odometer + fuel readings), `assignments` (shipment ↔ driver, sequence,
   planned km), `driver_locations` (latest + history, sampled).
-- **Auto-assign** on booking confirmation: candidates = drivers on shift (or scheduled) for the
+- **Auto-assign** on booking confirmation: candidates = drivers rostered for the
   slot with remaining capacity; score = proximity to collection + current load + zone
   familiarity; best wins; emits `ShipmentAssigned`. Dispatcher override re-emits
   `DriverReassigned`. Stop ordering: nearest-neighbour + time windows now; full optimizer later.
-- Driver app API: today's stops, start/end shift, arrive/collect/deliver/fail with evidence,
+- Driver app API: today's stops, arrive/collect/deliver/fail with evidence, optional odometer reading,
   log fuel, location pings.
 
 ### 3.6 Wallet & Billing
@@ -220,7 +220,7 @@ rejected | failed`). The engine only ever creates proposals; a `finance` user ap
    waybill; write `BookingConfirmed` to outbox. Else reject with reason (402 / 409).
 4. Worker: `BookingConfirmed` → auto-assign → `ShipmentAssigned` (forecast settlement at planned
    km; fuel reserve estimate) → notify driver (push) and customer (email/WhatsApp).
-5. Driver app: start shift (odometer/fuel), navigate stops, collect → deliver with POD.
+5. Driver app: today's stops appear as dispatch assigns them, navigate, collect → deliver with POD.
    Actual km from odometer/GPS track.
 6. `DeliveryCompleted` → settlement journal (revenue, fuel, earning, margin), hold → charge
    (wallet entry or receivable for postpaid), loyalty cashback, `SettlementPosted`.

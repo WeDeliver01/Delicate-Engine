@@ -173,12 +173,6 @@ describe("notifications", () => {
       .expect(201);
     await h
       .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 900, fuelPct: 80, location: MENLYN })
-      .expect(201);
-    await h
-      .http()
       .post("/v1/driver/collect")
       .set(asDriver())
       .send({ bookingId: b.id, location: MENLYN })
@@ -301,11 +295,6 @@ describe("notifications", () => {
       .http()
       .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
       .set(asStaff());
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 900, fuelPct: 80, location: MENLYN });
     await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id });
     await h.dispatcher.tick();
 

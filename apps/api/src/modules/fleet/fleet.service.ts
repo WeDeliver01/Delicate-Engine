@@ -3,13 +3,12 @@ import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import type {
   Driver,
   DriverPosition,
-  EndShiftRequest,
   FuelLog,
   FuelLogRequest,
   LatLng,
   LocationPing,
   Shift,
-  StartShiftRequest,
+  OdometerReadingRequest,
   UpsertDriverRequest,
   UpsertVehicleRequest,
   Vehicle,
@@ -180,33 +179,51 @@ export class FleetService {
     return toLocal(this.clock.now(), tz).date;
   }
 
-  async startShift(driver: Driver, input: StartShiftRequest): Promise<Shift> {
+  /**
+   * Record an odometer (and optionally fuel) reading against the driver's rostered shift.
+   *
+   * There is no clocking on. A driver is rostered by dispatch and their work appears; nothing
+   * they do is gated on having pressed a button first, because a driver standing at a
+   * collection with a van full of cake should not be told to go and find their odometer.
+   *
+   * The first reading of the day becomes the opening one and every later reading replaces the
+   * closing one, so the pair still spans the day's running. A driver who logs once has an
+   * opening reading and no closing one, which is the truth: we know where they started and not
+   * where they stopped.
+   *
+   * Returns null when the driver is not rostered for today — there is no shift for the reading
+   * to belong to, and inventing one would put a driver on the board that dispatch never put
+   * there.
+   */
+  async recordOdometer(driver: Driver, input: OdometerReadingRequest): Promise<Shift | null> {
     const date = await this.localDate();
     return this.dbs.transaction(async (tx) => {
-      await tx
-        .insert(shifts)
-        .values({ driverId: driver.id, date, vehicleId: input.vehicleId ?? driver.vehicleId })
-        .onConflictDoNothing();
       const [row] = await tx
         .select()
         .from(shifts)
         .where(and(eq(shifts.driverId, driver.id), eq(shifts.date, date)))
         .for("update");
-      if (row!.status === "open") return toShift(row!);
-      if (row!.status === "closed")
-        throw AppError.conflict("shift_closed", "today's shift has already been closed");
+      if (!row) return null;
+
+      const opening = row.startOdometerKm == null;
       const [updated] = await tx
         .update(shifts)
-        .set({
-          status: "open",
-          startedAt: new Date(),
-          startOdometerKm: String(input.odometerKm),
-          startFuelPct: input.fuelPct,
-          startLocation: input.location,
-          vehicleId: input.vehicleId ?? row!.vehicleId,
-        })
-        .where(eq(shifts.id, row!.id))
+        .set(
+          opening
+            ? {
+                startOdometerKm: String(input.odometerKm),
+                startFuelPct: input.fuelPct,
+                startLocation: input.location,
+              }
+            : {
+                endOdometerKm: String(input.odometerKm),
+                endFuelPct: input.fuelPct,
+                endLocation: input.location,
+              },
+        )
+        .where(eq(shifts.id, row.id))
         .returning();
+
       if (input.location)
         await this.recordPosition(tx, driver.id, updated!.id, {
           location: input.location,
@@ -214,53 +231,28 @@ export class FleetService {
           speedKmh: null,
           recordedAt: new Date().toISOString(),
         });
-      await this.outbox.emit(
-        tx,
-        "shift.started",
-        { shiftId: updated!.id, driverId: driver.id, date, odometerKm: input.odometerKm },
-        { dedupeKey: `shift:${updated!.id}:started` },
-      );
-      return toShift(updated!);
-    });
-  }
 
-  async endShift(driver: Driver, input: EndShiftRequest): Promise<Shift> {
-    const date = await this.localDate();
-    return this.dbs.transaction(async (tx) => {
-      const [row] = await tx
-        .select()
-        .from(shifts)
-        .where(and(eq(shifts.driverId, driver.id), eq(shifts.date, date)))
-        .for("update");
-      if (!row || row.status !== "open")
-        throw AppError.conflict("shift_not_open", "no open shift to end");
-      const start = Number(row.startOdometerKm ?? 0);
-      if (input.odometerKm < start)
-        throw AppError.validation([
-          { path: ["odometerKm"], message: `cannot be below the start reading (${start})` },
-        ]);
-      const [updated] = await tx
-        .update(shifts)
-        .set({
-          status: "closed",
-          endedAt: new Date(),
-          endOdometerKm: String(input.odometerKm),
-          endFuelPct: input.fuelPct,
-          endLocation: input.location,
-        })
-        .where(eq(shifts.id, row.id))
-        .returning();
       await this.outbox.emit(
         tx,
-        "shift.ended",
+        opening ? "shift.started" : "shift.ended",
+        opening
+          ? { shiftId: updated!.id, driverId: driver.id, date, odometerKm: input.odometerKm }
+          : {
+              shiftId: updated!.id,
+              driverId: driver.id,
+              date,
+              odometerKm: input.odometerKm,
+              distanceKm:
+                Math.round((input.odometerKm - Number(row.startOdometerKm ?? 0)) * 10) / 10,
+            },
+        // A driver may log a closing reading more than once in a day — after the last drop,
+        // then again back at the depot. The key carries the reading so a corrected figure is a
+        // new event rather than one silently swallowed as a duplicate.
         {
-          shiftId: row.id,
-          driverId: driver.id,
-          date,
-          odometerKm: input.odometerKm,
-          distanceKm: Math.round((input.odometerKm - start) * 10) / 10,
+          dedupeKey: opening
+            ? `shift:${updated!.id}:started`
+            : `shift:${updated!.id}:ended:${input.odometerKm}`,
         },
-        { dedupeKey: `shift:${row.id}:ended` },
       );
       return toShift(updated!);
     });
@@ -303,12 +295,28 @@ export class FleetService {
     });
   }
 
+  /**
+   * Record a batch of positions, and let the first of the day open the roster row.
+   *
+   * Drivers do not clock on, so nothing else can say when a day's work actually began. The
+   * first position the app reports is the honest answer — the van is moving — and it is one
+   * nobody has to remember to give. Without it `startedAt` would never be set and the live
+   * board's "on the road since" would be permanently blank.
+   */
   async ping(driver: Driver, pings: LocationPing[]): Promise<void> {
     const date = await this.localDate();
     await this.dbs.transaction(async (tx) => {
       const shift = await this.shiftFor(driver.id, date, tx);
       // Keep the newest as the live position; store all for the trail.
       const sorted = [...pings].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
+      const first = sorted[0];
+      if (shift && shift.status === "scheduled" && first) {
+        await tx
+          .update(shifts)
+          .set({ status: "open", startedAt: new Date(first.recordedAt) })
+          .where(and(eq(shifts.id, shift.id), eq(shifts.status, "scheduled")));
+        shift.status = "open";
+      }
       for (const p of sorted)
         await this.recordPosition(tx, driver.id, shift?.status === "open" ? shift.id : null, p);
     });
@@ -330,7 +338,9 @@ export class FleetService {
       driverId: r.driverId,
       location: r.location as LatLng,
       recordedAt: r.recordedAt.toISOString(),
-      onShift: r.shiftStatus === "open",
+      // Rostered for today and not stood down. It cannot mean "has an open shift" any more:
+      // nothing opens one, because drivers no longer clock on.
+      onShift: r.shiftStatus != null && r.shiftStatus !== "closed",
     }));
   }
 

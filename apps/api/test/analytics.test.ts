@@ -149,11 +149,6 @@ describe("reports and exports", () => {
       .expect(201);
     await h
       .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 600, fuelPct: 80, location: MENLYN });
-    await h
-      .http()
       .post("/v1/driver/collect")
       .set(asDriver())
       .send({ bookingId: booking.id, location: MENLYN })

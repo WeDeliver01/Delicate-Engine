@@ -147,11 +147,6 @@ describe("invoices, credit notes and statements", () => {
     }
     await h
       .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 800, fuelPct: 90, location: MENLYN });
-    await h
-      .http()
       .post("/v1/driver/collect")
       .set(asDriver())
       .send({ bookingId: booking.id, location: MENLYN })

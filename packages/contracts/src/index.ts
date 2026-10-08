@@ -13,6 +13,7 @@ export * from "./dto/slots.js";
 export * from "./dto/bookings.js";
 export * from "./dto/fleet.js";
 export * from "./dto/dispatch.js";
+export * from "./driver-day.js";
 export * from "./dto/ledger.js";
 export * from "./dto/treasury.js";
 export * from "./dto/payments.js";

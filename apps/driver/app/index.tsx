@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Modal,
@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DriverDay, DriverStop, Shift } from "@delicate/contracts";
+import type { DriverDay, DriverStop, Shift, StopTally } from "@delicate/contracts";
 import { api, ApiRequestError } from "../src/lib/api";
 import { signOut } from "../src/lib/auth";
 import {
@@ -28,13 +28,28 @@ interface Me {
   owedFuelCents: number;
 }
 
-/** The driver's day: shift control at the top, then the stops in order. */
+type Tab = "all" | "collections" | "deliveries";
+
+const TABS: { key: Tab; label: string; of: (p: DriverDay["progress"]) => StopTally }[] = [
+  { key: "all", label: "All", of: (p) => p.all },
+  { key: "collections", label: "Collect", of: (p) => p.collections },
+  { key: "deliveries", label: "Deliver", of: (p) => p.deliveries },
+];
+
+/**
+ * The driver's day.
+ *
+ * There is nothing to start. Dispatch rosters the driver and assigns the work; it appears here
+ * and they get on with it. The screen's only job is to answer three questions without being
+ * asked: what is next, how much is left, and am I finished.
+ */
 export default function Today() {
   const qc = useQueryClient();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("all");
   const [odometer, setOdometer] = useState("");
-  const [ending, setEnding] = useState(false);
+  const [logging, setLogging] = useState(false);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => api<Me>("/v1/driver/me") });
   const day = useQuery({
@@ -42,51 +57,28 @@ export default function Today() {
     queryFn: () => api<DriverDay>("/v1/driver/day"),
     refetchInterval: 60_000,
   });
+
+  // Tracking follows having work, not having pressed anything — there is no longer a Start to
+  // hang it on. Keyed on whether anything is outstanding, so the trail runs while there are
+  // stops left and stops when the day is cleared, and the permission prompt arrives when the
+  // driver can see the work it is being asked for.
+  const outstanding = day.data?.progress.all.outstanding ?? 0;
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (outstanding > 0) {
+        const perms = await requestPermissions();
+        if (!cancelled && perms.background) await startTracking();
+      } else if (day.isSuccess) {
+        await stopTracking();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [outstanding, day.isSuccess]);
   const invalidate = () => qc.invalidateQueries();
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
-
-  const startShift = useMutation({
-    mutationFn: async () => {
-      const perms = await requestPermissions();
-      if (!perms.foreground)
-        throw new ApiRequestError({
-          statusCode: 0,
-          code: "no_permission",
-          message: "Location permission is needed to work a shift.",
-        });
-      const location = await currentPosition();
-      const shift = await api<Shift>("/v1/driver/shift/start", {
-        method: "POST",
-        json: { odometerKm: Number(odometer), location },
-      });
-      if (perms.background) await startTracking();
-      return shift;
-    },
-    onSuccess: () => {
-      setOdometer("");
-      setError(null);
-      invalidate();
-    },
-    onError,
-  });
-
-  const endShift = useMutation({
-    mutationFn: async () => {
-      const location = await currentPosition();
-      await stopTracking();
-      return api<Shift>("/v1/driver/shift/end", {
-        method: "POST",
-        json: { odometerKm: Number(odometer), location },
-      });
-    },
-    onSuccess: () => {
-      setOdometer("");
-      setEnding(false);
-      setError(null);
-      invalidate();
-    },
-    onError,
-  });
 
   const collect = useMutation({
     mutationFn: async (bookingId: string) =>
@@ -98,12 +90,34 @@ export default function Today() {
     onError,
   });
 
+  const logOdometer = useMutation({
+    mutationFn: async () =>
+      api<Shift | null>("/v1/driver/odometer", {
+        method: "POST",
+        json: { odometerKm: Number(odometer), location: await currentPosition() },
+      }),
+    onSuccess: (shift) => {
+      setOdometer("");
+      setLogging(false);
+      setError(
+        shift
+          ? null
+          : "Saved nothing: you are not on today's roster, so there was no day to record it against.",
+      );
+      invalidate();
+    },
+    onError,
+  });
+
   if (me.isLoading || day.isLoading) return <Loading />;
   if (me.error) return <ErrorNote message={(me.error as Error).message} />;
 
-  const shift = day.data?.shift ?? null;
-  const open = shift?.status === "open";
+  const progress = day.data?.progress;
   const stops = day.data?.stops ?? [];
+  const shown =
+    tab === "all"
+      ? stops
+      : stops.filter((x) => (tab === "collections") === (x.kind === "collection"));
 
   return (
     <ScrollView
@@ -123,85 +137,76 @@ export default function Today() {
             <Text style={s.label}>{day.data?.date}</Text>
             <Text style={s.h2}>{me.data?.driver.fullName}</Text>
           </View>
-          <Badge
-            label={open ? "On shift" : shift?.status === "closed" ? "Shift closed" : "Off shift"}
-            tone={open ? "good" : "neutral"}
+          {progress && progress.all.total > 0 && (
+            <Badge
+              label={progress.allDone ? "All done" : `${progress.all.outstanding} to go`}
+              tone={progress.allDone ? "good" : "neutral"}
+            />
+          )}
+        </View>
+        <View style={{ marginTop: 14, flexDirection: "row", gap: 10 }}>
+          <Button
+            label="Log fuel"
+            variant="secondary"
+            onPress={() => router.push("/fuel")}
+            style={{ flex: 1 }}
+          />
+          <Button
+            label="Odometer"
+            variant="secondary"
+            onPress={() => setLogging(true)}
+            style={{ flex: 1 }}
           />
         </View>
-
-        {!open && shift?.status !== "closed" && (
-          <View style={{ marginTop: 14, gap: 10 }}>
-            <Text style={s.body}>Enter your odometer reading to start.</Text>
-            <TextInput
-              value={odometer}
-              onChangeText={setOdometer}
-              placeholder="Odometer (km)"
-              placeholderTextColor={C.muted}
-              keyboardType="decimal-pad"
-              style={s.input}
-            />
-            <Button
-              label="Start shift"
-              onPress={() => startShift.mutate()}
-              busy={startShift.isPending}
-              disabled={!odometer}
-            />
-          </View>
-        )}
-
-        {open && (
-          <View style={{ marginTop: 14, gap: 10 }}>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <Button
-                label="Log fuel"
-                variant="secondary"
-                onPress={() => router.push("/fuel")}
-                style={{ flex: 1 }}
-              />
-              <Button
-                label="End shift"
-                variant="danger"
-                onPress={() => setEnding(true)}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
-        )}
-        {shift?.status === "closed" && (
-          <Text style={[s.body, { marginTop: 10 }]}>Shift closed. See you tomorrow.</Text>
-        )}
       </Card>
 
       {error && <ErrorNote message={error} />}
 
+      {progress?.allDone && (
+        <Card style={{ backgroundColor: C.greenSoft, borderColor: C.green }}>
+          <Text style={[s.h2, { color: C.green }]}>All done for today</Text>
+          <Text style={[s.body, { marginTop: 6 }]}>
+            {progress.deliveries.done} delivered, {progress.collections.done} collected. If dispatch
+            adds anything else it will appear here — the list refreshes on its own.
+          </Text>
+        </Card>
+      )}
+
       {stops.length === 0 ? (
         <Card>
-          <Text style={s.h2}>No stops yet</Text>
+          <Text style={s.h2}>Nothing assigned yet</Text>
           <Text style={[s.body, { marginTop: 6 }]}>
-            {open
-              ? "Dispatch will assign work as bookings come in. Pull down to refresh."
-              : "Start your shift to receive work."}
+            Dispatch will send work as bookings come in. Pull down to refresh.
           </Text>
         </Card>
       ) : (
         <>
-          {day.data?.route && day.data.route.savedKm > 0 && (
+          <Tabs progress={progress!} active={tab} onChange={setTab} />
+          {day.data?.route && day.data.route.savedKm > 0 && !progress?.allDone && (
             <Card>
               <Text style={s.body}>
-                {stops.length} stops · about {day.data.route.totalKm} km, ordered to save{" "}
-                {day.data.route.savedKm} km on the run.
+                {progress!.all.outstanding} left · about {day.data.route.totalKm} km, ordered to
+                save {day.data.route.savedKm} km on the run.
               </Text>
             </Card>
           )}
-          {stops.map((stop, i) => (
-            <StopCard
-              key={`${stop.kind}-${stop.shipmentId ?? stop.bookingId}-${i}`}
-              stop={stop}
-              disabled={!open}
-              onCollect={() => collect.mutate(stop.bookingId)}
-              busy={collect.isPending}
-            />
-          ))}
+          {shown.length === 0 ? (
+            <Card>
+              <Text style={s.body}>
+                Nothing in this list. Try <Text style={{ fontWeight: "700" }}>All</Text> to see the
+                rest of the day.
+              </Text>
+            </Card>
+          ) : (
+            shown.map((stop, i) => (
+              <StopCard
+                key={`${stop.kind}-${stop.shipmentId ?? stop.bookingId}-${i}`}
+                stop={stop}
+                onCollect={() => collect.mutate(stop.bookingId)}
+                busy={collect.isPending}
+              />
+            ))
+          )}
         </>
       )}
 
@@ -239,10 +244,10 @@ export default function Today() {
       />
 
       <Modal
-        visible={ending}
+        visible={logging}
         transparent
         animationType="slide"
-        onRequestClose={() => setEnding(false)}
+        onRequestClose={() => setLogging(false)}
       >
         <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
           <View
@@ -254,8 +259,11 @@ export default function Today() {
               gap: 12,
             }}
           >
-            <Text style={s.h2}>End shift</Text>
-            <Text style={s.body}>Enter your closing odometer reading.</Text>
+            <Text style={s.h2}>Odometer reading</Text>
+            <Text style={s.body}>
+              Optional, and useful whenever you remember — at the depot in the morning or back at
+              the end. The first reading of the day opens it and the last one closes it.
+            </Text>
             <TextInput
               value={odometer}
               onChangeText={setOdometer}
@@ -266,13 +274,12 @@ export default function Today() {
               autoFocus
             />
             <Button
-              label="End shift"
-              variant="danger"
-              onPress={() => endShift.mutate()}
-              busy={endShift.isPending}
+              label="Save reading"
+              onPress={() => logOdometer.mutate()}
+              busy={logOdometer.isPending}
               disabled={!odometer}
             />
-            <Button label="Cancel" variant="secondary" onPress={() => setEnding(false)} />
+            <Button label="Cancel" variant="secondary" onPress={() => setLogging(false)} />
           </View>
         </View>
       </Modal>
@@ -280,21 +287,64 @@ export default function Today() {
   );
 }
 
+/**
+ * Collect / Deliver / All, each carrying what is left in it.
+ *
+ * The count is the outstanding one, not the total: a driver glancing at this wants to know
+ * what is still on them. A tab with nothing left is ticked rather than shown as zero, because
+ * "0" reads at a glance like "nothing here" when it means "all of it is finished".
+ */
+function Tabs({
+  progress,
+  active,
+  onChange,
+}: {
+  progress: DriverDay["progress"];
+  active: Tab;
+  onChange: (t: Tab) => void;
+}) {
+  return (
+    <View style={{ flexDirection: "row", gap: 8 }}>
+      {TABS.map(({ key, label, of }) => {
+        const tally = of(progress);
+        const on = key === active;
+        return (
+          <Pressable key={key} onPress={() => onChange(key)} style={{ flex: 1 }}>
+            <View
+              style={{
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: on ? C.ink : C.line,
+                backgroundColor: on ? C.ink : C.white,
+                paddingVertical: 10,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: on ? C.white : C.body, fontWeight: "600", fontSize: 14 }}>
+                {label}
+                {tally.total === 0 ? "" : tally.outstanding === 0 ? " ✓" : ` ${tally.outstanding}`}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function StopCard({
   stop,
-  disabled,
   onCollect,
   busy,
 }: {
   stop: DriverStop;
-  disabled: boolean;
   onCollect: () => void;
   busy: boolean;
 }) {
   const isCollection = stop.kind === "collection";
   const tone = stop.status === "delivered" ? "good" : stop.status === "failed" ? "bad" : "neutral";
   return (
-    <Card>
+    <Card style={stop.done ? { opacity: 0.6 } : undefined}>
       <View style={s.row}>
         <Badge
           label={
@@ -302,7 +352,7 @@ function StopCard({
               ? `Collect · ${stop.shipments.length} parcel${stop.shipments.length === 1 ? "" : "s"}`
               : "Deliver"
           }
-          tone={isCollection ? "warn" : tone}
+          tone={isCollection ? (stop.done ? "good" : "warn") : tone}
         />
         <Text style={[s.mono, { fontSize: 12 }]}>{stop.waybill ?? stop.bookingReference}</Text>
       </View>
@@ -319,28 +369,28 @@ function StopCard({
         <Text style={[s.body, { marginTop: 6, fontStyle: "italic" }]}>{stop.instructions}</Text>
       )}
       <View style={{ marginTop: 14 }}>
-        {isCollection ? (
-          <Button
-            label="Collected everything"
-            onPress={onCollect}
-            busy={busy}
-            disabled={disabled}
-          />
+        {stop.done ? (
+          <Text style={{ color: C.muted }}>
+            {isCollection
+              ? "Collected."
+              : stop.status === "failed"
+                ? "Attempted — dispatch will reassign it."
+                : "Delivered."}
+          </Text>
+        ) : isCollection ? (
+          <Button label="Collected everything" onPress={onCollect} busy={busy} />
         ) : stop.status === "collected" || stop.status === "in_transit" ? (
           <Link href={{ pathname: "/stop/[id]", params: { id: stop.shipmentId! } }} asChild>
             <Pressable>
               <View
-                style={[
-                  {
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    borderColor: C.ink,
-                    backgroundColor: C.ink,
-                    paddingVertical: 15,
-                    alignItems: "center",
-                  },
-                  disabled && { opacity: 0.45 },
-                ]}
+                style={{
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: C.ink,
+                  backgroundColor: C.ink,
+                  paddingVertical: 15,
+                  alignItems: "center",
+                }}
               >
                 <Text style={{ color: C.white, fontWeight: "600", fontSize: 15 }}>
                   Deliver this drop
@@ -349,11 +399,7 @@ function StopCard({
             </Pressable>
           </Link>
         ) : (
-          <Text style={{ color: C.muted }}>
-            {stop.status === "assigned"
-              ? "Collect from the pickup first."
-              : `Status: ${stop.status}`}
-          </Text>
+          <Text style={{ color: C.muted }}>Collect from the pickup first.</Text>
         )}
       </View>
     </Card>

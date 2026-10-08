@@ -5,11 +5,10 @@ import { z } from "zod";
 import {
   CollectRequest,
   DeliverRequest,
-  EndShiftRequest,
   FailRequest,
   FuelLogRequest,
   LocationPing,
-  StartShiftRequest,
+  OdometerReadingRequest,
   Uuid,
   type Driver,
 } from "@delicate/contracts";
@@ -47,14 +46,12 @@ export class DriverController {
     return this.dispatch.day(d);
   }
 
-  @Post("shift/start")
-  startShift(@CurrentDriver() d: Driver, @Body(StartShiftRequest) body: StartShiftRequest) {
-    return this.fleet.startShift(d, body);
-  }
-
-  @Post("shift/end")
-  endShift(@CurrentDriver() d: Driver, @Body(EndShiftRequest) body: EndShiftRequest) {
-    return this.fleet.endShift(d, body);
+  @Post("odometer")
+  recordOdometer(
+    @CurrentDriver() d: Driver,
+    @Body(OdometerReadingRequest) body: OdometerReadingRequest,
+  ) {
+    return this.fleet.recordOdometer(d, body);
   }
 
   @Post("location")
