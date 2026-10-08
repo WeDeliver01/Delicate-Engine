@@ -150,10 +150,26 @@ describe("notifications", () => {
     expect(confirm).toBeTruthy();
     expect(confirm.channel).toBe("email");
     expect(confirm.subject).toBe(`Booking ${b.reference} confirmed`);
-    expect(confirm.body).toContain(b.shipments[0]!.waybill);
     expect(confirm.body).toContain("Honey Bee");
     // no unrendered placeholders ever reach a customer
     expect(confirm.body).not.toMatch(/\{\{|\}\}/);
+
+    /*
+      The waybill is no longer in the prose -- it is in the consignment, which the layout
+      prints as a table and the text part appends. Listing it in both is how a confirmation
+      starts reading like a receipt printer, so what matters is that it is carried, not where.
+    */
+    const [raw] = await h.db.db
+      .select()
+      .from(notificationsTable)
+      .where(eq(notificationsTable.id, confirm.id));
+    const { consignment } = raw!.payload as {
+      consignment: { waybill: string; destination: string; contents: string }[];
+    };
+    expect(consignment).toHaveLength(b.shipments.length);
+    expect(consignment[0]!.waybill).toBe(b.shipments[0]!.waybill);
+    expect(consignment[0]!.destination).toBe("Centurion");
+    expect(consignment[0]!.contents).toContain("Cake");
   });
 
   it("redacts contact details in the admin list", async () => {
