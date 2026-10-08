@@ -28,6 +28,7 @@ function SignUpForm() {
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resent, setResent] = useState(false);
   const misconfigured = supabaseMisconfigured();
   const providers = useAuthProviders();
 
@@ -47,11 +48,11 @@ function SignUpForm() {
         // Carried in the token as user_metadata, which is where the engine reads the name
         // from when it provisions the profile on their first request.
         data: { full_name: fullName.trim() },
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        emailRedirectTo: confirmUrl(next),
       },
     });
     setBusy(false);
-    if (error) return setError(error.message);
+    if (error) return setError(readable(error.message));
 
     // Confirmations switched off on the project: they are already signed in.
     if (data.session) return router.replace(next);
@@ -63,6 +64,20 @@ function SignUpForm() {
       public form tells a stranger who banks with us. We keep that property.
     */
     setSentTo(email.trim());
+  }
+
+  /** Nothing arrived. Usually spam, sometimes a typo, occasionally our mail is not sending. */
+  async function resend() {
+    const supabase = getSupabase();
+    if (!supabase || !sentTo) return;
+    setError(null);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: sentTo,
+      options: { emailRedirectTo: confirmUrl(next) },
+    });
+    if (error) return setError(readable(error.message));
+    setResent(true);
   }
 
   if (sentTo) {
@@ -84,6 +99,16 @@ function SignUpForm() {
           if you open it on your phone instead, come back here and sign in with your email and
           password.
         </p>
+        <div className="mt-4 space-y-3">
+          {error && <p className="alert-error">{error}</p>}
+          {resent ? (
+            <p className="alert-success">Sent again. Check your spam folder too.</p>
+          ) : (
+            <button type="button" onClick={resend} className="btn btn-secondary btn-sm w-full">
+              Nothing arrived — send it again
+            </button>
+          )}
+        </div>
       </AuthShell>
     );
   }
@@ -168,4 +193,26 @@ function SignUpForm() {
       )}
     </AuthShell>
   );
+}
+
+function confirmUrl(next: string): string {
+  return `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * Supabase's own wording, where it would leave someone stuck.
+ *
+ * The rate-limit message in particular reads as the customer's fault and is not: it means the
+ * project is still on the built-in mail service, which sends a couple of messages an hour and
+ * is not meant for production. They cannot fix that by waiting, so do not imply they can.
+ */
+function readable(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("rate limit") || m.includes("too many requests")) {
+    return "We could not send the confirmation email just now. This is on our side — give us a moment, or email us and we will set your account up by hand.";
+  }
+  if (m.includes("error sending confirmation") || m.includes("sending email")) {
+    return "We could not send the confirmation email. That is a fault on our side, not yours — please email us and we will set your account up.";
+  }
+  return message;
 }
