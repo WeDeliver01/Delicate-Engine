@@ -163,7 +163,7 @@ export function renderEmailHtml(input: EmailLayoutInput): string {
       </table>
       <div style="height:1px; line-height:1px; font-size:0; background-color:#2A2724; margin:22px 0 0 0;">&nbsp;</div>
       <p style="margin:16px 0 0 0; font-family:${SANS}; font-size:12px; line-height:1.6; color:#6F6A64;">
-        Same-day delivery for things that cannot wait. Pretoria and Tshwane.
+        Same-day delivery across Gauteng, for the things that cannot wait.
       </p>
     </td></tr>
 
