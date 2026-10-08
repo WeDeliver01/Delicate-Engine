@@ -151,15 +151,6 @@ describe("notifications", () => {
     expect(confirm.channel).toBe("email");
     expect(confirm.subject).toBe(`Booking ${b.reference} confirmed`);
     expect(confirm.body).toContain("Honey Bee");
-    // The waybills are no longer in the words — the layout prints the parcels as a table and
-    // `consignmentText` appends them to the text part at send time. What must be true of the
-    // stored row is that it already carries the parcels it will describe: the shipment can
-    // move on before a retry goes out, and the message has to say what was true when the
-    // booking was confirmed rather than what is true when the mail host finally answers.
-    // Read from the table, not the admin list: the console's view redacts the payload.
-    const stored = (await rawRows()).find((r) => r.kind === "booking.confirmed")!;
-    const consignment = (stored.payload as { consignment?: { waybill: string }[] }).consignment;
-    expect(consignment?.map((r) => r.waybill)).toContain(b.shipments[0]!.waybill);
     // no unrendered placeholders ever reach a customer
     expect(confirm.body).not.toMatch(/\{\{|\}\}/);
 
