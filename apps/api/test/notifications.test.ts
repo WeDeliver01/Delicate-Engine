@@ -341,6 +341,80 @@ describe("notifications", () => {
     expect(toRecipient.detail).toBe("The account has asked us not to contact their recipients.");
   });
 
+  it("hands an SMS back to the driver when no provider is configured, and records it either way", async () => {
+    const b = await book();
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asStaff())
+      .expect(201);
+    await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id }).expect(201);
+
+    const res = await h
+      .http()
+      .post("/v1/driver/notify")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, target: "recipient", channel: "sms", eta: 10 });
+    expect(res.status).toBe(201);
+    // No Twilio credentials in the test environment, so the driver sends it themselves.
+    expect(res.body.delivery).toBe("driver");
+    expect(res.body.to).toBe("0821234567");
+    expect(res.body.text).toContain("is about 10 minutes away");
+    expect(res.body.text).toContain("Jane");
+    expect(res.body.reason).toContain("SMS_PROVIDER");
+    // Written down regardless: a driver's claim that they said they were coming is worth a
+    // record, and the console counts what it could not send.
+    await h.dispatcher.tick();
+    const recorded = (await sent()).find((n) => n.kind === "shipment.driver_arriving")!;
+    expect(recorded.status).toBe("suppressed");
+
+    // "I have arrived" is a different thing to say, so it is not deduped against the first.
+    const arrived = await h.http().post("/v1/driver/notify").set(asDriver()).send({
+      shipmentId: b.shipments[0]!.id,
+      target: "recipient",
+      channel: "sms",
+      eta: "arrived",
+    });
+    expect(arrived.body.text).toContain("has arrived");
+  });
+
+  it("will not route an opt-out through the driver's phone", async () => {
+    // The gap the fallback closes is ours: no provider. An account that asked us not to
+    // contact their recipients has made a decision, and handing the driver the words to send
+    // anyway would be going round it.
+    await h
+      .http()
+      .put("/v1/account/notifications/preferences")
+      .set(asOwner())
+      .send({ notifyRecipients: false })
+      .expect(200);
+    const b = await book();
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asStaff())
+      .expect(201);
+    await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id }).expect(201);
+
+    const res = await h
+      .http()
+      .post("/v1/driver/notify")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, target: "recipient", channel: "sms", eta: 5 });
+    expect(res.body.delivery).toBe("suppressed");
+    expect(res.body.reason).toBe("The account has asked us not to contact their recipients.");
+  });
+
+  it("will not let a driver message about a shipment that is not theirs", async () => {
+    const b = await book();
+    const res = await h
+      .http()
+      .post("/v1/driver/notify")
+      .set(asDriver())
+      .send({ shipmentId: b.shipments[0]!.id, target: "recipient", channel: "sms", eta: 5 });
+    expect(res.status).toBe(403);
+  });
+
   it("reports which channels are actually wired up", async () => {
     await book();
     await h.dispatcher.tick();

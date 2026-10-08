@@ -130,7 +130,38 @@ and we will collect it.
     channel: "sms",
     audience: "recipient",
     subject: null,
-    body: `Hi {{recipientName}}, your driver {{driverName}} has arrived with your delivery from {{customerName}}.`,
+    // `{{eta}}` carries "has arrived" or "is about 10 minutes away", so the gap the driver
+    // chose is a value and not four near-identical templates to keep in step.
+    body: `Hi {{recipientName}}, your driver {{driverName}} {{eta}} with your delivery from {{customerName}}.`,
+  },
+  {
+    kind: "shipment.driver_arriving",
+    channel: "email",
+    audience: "recipient",
+    subject: "Your delivery from {{customerName}}",
+    body: `Hi {{recipientName}},
+
+Your driver {{driverName}} {{eta}} with your delivery from {{customerName}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "shipment.collection_arriving",
+    channel: "sms",
+    audience: "customer",
+    subject: null,
+    body: `Hi, this is {{driverName}} from {{companyName}}. I {{eta}} to collect {{waybill}}.`,
+  },
+  {
+    kind: "shipment.collection_arriving",
+    channel: "email",
+    audience: "customer",
+    subject: "Collecting {{waybill}}",
+    body: `Hi {{customerName}},
+
+{{driverName}} {{eta}} to collect {{waybill}}.
+
+— {{companyName}}`,
   },
   {
     kind: "shipment.at_risk",
