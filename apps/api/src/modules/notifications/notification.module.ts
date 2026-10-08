@@ -1,11 +1,12 @@
 import { Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { formatCents, formatOperatingDateTime } from "@delicate/contracts";
 import {
   accounts,
   drivers,
   memberships,
+  packageTypes,
   shipments,
   users,
   wallets,
@@ -15,6 +16,7 @@ import { ENV, type Env } from "../../config/env.js";
 import { DbService } from "../../infra/db.module.js";
 import { EventHandlerRegistry } from "../../worker/event-handlers.js";
 import { NotificationService } from "./notification.service.js";
+import type { ConsignmentRow } from "./email-layout.js";
 import { NotificationDispatcher } from "./notification.dispatcher.js";
 import {
   AccountNotificationController,
@@ -85,6 +87,12 @@ export class NotificationModule implements OnModuleInit {
             waybills: e.payload.shipments.map((s) => s.waybill).join("\n"),
             total: formatCents(e.payload.totalCents),
             trackUrl: `${this.webUrl()}/portal/bookings/${e.payload.bookingId}`,
+            // What is actually in the van. Rendered as a table by the email layout rather
+            // than substituted into the words, because it is a table.
+            consignment: await this.consignment(
+              tx,
+              e.payload.shipments.map((sh) => sh.shipmentId),
+            ),
           },
         });
       });
@@ -489,6 +497,50 @@ export class NotificationModule implements OnModuleInit {
     if (!row) return { name: "there", email: null };
     const owner = await this.owner(tx, accountId);
     return { name: row.name, email: row.billingEmail ?? owner?.email ?? null };
+  }
+
+  /**
+   * The parcels on a booking, named and counted.
+   *
+   * Package types are looked up by id because the shipment stores the id, and "1 x Xsmall
+   * Cake Box" is what a customer recognises -- a uuid tells them nothing about whether we
+   * understood the order.
+   */
+  private async consignment(tx: DbExecutor, shipmentIds: string[]): Promise<ConsignmentRow[]> {
+    if (shipmentIds.length === 0) return [];
+    const rows = await tx
+      .select({
+        waybill: shipments.waybill,
+        recipient: shipments.recipient,
+        deliveryAddress: shipments.deliveryAddress,
+        parcels: shipments.parcels,
+      })
+      .from(shipments)
+      .where(inArray(shipments.id, shipmentIds))
+      .orderBy(asc(shipments.waybill));
+
+    const nameOf = new Map((await tx.select().from(packageTypes)).map((t) => [t.id, t.name]));
+
+    return rows.map((row) => {
+      const parcels = (row.parcels ?? []) as {
+        packageTypeId: string;
+        quantity: number;
+        weightKg: number | null;
+      }[];
+      const address = row.deliveryAddress as { suburb?: string | null; formatted?: string };
+      const recipient = row.recipient as { name?: string | null };
+      const kg = parcels.reduce((sum, par) => sum + (par.weightKg ?? 0) * (par.quantity || 1), 0);
+      return {
+        waybill: row.waybill,
+        destination: address.suburb ?? address.formatted ?? "the destination",
+        recipient: recipient.name ?? null,
+        contents:
+          parcels
+            .map((par) => `${par.quantity || 1} x ${nameOf.get(par.packageTypeId) ?? "parcel"}`)
+            .join(", ") || "1 x parcel",
+        weight: kg > 0 ? `${kg.toFixed(1)} kg` : null,
+      };
+    });
   }
 
   /** The wallet balance as it stands now, for a message that quotes it. */
