@@ -3,7 +3,8 @@ import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } fro
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { api, API_URL, ApiRequestError } from "../src/lib/api";
-import { canSignInWithPassword, setToken, signIn, signOut } from "../src/lib/auth";
+import { SUPABASE_URL, canSignInWithPassword, setToken, signIn, signOut } from "../src/lib/auth";
+import { hostOf } from "../src/lib/session";
 import { Button, C, ErrorNote, s } from "../src/lib/ui";
 
 /**
@@ -150,9 +151,16 @@ export default function SignIn() {
             </View>
           )}
 
-          <Text style={{ color: C.muted, fontSize: 12, textAlign: "center" }}>
-            Engine: {API_URL}
-          </Text>
+          <View style={{ gap: 2, marginTop: 4 }}>
+            <Text style={{ color: C.muted, fontSize: 11, textAlign: "center" }}>
+              Engine: {hostOf(API_URL)}
+            </Text>
+            {withPassword && (
+              <Text style={{ color: C.muted, fontSize: 11, textAlign: "center" }}>
+                Sign-in: {hostOf(SUPABASE_URL)}
+              </Text>
+            )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   REFRESH_SKEW_MS,
   canRefresh,
+  hostOf,
   needsRefresh,
   parseStored,
   signInMessage,
@@ -106,5 +107,20 @@ describe("what a driver is told when sign-in fails", () => {
     expect(signInMessage(400, { error_description: "Email not confirmed" })).toContain(
       "not been confirmed",
     );
+  });
+});
+
+describe("naming the host that could not be reached", () => {
+  it("takes the host out of a URL", () => {
+    expect(hostOf("https://abcd.supabase.co")).toBe("abcd.supabase.co");
+    expect(hostOf("https://abcd.supabase.co/auth/v1")).toBe("abcd.supabase.co");
+    expect(hostOf("http://10.0.2.2:8080/api")).toBe("10.0.2.2:8080");
+  });
+
+  it("shows a mangled value rather than hiding it", () => {
+    // This is the case it exists for: a build that went out with a placeholder in it.
+    expect(hostOf("https://xxxxxxxxxxxx.supabase.co")).toBe("xxxxxxxxxxxx.supabase.co");
+    expect(hostOf("not a url")).toBe("not a url");
+    expect(hostOf("")).toBe("");
   });
 });

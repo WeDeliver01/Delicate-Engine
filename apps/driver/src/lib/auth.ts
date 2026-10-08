@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import {
   canRefresh,
+  hostOf,
   needsRefresh,
   parseStored,
   signInMessage,
@@ -130,7 +131,12 @@ export async function signIn(email: string, password: string): Promise<void> {
       body: JSON.stringify({ email: email.trim(), password }),
     });
   } catch {
-    throw new SignInError("No connection. Check your signal and try again.");
+    // Name the host. "Check your signal" sends someone to look at their phone when the real
+    // answer is usually that the build went out pointing at an address that does not exist,
+    // and nothing about the phone will ever fix that.
+    throw new SignInError(
+      `Cannot reach ${hostOf(SUPABASE_URL)}. Check your signal — and if it keeps failing, tell the office: this build may have the wrong sign-in address.`,
+    );
   }
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) throw new SignInError(signInMessage(res.status, body));

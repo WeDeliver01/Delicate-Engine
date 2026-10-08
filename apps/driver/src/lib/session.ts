@@ -121,3 +121,15 @@ export function signInMessage(status: number, body: unknown): string {
     return "Sign-in is down. Try again shortly, and tell the office if it continues.";
   return raw || "Could not sign in. Try again.";
 }
+
+/**
+ * The host part of a URL, for telling someone which address could not be reached.
+ *
+ * A regex rather than `new URL`, which is not dependable on Hermes. Returns the input
+ * unchanged when it does not look like a URL at all, because a mangled value is exactly what
+ * this is most useful for showing.
+ */
+export function hostOf(url: string): string {
+  const match = /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(url.trim());
+  return match?.[1] ?? url.trim();
+}
