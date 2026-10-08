@@ -96,6 +96,33 @@ is not is the kind of mistake that is only discovered mid-round:
 pnpm --filter @delicate/driver run test
 ```
 
+## The day, and what a driver does with it
+
+There is no shift to start. Dispatch rosters the driver and assigns the work; it appears on the
+day screen and they get on with it. Nothing a driver does is gated on having pressed a button
+first — that gate existed, and it meant someone standing at a customer's door with the parcel
+in their hand could be refused by their own app for a step nobody had told them about.
+
+The screen answers three questions without being asked:
+
+- **What is next** — outstanding stops first, in the order dispatch released or the planner
+  worked out; finished ones underneath, dimmed.
+- **How much is left** — three tabs, `All`, `Collect` and `Deliver`, each showing what is still
+  outstanding in it, or a tick when that part of the day is cleared.
+- **Am I finished** — "All done for today" once every stop is worked. This is not the same as an
+  empty list, and the distinction is the whole point: a day with nothing assigned yet reads
+  "Nothing assigned yet", because telling a driver who has been given no work that they have
+  finished sends them home mid-shift.
+
+A stop counts as done when it is delivered, or when the attempt failed and dispatch will
+reassign it, or — for a collection — when nothing on the booking is still waiting to be picked
+up. The rule lives in `stopIsDone` in `@delicate/contracts` and is used by both sides, so the
+engine and the app cannot disagree about whether somebody is finished.
+
+Odometer readings are optional and the driver volunteers them whenever they remember. The first
+of a day is kept as the opening reading and the latest as the closing one, so the pair still
+spans the van's running without anybody being made to type before their first collection.
+
 ## Putting it on a driver's phone
 
 Android, because that is what the drivers have. `eas-cli` is not a dependency of this package,
@@ -135,9 +162,11 @@ driver's trail keeps stopping, exempt the app in the phone's battery settings.
 
 ## What the engine expects from it
 
-- A position ping roughly every 60 seconds or 250 metres while a shift is open. The customer's
-  live ETA treats anything older than 10 minutes as stale and stops quoting minutes rather than
-  guess from a position that has gone cold.
+- A position ping roughly every 60 seconds or 250 metres while the driver has stops left. The
+  customer's live ETA treats anything older than 10 minutes as stale and stops quoting minutes
+  rather than guess from a position that has gone cold. The first ping of a day is also what
+  opens the driver's roster row and sets the time their day began — nobody clocks on, so the
+  van moving is the only honest signal.
 - Collection, delivery and failure posted as they happen, not batched at the end of the day.
   Each one is what moves the shipment's status, which is what the customer is watching and what
   triggers their notification.

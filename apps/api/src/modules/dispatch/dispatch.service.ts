@@ -12,7 +12,7 @@ import {
   ShipmentStatus,
   TripSheet,
 } from "@delicate/contracts";
-import { optimiseRoute } from "@delicate/contracts";
+import { dayProgress, optimiseRoute, stopIsDone } from "@delicate/contracts";
 import {
   assignments,
   bookings,
@@ -65,7 +65,11 @@ export class DispatchService {
         and(
           eq(assignments.driverId, driver.id),
           eq(assignments.active, true),
-          inArray(shipments.status, ["assigned", "collected", "in_transit", "failed"]),
+          // `delivered` is here so finished work stays on the day. Without it the list emptied
+          // as the driver worked and the screen fell back to "no stops yet", which reads as
+          // "nothing assigned" to someone who has just delivered all morning. `cancelled` is
+          // not here: a withdrawn shipment is not work the driver should still see.
+          inArray(shipments.status, ["assigned", "collected", "in_transit", "failed", "delivered"]),
         ),
       )
       .orderBy(asc(bookings.slotDate), asc(bookings.createdAt), asc(shipments.sequence));
@@ -139,36 +143,35 @@ export class DispatchService {
         waybill: s.waybill,
         status: s.status,
       }));
-      if (ships.some((s) => s.status === "assigned")) {
-        stops.push({
-          kind: "collection",
-          bookingId: b.id,
-          bookingReference: b.reference,
-          shipmentId: null,
-          waybill: null,
-          status: null,
-          address: collection.address,
-          contact: collection.contact,
-          instructions: collection.instructions,
-          parcels: ships.flatMap((s) => s.parcels as DriverStop["parcels"]),
-          slotDate: b.slotDate,
-          slotWindowKey: b.slotWindowKey,
-          serviceLevelCode: b.serviceLevelCode,
-          shipments: summary,
-          // A collection stop covers every shipment on the booking, so it is flagged if any
-          // of them changed — the driver is loading all of them into the van at once.
-          changed: toChangedFlag(
-            ships
-              .map((s) => changedByShipment.get(s.id))
-              .filter((c): c is { what: string[]; at: Date } => !!c)
-              .reduce<{ what: string[]; at: Date } | undefined>((acc, c) => {
-                if (!acc) return { what: [...c.what], at: c.at };
-                for (const w of c.what) if (!acc.what.includes(w)) acc.what.push(w);
-                return { what: acc.what, at: c.at > acc.at ? c.at : acc.at };
-              }, undefined),
-          ),
-        });
-      }
+      stops.push({
+        kind: "collection",
+        bookingId: b.id,
+        bookingReference: b.reference,
+        shipmentId: null,
+        waybill: null,
+        status: null,
+        done: false, // replaced below, once the stop is built and can be judged
+        address: collection.address,
+        contact: collection.contact,
+        instructions: collection.instructions,
+        parcels: ships.flatMap((s) => s.parcels as DriverStop["parcels"]),
+        slotDate: b.slotDate,
+        slotWindowKey: b.slotWindowKey,
+        serviceLevelCode: b.serviceLevelCode,
+        shipments: summary,
+        // A collection stop covers every shipment on the booking, so it is flagged if any
+        // of them changed — the driver is loading all of them into the van at once.
+        changed: toChangedFlag(
+          ships
+            .map((s) => changedByShipment.get(s.id))
+            .filter((c): c is { what: string[]; at: Date } => !!c)
+            .reduce<{ what: string[]; at: Date } | undefined>((acc, c) => {
+              if (!acc) return { what: [...c.what], at: c.at };
+              for (const w of c.what) if (!acc.what.includes(w)) acc.what.push(w);
+              return { what: acc.what, at: c.at > acc.at ? c.at : acc.at };
+            }, undefined),
+        ),
+      });
       for (const s of ships) {
         stops.push({
           kind: "drop",
@@ -177,6 +180,7 @@ export class DispatchService {
           shipmentId: s.id,
           waybill: s.waybill,
           status: s.status,
+          done: false, // replaced below
           address: s.deliveryAddress as DriverStop["address"],
           contact: s.recipient as DriverStop["contact"],
           instructions: s.instructions,
@@ -192,16 +196,25 @@ export class DispatchService {
     // Put the day in a sensible order. A released trip is a dispatcher's decision about that
     // order, so it wins; without one, the stops arrive in the order the bookings happened to be
     // made, which has nothing to do with geography, and we order them ourselves.
+    for (const stop of stops) stop.done = stopIsDone(stop);
+
+    // Only the outstanding stops are sequenced. Ordering the finished ones too would measure a
+    // journey that is already driven and quietly inflate `savedKm` — the figure is supposed to
+    // describe the run still ahead. Worked stops are appended after, which is also the order a
+    // driver wants to read: what is left first, what is behind them underneath.
+    const [todo, worked] = [stops.filter((x) => !x.done), stops.filter((x) => x.done)];
     const plan = await this.plans.forDriver(driver.id, date);
-    const ordered = plan ? orderByPlan(stops, plan) : await this.orderStops(stops);
+    const ordered = plan ? orderByPlan(todo, plan) : await this.orderStops(todo);
+    const all = [...ordered.stops, ...worked];
 
     return {
       date,
       shift: shift
         ? { id: shift.id, status: shift.status, startedAt: shift.startedAt?.toISOString() ?? null }
         : null,
-      stops: ordered.stops,
+      stops: all,
       route: ordered.route,
+      progress: dayProgress(all),
     };
   }
 
@@ -254,7 +267,6 @@ export class DispatchService {
     location: { lat: number; lng: number } | null,
     note: string | null,
   ): Promise<Shipment[]> {
-    await this.requireOpenShift(driver);
     return this.dbs.transaction(async (tx) => {
       const rows = await tx
         .select({ s: shipments })
@@ -290,7 +302,7 @@ export class DispatchService {
     driver: Driver,
     input: DeliverRequest,
   ): Promise<{ shipment: Shipment; pod: ProofOfDelivery }> {
-    const shift = await this.requireOpenShift(driver);
+    const shift = await this.rosteredShift(driver);
     if (!input.signatureDataUrl && !input.photoDataUrl) {
       throw AppError.validation([
         {
@@ -348,7 +360,7 @@ export class DispatchService {
       await this.settlement.settle(tx, {
         shipmentId: s.id,
         driverId: driver.id,
-        shiftId: shift.id,
+        shiftId: shift?.id ?? null,
         actualKm,
         plannedKm,
         outcome: "delivered",
@@ -359,7 +371,7 @@ export class DispatchService {
   }
 
   async fail(driver: Driver, input: FailRequest): Promise<Shipment> {
-    const shift = await this.requireOpenShift(driver);
+    const shift = await this.rosteredShift(driver);
     return this.dbs.transaction(async (tx) => {
       const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [
         "collected",
@@ -392,7 +404,7 @@ export class DispatchService {
       await this.settlement.settle(tx, {
         shipmentId: s.id,
         driverId: driver.id,
-        shiftId: shift.id,
+        shiftId: shift?.id ?? null,
         actualKm,
         plannedKm,
         outcome: "failed",
@@ -451,12 +463,18 @@ export class DispatchService {
 
   // ── internals ───────────────────────────────────────────────────────────────
 
-  private async requireOpenShift(driver: Driver) {
+  /**
+   * The driver's rostered shift for today, if dispatch put them on one.
+   *
+   * Deliberately not a gate. Working a stop used to require an open shift, which meant a
+   * driver holding a parcel at someone's front door could be refused by their own app for not
+   * having pressed Start that morning — and the work was already theirs, assigned by dispatch,
+   * visible on their screen. Dispatch rostering them is the authorisation; the shift here is
+   * only so the settlement can say which day's running it belongs to.
+   */
+  private async rosteredShift(driver: Driver) {
     const date = await this.fleet.localDate();
-    const shift = await this.fleet.shiftFor(driver.id, date);
-    if (!shift || shift.status !== "open")
-      throw AppError.conflict("shift_not_open", "start your shift before working stops");
-    return shift;
+    return this.fleet.shiftFor(driver.id, date);
   }
 
   private async ownedShipment(

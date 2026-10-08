@@ -321,7 +321,7 @@ describe("trips", () => {
     expect(shipment.body.status).toBe("assigned");
   });
 
-  it("hides a trip from the driver until it is released, and needs an open shift to start", async () => {
+  it("hides a trip from the driver until it is released, then lets them start it", async () => {
     const b = await book(1);
     const trip = await newTrip();
     await addStops(trip.id, [b.shipments[0]!.id]).expect(201);
@@ -340,27 +340,9 @@ describe("trips", () => {
     expect(visible.trip!.id).toBe(trip.id);
     expect(visible.trip!.status).toBe("released");
 
-    // No shift open yet.
-    const early = await h
-      .http()
-      .post("/v1/driver/trip/start")
-      .set(asDriver())
-      .send({ tripId: trip.id });
-    expect(early.status).toBe(409);
-    expect(early.body.code).toBe("shift_not_open");
-
-    await h
-      .http()
-      .post("/v1/admin/fleet/shifts")
-      .set(asDispatcher())
-      .send({ driverId: driver.id, date: TODAY })
-      .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
-      .expect(201);
+    // A released trip needs nothing else from the driver. It used to be refused until they
+    // had started a shift, which stranded the work on a button nobody at the roadside knew
+    // about; releasing it is dispatch's instruction to drive it.
     const started = await h
       .http()
       .post("/v1/driver/trip/start")
@@ -394,12 +376,6 @@ describe("trips", () => {
       .post("/v1/admin/fleet/shifts")
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY })
-      .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
       .expect(201);
     await h
       .http()
@@ -449,12 +425,6 @@ describe("trips", () => {
       .post("/v1/admin/fleet/shifts")
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY })
-      .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
       .expect(201);
     await h
       .http()
@@ -514,12 +484,6 @@ describe("trips", () => {
       .post("/v1/admin/fleet/shifts")
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY })
-      .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
       .expect(201);
     await h
       .http()
@@ -593,12 +557,6 @@ describe("trips", () => {
       .post("/v1/admin/fleet/shifts")
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY })
-      .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
       .expect(201);
     await h
       .http()

@@ -107,20 +107,24 @@ export const ScheduleShiftRequest = z.object({
   vehicleId: Uuid.nullable().optional(),
 });
 
-export const StartShiftRequest = z.object({
+/**
+ * A reading the driver volunteers, rather than one the app demands before letting them work.
+ *
+ * Drivers no longer clock on and off: work is rostered by dispatch and simply appears. The
+ * odometer still earns its place — it is the only measure of what a van actually covered, as
+ * against what the route planner thought it would — so it stays, as something the driver can
+ * log when they remember, at the start of a run or the end of one.
+ *
+ * The first reading of a day is kept as the opening one and the latest as the closing one, so
+ * the pair still answers "how far did this van go today" without anybody being made to stop
+ * and type before they can take their first collection.
+ */
+export const OdometerReadingRequest = z.object({
   odometerKm: z.number().nonnegative(),
   fuelPct: z.number().int().min(0).max(100).nullable().default(null),
-  vehicleId: Uuid.nullable().optional(),
   location: LatLng.nullable().default(null),
 });
-export type StartShiftRequest = z.infer<typeof StartShiftRequest>;
-
-export const EndShiftRequest = z.object({
-  odometerKm: z.number().nonnegative(),
-  fuelPct: z.number().int().min(0).max(100).nullable().default(null),
-  location: LatLng.nullable().default(null),
-});
-export type EndShiftRequest = z.infer<typeof EndShiftRequest>;
+export type OdometerReadingRequest = z.infer<typeof OdometerReadingRequest>;
 
 export const LocationPing = z.object({
   location: LatLng,

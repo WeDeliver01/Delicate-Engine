@@ -60,8 +60,30 @@ export const DriverStop = z.object({
     })
     .nullable()
     .default(null),
+  /**
+   * Worked already — collected, delivered, or failed and handed back to dispatch.
+   *
+   * Finished stops stay on the day rather than vanishing from it. A driver who has delivered
+   * six drops should be able to see six delivered drops; a list that empties as they work
+   * cannot tell them whether they are finished or have simply not been given anything.
+   * Stamped by the engine via `stopIsDone` so both sides use one definition.
+   */
+  done: z.boolean().default(false),
 });
 export type DriverStop = z.infer<typeof DriverStop>;
+
+const StopTally = z.object({
+  total: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative(),
+  outstanding: z.number().int().nonnegative(),
+});
+
+const StopTallies = z.object({
+  all: StopTally,
+  collections: StopTally,
+  deliveries: StopTally,
+  allDone: z.boolean(),
+});
 
 export const DriverDay = z.object({
   date: IsoDate,
@@ -78,6 +100,13 @@ export const DriverDay = z.object({
     .object({ totalKm: z.number(), originalKm: z.number(), savedKm: z.number() })
     .nullable()
     .default(null),
+  /**
+   * How much of the day is behind the driver, split the way the app lists it.
+   *
+   * Served rather than counted in the app so that "all done" is decided once, in a place with
+   * tests, instead of in a render function.
+   */
+  progress: StopTallies,
 });
 export type DriverDay = z.infer<typeof DriverDay>;
 

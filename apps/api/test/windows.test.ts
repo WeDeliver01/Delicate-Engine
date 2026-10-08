@@ -331,12 +331,6 @@ describe("timed windows", () => {
       .set(asDispatcher())
       .send({ driverId: driver.id, date: TODAY })
       .expect(201);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1000, fuelPct: 80, location: MENLYN })
-      .expect(201);
     const trip = (
       await h
         .http()

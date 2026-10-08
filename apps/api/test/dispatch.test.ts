@@ -227,21 +227,13 @@ describe("fleet, dispatch & settlement", () => {
         .set(asDispatcher())
         .expect(201);
 
-    // must start the shift first
-    expect(
-      (await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id })).status,
-    ).toBe(409);
-    await h
-      .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 120_400.5, fuelPct: 70, location: MENLYN })
-      .expect(201);
-
+    // The work is theirs the moment dispatch assigns it. There is nothing to press first: a
+    // driver standing at the collection should not be refused by their own app.
     const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
-    expect(day.shift?.status).toBe("open");
     expect(day.stops.map((s) => s.kind)).toEqual(["collection", "drop", "drop"]);
     expect(day.stops[0]!.shipments).toHaveLength(2);
+    expect(day.progress.all).toEqual({ total: 3, done: 0, outstanding: 3 });
+    expect(day.progress.allDone).toBe(false);
 
     const collected = await h
       .http()
@@ -349,12 +341,31 @@ describe("fleet, dispatch & settlement", () => {
     expect(again.status).toBe(409);
     expect(await ledger.balance("REVENUE", "company", null)).toBe(-b.breakdown.subtotalCents);
 
-    const shift = await h
+    // The day is finished, and the driver is told so rather than being shown an empty list.
+    const done = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(done.progress.allDone).toBe(true);
+    expect(done.progress.deliveries.done).toBe(2);
+    expect(done.stops.every((x) => x.done)).toBe(true);
+
+    // An odometer reading is volunteered, not demanded, and nothing the driver did today
+    // required one. So the first reading is the opening one however late it is given...
+    const opening = await h
       .http()
-      .post("/v1/driver/shift/end")
+      .post("/v1/driver/odometer")
+      .set(asDriver())
+      .send({ odometerKm: 120_400.5, fuelPct: 70 });
+    expect(opening.status).toBe(201);
+    expect(opening.body.startOdometerKm).toBe(120_400.5);
+    expect(opening.body.endOdometerKm).toBeNull();
+
+    // ...and a later one closes the pair, so the day still spans the van's running.
+    const closing = await h
+      .http()
+      .post("/v1/driver/odometer")
       .set(asDriver())
       .send({ odometerKm: 120_452.1, fuelPct: 55 });
-    expect(shift.body.status).toBe("closed");
+    expect(closing.body.startOdometerKm).toBe(120_400.5);
+    expect(closing.body.endOdometerKm).toBe(120_452.1);
     const fuel = await h.http().post("/v1/driver/fuel").set(asDriver()).send({
       litres: 30.5,
       amountCents: 68_000,
@@ -364,6 +375,62 @@ describe("fleet, dispatch & settlement", () => {
     });
     expect(fuel.status).toBe(201);
     expect(fuel.body.hasReceipt).toBe(true);
+  });
+
+  it("has nowhere to put an odometer reading from a driver nobody rostered, and says so", async () => {
+    // The app turns this empty answer into a sentence. If it came back as an object instead,
+    // the driver would be told the reading was saved when there was no day to save it against.
+    const res = await h
+      .http()
+      .post("/v1/driver/odometer")
+      .set(asDriver())
+      .send({ odometerKm: 1_000 });
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({});
+    expect(res.text).toBe("");
+  });
+
+  it("opens the roster row from the driver's first position, since nobody clocks on", async () => {
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY })
+      .expect(201);
+
+    // Rostered but no sign of the van yet: on the roster, not yet on the road.
+    const rostered = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(rostered.shift?.status).toBe("scheduled");
+    expect(rostered.shift?.startedAt).toBeNull();
+
+    const firstSeen = new Date(Date.now() - 120_000).toISOString();
+    await h
+      .http()
+      .post("/v1/driver/location")
+      .set(asDriver())
+      .send({
+        pings: [
+          { location: MENLYN, recordedAt: firstSeen },
+          { location: CENTURION, recordedAt: new Date().toISOString() },
+        ],
+      })
+      .expect(202);
+
+    // The earliest ping of the batch is when the day began, not when the batch arrived — the
+    // app buffers while out of signal, so the two differ by however long the dead spot lasted.
+    const moving = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(moving.shift?.status).toBe("open");
+    expect(moving.shift?.startedAt).toBe(firstSeen);
+
+    // A later batch must not shunt the start time forward.
+    await h
+      .http()
+      .post("/v1/driver/location")
+      .set(asDriver())
+      .send({ pings: [{ location: MENLYN, recordedAt: new Date().toISOString() }] })
+      .expect(202);
+    const later = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(later.shift?.startedAt).toBe(firstSeen);
   });
 
   it("a failed attempt settles (chargeable by rule), the drop can be reassigned, and files are served to staff", async () => {
@@ -377,7 +444,6 @@ describe("fleet, dispatch & settlement", () => {
       .http()
       .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
       .set(asDispatcher());
-    await h.http().post("/v1/driver/shift/start").set(asDriver()).send({ odometerKm: 1 });
     await h.http().post("/v1/driver/collect").set(asDriver()).send({ bookingId: b.id });
     const failed = await h.http().post("/v1/driver/fail").set(asDriver()).send({
       shipmentId: b.shipments[0]!.id,

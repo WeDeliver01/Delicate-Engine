@@ -526,13 +526,14 @@ export class TripService {
       if (trip.status === "started") return this.hydrate(tx, tripId);
       if (trip.status !== "released")
         throw AppError.conflict("trip_not_startable", `trip is ${trip.status}`);
+      // No shift gate: a trip released to a driver is already dispatch's instruction to drive
+      // it, and refusing it for a button they did not press that morning only strands the work.
+      // The shift is attached when there is one, so the trip reports against the right day.
       const shift = await this.fleet.shiftFor(driver.id, trip.date, tx);
-      if (!shift || shift.status !== "open")
-        throw AppError.conflict("shift_not_open", "start your shift before starting the trip");
 
       await tx
         .update(trips)
-        .set({ status: "started", startedAt: new Date(), shiftId: shift.id })
+        .set({ status: "started", startedAt: new Date(), shiftId: shift?.id ?? null })
         .where(eq(trips.id, tripId));
       await this.outbox.emit(
         tx,
@@ -541,7 +542,7 @@ export class TripService {
           tripId,
           reference: trip.reference,
           driverId: driver.id,
-          shiftId: shift.id,
+          shiftId: shift?.id ?? null,
           date: trip.date,
         },
         { dedupeKey: `trip:${tripId}:started` },

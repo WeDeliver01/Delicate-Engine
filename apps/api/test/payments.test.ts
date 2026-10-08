@@ -147,12 +147,6 @@ describe("payment proposals: the engine proposes, a human executes", () => {
       .expect(201);
     await h
       .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 500, fuelPct: 90, location: MENLYN })
-      .expect(201);
-    await h
-      .http()
       .post("/v1/driver/collect")
       .set(asDriver())
       .send({ bookingId: b.id, location: MENLYN })

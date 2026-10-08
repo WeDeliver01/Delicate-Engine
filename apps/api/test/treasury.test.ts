@@ -251,12 +251,6 @@ describe("treasury allocation", () => {
       .expect(201);
     await h
       .http()
-      .post("/v1/driver/shift/start")
-      .set(asDriver())
-      .send({ odometerKm: 1_000, fuelPct: 80, location: MENLYN })
-      .expect(201);
-    await h
-      .http()
       .post("/v1/driver/collect")
       .set(asDriver())
       .send({ bookingId: b.id, location: MENLYN })
