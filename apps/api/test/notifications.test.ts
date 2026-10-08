@@ -169,7 +169,8 @@ describe("notifications", () => {
     expect(consignment).toHaveLength(b.shipments.length);
     expect(consignment[0]!.waybill).toBe(b.shipments[0]!.waybill);
     expect(consignment[0]!.destination).toBe("Centurion");
-    expect(consignment[0]!.contents).toContain("Cake");
+    // "1 x Single-tier cake" — the catalog's own name, counted.
+    expect(consignment[0]!.contents).toMatch(/^1 x .*cake/i);
   });
 
   it("redacts contact details in the admin list", async () => {
