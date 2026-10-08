@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import type { ApiError } from "@delicate/contracts";
-import { getToken } from "./auth";
+import { getToken, signOut } from "./auth";
 
 /**
  * The engine's base URL. Set `EXPO_PUBLIC_API_URL` for real devices (a phone cannot reach the
@@ -52,6 +52,13 @@ export async function api<T>(
   if (res.status === 204) return undefined as T;
   const body = (await res.json().catch(() => null)) as T | ApiError | null;
   if (!res.ok) {
+    // The engine does not know this token: the session is over, whatever the keystore says.
+    // Dropping it here sends the driver back to sign-in on the next screen, instead of leaving
+    // them tapping through a day where every request fails for no stated reason.
+    //
+    // Only on 401. A 403 means the engine knows exactly who they are and is refusing this
+    // particular thing — signing them out for that would be a loop.
+    if (res.status === 401) await signOut();
     throw new ApiRequestError(
       body && typeof body === "object" && "code" in body
         ? (body as ApiError)

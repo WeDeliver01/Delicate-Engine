@@ -8,7 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://dev.delicatecourier.co.za/api"
+        "EXPO_PUBLIC_API_URL": "https://dev.delicatecourier.co.za/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": ""
       }
     },
     "preview": {
@@ -17,7 +19,9 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://dev.delicatecourier.co.za/api"
+        "EXPO_PUBLIC_API_URL": "https://dev.delicatecourier.co.za/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": ""
       }
     },
     "production": {
@@ -26,7 +30,9 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://app.delicatecourier.co.za/api"
+        "EXPO_PUBLIC_API_URL": "https://app.delicatecourier.co.za/api",
+        "EXPO_PUBLIC_SUPABASE_URL": "",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": ""
       }
     }
   },

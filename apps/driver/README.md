@@ -3,6 +3,36 @@
 The app a driver carries: their day's stops, proof of delivery, fuel, and the position trail
 that the engine settles distance against and that customers see as a live ETA.
 
+## Signing in
+
+Email and password, the same Supabase identity the office uses. The engine links the signed-in
+user to a driver row **by email** on first contact, so there is nothing to issue by hand:
+
+1. Create the user in Supabase (Authentication → Users).
+2. Create the driver in the console at `/admin/drivers` with **the same email**.
+3. Sign in on the phone.
+
+A build needs to be told where that identity lives, or the sign-in form has nothing to talk to:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+```
+
+They are set per profile in `eas.json`. Without them the app falls back to the dev-token box
+and says so on screen — which a production engine refuses anyway, so an unconfigured build
+cannot sign anyone in.
+
+The session is kept in the device keystore and renewed a minute before it expires. That matters
+more than it sounds: a Supabase access token lasts about an hour and a shift lasts five, so
+without renewal a driver is signed out somewhere around the fourth delivery. Renewal is
+single-flighted, because the day screen fires several requests at once and Supabase rotates the
+refresh token on use — two refreshes racing would spend the token twice and sign out a driver
+who did nothing wrong.
+
+If the engine ever answers 401 the session is dropped and the driver is returned to sign-in,
+rather than left tapping through a day where everything fails for no stated reason.
+
 ## Running it while developing
 
 ```bash
@@ -16,16 +46,38 @@ the machine's address on the network — or at the dev site, which is simpler:
 EXPO_PUBLIC_API_URL=https://dev.delicatecourier.co.za/api pnpm --filter @delicate/driver run start
 ```
 
+In a development build the sign-in screen also offers a dev-token box, for the tokens
+`pnpm --filter @delicate/api run dev:token <driver>` mints. It is hidden in release builds.
+
 Expo Go cannot do background location. Tracking only runs in a development build or a real
 build, so on Expo Go the position trail stays empty and settlement falls back to planned
 distance. Everything else works.
 
-## Putting it on a driver's phone
-
-Android, because that is what the drivers have. Install the CLI once, sign in to Expo, then:
+The pure parts of the session logic have tests, because deciding a token is still good when it
+is not is the kind of mistake that is only discovered mid-round:
 
 ```bash
-pnpm --filter @delicate/driver exec eas build --platform android --profile preview
+pnpm --filter @delicate/driver run test
+```
+
+## Putting it on a driver's phone
+
+Android, because that is what the drivers have. `eas-cli` is not a dependency of this package,
+so run it with `npx`:
+
+```bash
+cd apps/driver
+npx eas-cli@latest login
+npx eas-cli@latest build --platform android --profile preview
+```
+
+On a headless box (a VPS over SSH) browser login cannot work — the CLI listens on _its own_
+`localhost` and your browser is somewhere else entirely. Use a token from
+expo.dev → Account settings → Access tokens instead:
+
+```bash
+read -rs EXPO_TOKEN && export EXPO_TOKEN     # paste; keeps it out of shell history
+npx eas-cli@latest build --platform android --profile preview
 ```
 
 That produces an `.apk` and a link. Send the link to the driver, they tap it and install — no

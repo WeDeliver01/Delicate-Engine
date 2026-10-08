@@ -13,7 +13,7 @@ import { Link, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DriverDay, DriverStop, Shift } from "@delicate/contracts";
 import { api, ApiRequestError } from "../src/lib/api";
-import { setToken } from "../src/lib/auth";
+import { signOut } from "../src/lib/auth";
 import {
   currentPosition,
   requestPermissions,
@@ -223,14 +223,14 @@ export default function Today() {
         label="Sign out"
         variant="secondary"
         onPress={() =>
-          Alert.alert("Sign out?", "You will need your token to sign in again.", [
+          Alert.alert("Sign out?", "You will need your email and password to sign in again.", [
             { text: "Cancel", style: "cancel" },
             {
               text: "Sign out",
               style: "destructive",
               onPress: async () => {
                 await stopTracking();
-                await setToken(null);
+                await signOut();
                 router.replace("/sign-in");
               },
             },

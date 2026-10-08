@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { getToken } from "../src/lib/auth";
+import { isSignedIn } from "../src/lib/auth";
 import { C, Loading } from "../src/lib/ui";
 import "../src/lib/location";
 
@@ -18,8 +18,8 @@ export default function RootLayout() {
   const router = useRouter();
 
   useEffect(() => {
-    getToken().then((t) => {
-      setSignedIn(!!t);
+    isSignedIn().then((yes) => {
+      setSignedIn(yes);
       setReady(true);
     });
   }, [segments]);

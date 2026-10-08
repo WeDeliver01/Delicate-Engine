@@ -54,11 +54,15 @@
       ],
       [
         "expo-camera",
-        { "cameraPermission": "The camera captures proof of delivery photos and fuel receipts." }
+        {
+          "cameraPermission": "The camera captures proof of delivery photos and fuel receipts."
+        }
       ]
     ],
     "extra": {
-      "apiUrl": "http://localhost:8080"
+      "apiUrl": "http://localhost:8080",
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
     }
   }
 }
