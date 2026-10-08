@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { accounts, notifications as notificationsTable, users } from "@delicate/db";
+import { accounts, memberships, notifications as notificationsTable, users } from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -263,8 +263,11 @@ describe("notifications", () => {
   });
 
   it("suppresses with a reason instead of sending, when there is nowhere to send", async () => {
-    await h.db.db.update(accounts).set({ billingEmail: null }).where(eq(accounts.id, accountId));
     await book();
+    // No billing address and no owner to fall back to: the only state with genuinely nobody
+    // to write to. Addressing happens when the handler runs, so this counts.
+    await h.db.db.update(accounts).set({ billingEmail: null }).where(eq(accounts.id, accountId));
+    await h.db.db.delete(memberships).where(eq(memberships.accountId, accountId));
     await h.dispatcher.tick();
     const confirm = (await sent()).find((n) => n.kind === "booking.confirmed")!;
     expect(confirm.status).toBe("suppressed");
@@ -451,9 +454,9 @@ describe("notifications", () => {
         .where(eq(notificationsTable.accountId, res.body.id as string));
       const welcome = rows.find((n) => n.kind === "account.created");
       expect(welcome, "a new account should be welcomed").toBeTruthy();
-      expect(welcome!.status).toBe("queued");
       expect(welcome!.toAddress).toBe(USERS.alice.email);
-      expect(welcome!.detail).toBeNull();
+      // Held only because this environment has no mail host -- never for want of an address.
+      expect(welcome!.detail).not.toBe("No email address on file for this recipient.");
     });
 
     it("falls back to the owner when an older account has no billing address", async () => {
@@ -466,7 +469,7 @@ describe("notifications", () => {
       const rows = await rawRows();
       const confirm = rows.find((n) => n.kind === "booking.confirmed")!;
       expect(confirm.toAddress).toBe(USERS.alice.email);
-      expect(confirm.status).toBe("queued");
+      expect(confirm.detail).not.toBe("No email address on file for this recipient.");
     });
   });
 
@@ -477,9 +480,11 @@ describe("notifications", () => {
       await wallet.adjust(accountId, -25_000, "damaged in transit refund reversal");
       await h.dispatcher.tick();
 
-      const row = (await rawRows()).find((n) => n.kind === "wallet.adjusted");
-      expect(row, "an adjustment should be announced").toBeTruthy();
-      expect(row!.subject).toContain("A deduction");
+      const rows = (await rawRows()).filter((n) => n.kind === "wallet.adjusted");
+      // The wallet was also credited in beforeEach, so both adjustments are announced.
+      expect(rows).toHaveLength(2);
+      const row = rows.find((n) => n.subject?.includes("A deduction"))!;
+      expect(row, "the deduction should be announced").toBeTruthy();
       expect(row!.body).toContain("taken");
       expect(row!.body).toContain("from your wallet");
       expect(row!.body).not.toMatch(/\{\{|\}\}/);

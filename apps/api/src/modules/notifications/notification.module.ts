@@ -452,9 +452,10 @@ export class NotificationModule implements OnModuleInit {
       await this.dbs.transaction(async (tx) => {
         const account = await this.account(tx, e.payload.accountId);
         const member = await tx.query.users.findFirst({ where: eq(users.id, e.payload.userId) });
+        const owner = await this.owner(tx, e.payload.accountId);
         // The first membership is the owner creating their own account; account.created
         // already welcomed them, and "you were added to your own account" helps nobody.
-        if (!member || member.email === account.email) return;
+        if (!member || member.id === owner?.id) return;
         await this.notifications.enqueue(tx, {
           kind: "account.member_added",
           audience: "customer",
@@ -486,7 +487,8 @@ export class NotificationModule implements OnModuleInit {
   private async account(tx: DbExecutor, accountId: string) {
     const row = await tx.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
     if (!row) return { name: "there", email: null };
-    return { name: row.name, email: row.billingEmail ?? (await this.ownerEmail(tx, accountId)) };
+    const owner = await this.owner(tx, accountId);
+    return { name: row.name, email: row.billingEmail ?? owner?.email ?? null };
   }
 
   /** The wallet balance as it stands now, for a message that quotes it. */
@@ -495,16 +497,19 @@ export class NotificationModule implements OnModuleInit {
     return row?.balanceCents ?? null;
   }
 
-  /** The sign-in address of whoever owns the account, oldest membership first. */
-  private async ownerEmail(tx: DbExecutor, accountId: string): Promise<string | null> {
-    const [owner] = await tx
-      .select({ email: users.email })
+  /** Whoever owns the account: the oldest owner membership, so it is stable. */
+  private async owner(
+    tx: DbExecutor,
+    accountId: string,
+  ): Promise<{ id: string; email: string } | null> {
+    const [row] = await tx
+      .select({ id: users.id, email: users.email })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
       .where(and(eq(memberships.accountId, accountId), eq(memberships.role, "customer_owner")))
       .orderBy(asc(memberships.createdAt))
       .limit(1);
-    return owner?.email ?? null;
+    return row ?? null;
   }
 
   private async driverName(tx: DbExecutor, driverId: string): Promise<string> {
