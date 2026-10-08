@@ -43,6 +43,7 @@ export class EmailTransport implements NotificationTransport {
       bcc: message.bcc ?? undefined,
       subject: message.subject ?? message.fromName,
       text: message.body,
+      html: message.html ?? undefined,
     });
     return { providerMessageId: info.messageId ?? null };
   }
