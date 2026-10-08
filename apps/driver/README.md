@@ -19,9 +19,18 @@ EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key>
 ```
 
-They are set per profile in `eas.json`. Without them the app falls back to the dev-token box
-and says so on screen — which a production engine refuses anyway, so an unconfigured build
-cannot sign anyone in.
+Add them to the profile's `env` in `eas.json` before building. They are deliberately **not**
+in the file as empty placeholders: EAS validates the whole file rather than just the profile
+being built, and refuses an empty value, so a placeholder breaks every build until somebody
+notices it.
+
+Do not commit real values — this repository is public. The anon key is public by design and
+row-level security is what protects the data, but a key in a public repo still invites people
+to hammer your auth endpoints. Keep the edit local, or use `eas env:create` to store them on
+Expo's servers.
+
+Without them the app falls back to the dev-token box and says so on screen — which a production
+engine refuses anyway, so an unconfigured build cannot sign anyone in.
 
 The session is kept in the device keystore and renewed a minute before it expires. That matters
 more than it sounds: a Supabase access token lasts about an hour and a shift lasts five, so
