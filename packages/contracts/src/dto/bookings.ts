@@ -27,22 +27,82 @@ export const ShipmentStatus = z.enum([
   "assigned",
   "collected",
   "in_transit",
+  "out_for_delivery",
+  "on_hold",
   "delivered",
   "failed",
+  "returned_to_sender",
   "cancelled",
 ]);
 export type ShipmentStatus = z.infer<typeof ShipmentStatus>;
 
-/** Legal transitions. Terminal states have no exits; corrections are new bookings. */
+/**
+ * What a status is called where anyone reads it.
+ *
+ * Not `status.replace(/_/g, " ")`, which is how this used to be rendered. That showed `failed`
+ * as "failed", and a recipient reading "failed" believes their parcel is lost rather than that
+ * one attempt did not find them in. The words here are the ones a customer, a recipient and a
+ * dispatcher all see, so they are written to be read by someone who is worried.
+ */
+export const SHIPMENT_STATUS_LABELS: Record<ShipmentStatus, string> = {
+  booked: "Booked",
+  assigned: "Assigned to a driver",
+  collected: "Collected",
+  in_transit: "In transit",
+  out_for_delivery: "Out for delivery",
+  on_hold: "On hold",
+  delivered: "Delivered",
+  // Not "failed". The parcel is fine and it is going out again; saying otherwise invites a
+  // phone call from someone who thinks it is gone.
+  failed: "Failed delivery attempt",
+  returned_to_sender: "Returned to sender",
+  cancelled: "Cancelled",
+};
+
+/**
+ * Legal transitions. Terminal states have no exits; corrections are new bookings.
+ *
+ * `out_for_delivery` is the final leg — on the van, on the way to this recipient — and is the
+ * only status that makes the driver's position visible to the people waiting. `in_transit` is
+ * the broader "moving, but not yet on its way to you".
+ *
+ * `failed` is not terminal: a parcel nobody was in for goes out again, so it has exits back
+ * into the run. `returned_to_sender` is where it ends up when it cannot.
+ */
 export const SHIPMENT_TRANSITIONS: Record<ShipmentStatus, readonly ShipmentStatus[]> = {
   booked: ["assigned", "collected", "cancelled"],
-  assigned: ["collected", "booked", "cancelled"],
-  collected: ["in_transit", "delivered", "failed"],
-  in_transit: ["delivered", "failed"],
+  assigned: ["collected", "booked", "cancelled", "on_hold"],
+  collected: ["out_for_delivery", "in_transit", "delivered", "failed", "on_hold"],
+  in_transit: ["out_for_delivery", "delivered", "failed", "on_hold"],
+  out_for_delivery: ["delivered", "failed", "in_transit", "on_hold"],
+  on_hold: ["assigned", "in_transit", "out_for_delivery", "returned_to_sender", "cancelled"],
   delivered: [],
-  failed: ["assigned", "in_transit"],
+  failed: ["assigned", "in_transit", "out_for_delivery", "on_hold", "returned_to_sender"],
+  returned_to_sender: [],
   cancelled: [],
 };
+
+/** A shipment whose journey is over, one way or another. Nothing more will happen to it. */
+export const SHIPMENT_TERMINAL: readonly ShipmentStatus[] = [
+  "delivered",
+  "returned_to_sender",
+  "cancelled",
+];
+
+/**
+ * The statuses a driver may set from their own app.
+ *
+ * `delivered` is absent on purpose: it is reached through the proof-of-delivery flow, which
+ * takes a name and a photo, and not as a bare status change — a delivery with no proof is what
+ * a dispute is made of. `returned_to_sender` is absent because ending the job bears on what
+ * the customer is charged, and that is a dispatcher's call.
+ */
+export const DRIVER_SETTABLE_STATUSES: readonly ShipmentStatus[] = [
+  "collected",
+  "in_transit",
+  "out_for_delivery",
+  "on_hold",
+];
 
 export const CreateBookingRequest = z.object({
   quoteId: Uuid,

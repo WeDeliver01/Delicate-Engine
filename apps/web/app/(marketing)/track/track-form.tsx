@@ -2,18 +2,9 @@
 
 import { useState } from "react";
 import type { TrackingView } from "@delicate/contracts";
+import { SHIPMENT_STATUS_LABELS as LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { dateTime } from "@/lib/money";
-
-const LABELS: Record<TrackingView["status"], string> = {
-  booked: "Booked",
-  assigned: "Driver assigned",
-  collected: "Collected",
-  in_transit: "On its way",
-  delivered: "Delivered",
-  failed: "Delivery attempt failed",
-  cancelled: "Cancelled",
-};
 
 export default function TrackForm({ initial = "" }: { initial?: string }) {
   const [waybill, setWaybill] = useState(initial);

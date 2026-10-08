@@ -1,4 +1,5 @@
 import type { BookingStatus, ShipmentStatus } from "@delicate/contracts";
+import { SHIPMENT_STATUS_LABELS } from "@delicate/contracts";
 
 const STYLES: Record<string, string> = {
   confirmed: "bg-[#EFE9FF] text-[#5B43C9]",
@@ -9,15 +10,20 @@ const STYLES: Record<string, string> = {
   assigned: "bg-[#EFE9FF] text-[#5B43C9]",
   collected: "bg-[#FBF1D6] text-[#8A5A06]",
   in_transit: "bg-[#FBF1D6] text-[#8A5A06]",
+  out_for_delivery: "bg-[#FBF1D6] text-[#8A5A06]",
+  // Held, not broken: a dispatcher scanning a list needs it to stand out from work in flight
+  // without reading as a failure.
+  on_hold: "bg-[#EFE9FF] text-[#5B43C9]",
   delivered: "bg-[#E6F4EC] text-[#1B7F4B]",
   failed: "bg-[#FCEEF4] text-[#C13B73]",
+  returned_to_sender: "bg-[#F4F2EF] text-[#86817A]",
 };
 
 export function StatusBadge({ status }: { status: BookingStatus | ShipmentStatus }) {
   const cls = STYLES[status] ?? "bg-[#FCEEF4] text-[#C13B73]";
   return (
     <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>
-      {status.replace(/_/g, " ")}
+      {SHIPMENT_STATUS_LABELS[status as ShipmentStatus] ?? status.replace(/_/g, " ")}
     </span>
   );
 }

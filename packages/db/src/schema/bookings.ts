@@ -32,8 +32,11 @@ export const shipmentStatusEnum = pgEnum("shipment_status", [
   "assigned",
   "collected",
   "in_transit",
+  "out_for_delivery",
+  "on_hold",
   "delivered",
   "failed",
+  "returned_to_sender",
   "cancelled",
 ]);
 
