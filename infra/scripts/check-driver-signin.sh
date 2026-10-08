@@ -51,24 +51,27 @@ command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 command -v curl >/dev/null || { echo "curl is required"; exit 1; }
 [[ -f "$EAS" ]] || { echo "no $EAS — run this from the repository root"; exit 1; }
 
-# One field per line, so an empty value stays an empty field instead of shifting the next one
-# into its place. `-` means the key is absent altogether, which is a different problem.
-mapfile -t VALUES < <(
+# NUL-separated, not one per line: a value pasted with a line break in it would otherwise be
+# read as two fields and shift everything after it, so a wrapped key would be reported as an
+# empty one. An empty value stays an empty field. `-` means the key is absent altogether,
+# which is a different problem from being present and blank.
+mapfile -d '' -t VALUES < <(
   PROFILE="$PROFILE" python3 -I - "$EAS" <<'PY'
 import json, os, sys
 
 try:
     build = json.load(open(sys.argv[1])).get("build", {})
 except (OSError, ValueError) as err:
-    print(f"!{err}")
+    sys.stdout.write(f"!{err}\0")
     raise SystemExit(0)
 profile = os.environ["PROFILE"]
 if profile not in build:
-    print(f"!no '{profile}' profile in {sys.argv[1]}")
+    sys.stdout.write(f"!no '{profile}' profile in {sys.argv[1]}\0")
     raise SystemExit(0)
 env = build[profile].get("env", {})
 for key in ("EXPO_PUBLIC_SUPABASE_URL", "EXPO_PUBLIC_SUPABASE_ANON_KEY", "EXPO_PUBLIC_API_URL"):
-    print(env[key] if key in env else "-")
+    value = env[key] if key in env else "-"
+    sys.stdout.write(f"{value}\0")
 PY
 )
 if [[ "${VALUES[0]:-}" == "!"* ]]; then
@@ -91,7 +94,13 @@ API_URL="${API_URL%/}"
 
 # "-" is the sentinel for a key that is not there at all; an empty string means the key is
 # present and blank, which EAS rejects outright. They are different problems, so show both.
-shown() { case "$1" in "-") printf '(not set)' ;; "") printf '(empty)' ;; *) printf '%s' "$1" ;; esac; }
+shown() {
+  case "$1" in
+    "-") printf '(not set)' ;;
+    "") printf '(empty)' ;;
+    *) printf '%s' "$1" | tr '\n\r\t' '?' ;;
+  esac
+}
 
 step "What a '$PROFILE' build would be compiled with"
 note "engine    $(shown "$API_URL")   [$SOURCE_API]"
@@ -127,10 +136,52 @@ elif [[ -z "$SUPA_ANON" ]]; then
   bad "EXPO_PUBLIC_SUPABASE_ANON_KEY is empty. EAS rejects empty env values."
 elif placeholder "$SUPA_ANON"; then
   bad "the anon key is a placeholder or was copied from an example, not from Supabase."
-elif [[ "$(tr -cd '.' <<<"$SUPA_ANON" | wc -c)" != "2" ]]; then
-  bad "the anon key is not a JWT (a JWT has exactly two dots)."
 else
-  ok "anon key is shaped like a JWT"
+  # "Not a JWT" on its own is a dead end: the length usually looks right, so there is nothing
+  # to go on. Say what the string actually is instead. A key copied from the dashboard before
+  # clicking Reveal is the common one — the right length, made of bullets.
+  shape=$(
+    SUPA_ANON="$SUPA_ANON" python3 -I - <<'PY'
+import os
+import unicodedata
+
+key = os.environ["SUPA_ANON"]
+allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
+odd = sorted({c for c in key if c not in allowed})
+dots = key.count(".")
+
+if odd:
+    names = ", ".join(
+        f"{unicodedata.name(c, 'U+%04X' % ord(c))} (U+{ord(c):04X})" for c in odd[:3]
+    )
+    print(f"!the key contains characters a JWT cannot: {names}.")
+    if any(c in "\u2022\u00b7\u25cf\u2219*" for c in odd):
+        print("@Those are mask characters. The dashboard hides the key until you press Reveal,")
+        print("@and copying it while hidden gives you the right length made of dots or bullets.")
+        print("@Supabase → Settings → API keys → Reveal, then copy.")
+    elif any(c.isspace() for c in odd):
+        print("@It picked up whitespace — a line break from a wrapped paste, most likely.")
+    raise SystemExit(0)
+
+if dots != 2:
+    segs = [len(part) for part in key.split(".")]
+    print(f"!the key has {dots} dots, not 2, so it is not a JWT. Section lengths: {segs}.")
+    if dots > 2:
+        print("@Two values look joined together. Copy just the anon key, on its own.")
+    else:
+        print("@It is truncated, or only part of it was selected.")
+    raise SystemExit(0)
+
+print("=anon key is shaped like a JWT")
+PY
+  )
+  while IFS= read -r line; do
+    case "$line" in
+      "!"*) bad "${line#!}" ;;
+      "@"*) note "${line#@}" ;;
+      "="*) ok "${line#=}" ;;
+    esac
+  done <<<"$shape"
 fi
 
 if [[ "$API_URL" == "-" || -z "$API_URL" ]]; then
