@@ -46,6 +46,14 @@ export interface EmailLayoutInput {
   webUrl: string;
   /** What is actually being delivered, one row per parcel. Rendered as a table. */
   consignment?: ConsignmentRow[] | null;
+  /**
+   * The button, when the caller knows it better than the link can say.
+   *
+   * Normally the closing link becomes the button and its label is read off the path, which
+   * works because our own URLs describe themselves. A Supabase auth email does not have a URL
+   * at all until Supabase substitutes one, so the caller names the button instead.
+   */
+  cta?: { label: string; url: string } | null;
 }
 
 /**
@@ -66,7 +74,7 @@ export interface ConsignmentRow {
 
 export function renderEmailHtml(input: EmailLayoutInput): string {
   const { company, webUrl } = input;
-  const cta = findCta(input.body);
+  const cta = input.cta ?? findCta(input.body);
   const paragraphs = toParagraphs(input.body, cta);
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
