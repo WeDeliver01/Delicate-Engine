@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { OutboxStatus, Pagination, Uuid } from "@delicate/contracts";
-import { accounts, auditLog, organizations, outboxMessages } from "@delicate/db";
+import { accounts, auditLog, organizations, outboxMessages, wallets } from "@delicate/db";
 import { PlatformRoles } from "../../auth/decorators.js";
 import { AppError } from "../../common/errors.js";
 import { Params, Query } from "../../common/zod.js";
@@ -41,9 +41,14 @@ export class AdminController {
         status: accounts.status,
         createdAt: accounts.createdAt,
         organizationName: organizations.name,
+        // The balance belongs in the list. Ops asking "who is out of money" should not have
+        // to open twenty accounts to find out.
+        balanceCents: wallets.balanceCents,
+        creditLimitCents: wallets.creditLimitCents,
       })
       .from(accounts)
       .leftJoin(organizations, eq(organizations.id, accounts.organizationId))
+      .leftJoin(wallets, eq(wallets.accountId, accounts.id))
       .where(cursorDate ? lt(accounts.createdAt, cursorDate) : undefined)
       .orderBy(desc(accounts.createdAt))
       .limit(q.limit + 1);
