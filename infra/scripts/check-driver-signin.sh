@@ -136,6 +136,11 @@ elif [[ -z "$SUPA_ANON" ]]; then
   bad "EXPO_PUBLIC_SUPABASE_ANON_KEY is empty. EAS rejects empty env values."
 elif placeholder "$SUPA_ANON"; then
   bad "the anon key is a placeholder or was copied from an example, not from Supabase."
+elif [[ "$SUPA_ANON" == sb_secret_* ]]; then
+  bad "that is a secret key (sb_secret_…). It must never be compiled into an app."
+  note "Use the publishable key. If this one has shipped anywhere, rotate it."
+elif [[ "$SUPA_ANON" == sb_publishable_* ]]; then
+  ok "publishable key (Supabase's current format)"
 else
   # "Not a JWT" on its own is a dead end: the length usually looks right, so there is nothing
   # to go on. Say what the string actually is instead. A key copied from the dashboard before
@@ -197,6 +202,10 @@ fi
 
 # ── 2. the key belongs to that project ───────────────────────────────────────
 step "2. The key belongs to the project the URL names"
+if [[ "$SUPA_ANON" == sb_publishable_* ]]; then
+  warn "a publishable key carries no project reference, so it cannot be matched to the URL."
+  note "Step 3 is what proves they belong together: the project will reject a key that is not its own."
+else
 PROJECT_REF=$(
   SUPA_URL="$SUPA_URL" SUPA_ANON="$SUPA_ANON" python3 -I - <<'PY'
 import base64, json, os, sys
@@ -242,6 +251,7 @@ while IFS= read -r line; do
     "="*) ok "key and URL agree on project '${line#=}'"; PROJECT_REF="${line#=}" ;;
   esac
 done <<<"$PROJECT_REF"
+fi
 
 [[ "$FAILED" == "0" ]] || { printf '\n%sFix the above first.%s\n' "$R" "$X"; exit 1; }
 
