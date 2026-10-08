@@ -27,27 +27,33 @@ export const TEMPLATE_SEEDS: TemplateSeed[] = [
     channel: "email",
     audience: "customer",
     subject: "Welcome to {{companyName}}",
-    body: `Hi {{customerName}},
+    body: `Your {{companyName}} account is now active and ready to use.
 
-Your account {{accountName}} is open and ready to book.
+You can now book and manage your deliveries through your online account, with access to your
+delivery history, tracking information and account details in one place.
 
-Deliveries are paid from your wallet: top it up, book, and the amount is held until the parcel
-is delivered. Nothing is charged for a booking you cancel before collection.
+**Ready to send your first delivery?**
 
-Book your first delivery at {{portalUrl}}.
+Log in to your {{companyName}} account to create a booking and get your delivery underway.
 
-— {{companyName}}`,
+We look forward to delivering with you.
+
+The {{companyName}} Team
+
+{{portalUrl}}`,
   },
   {
     kind: "booking.confirmed",
     channel: "email",
     audience: "customer",
     subject: "Booking {{reference}} confirmed",
+    /*
+      No waybill list in the words: the layout prints the parcels as a table underneath, and
+      the same references twice is how a confirmation starts looking like a receipt printer.
+    */
     body: `Hi {{customerName}},
 
-Your booking {{reference}} is confirmed — {{dropCount}} delivery for {{slot}}.
-
-{{waybills}}
+Your booking {{reference}} is confirmed — {{dropCount}} for {{slot}}.
 
 Total: {{total}} (incl. VAT), held against your wallet and charged as each drop is completed.
 

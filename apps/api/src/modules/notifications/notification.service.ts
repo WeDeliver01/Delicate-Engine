@@ -21,7 +21,7 @@ import {
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
-import { renderEmailHtml } from "./email-layout.js";
+import { consignmentText, renderEmailHtml, type ConsignmentRow } from "./email-layout.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { Clock } from "../../infra/clock.js";
 import { AppError } from "../../common/errors.js";
@@ -68,19 +68,38 @@ export class NotificationService {
     return process.env["WEB_PUBLIC_URL"] ?? "http://localhost:3000";
   }
 
-  /** Copy the shipped templates in once. Never overwrites: the operator owns the words. */
+  /**
+   * Copy the shipped templates in, and keep the ones nobody has rewritten up to date.
+   *
+   * "Never overwrite" was too strong. It meant a wording change in code reached new installs
+   * and no existing one, so improving a template that had been seeded once was impossible
+   * without editing it by hand in every environment -- and the console then showed words that
+   * the repository disagreed with.
+   *
+   * `updated_at` moves off `created_at` the first time the update endpoint touches a row, so
+   * the two being equal means nobody has edited this template and the shipped copy is still
+   * the best available. Where they differ, the operator has spoken and we leave it alone.
+   * That is why the refresh writes `created_at` back into `updated_at`: a refreshed template
+   * is still unedited, and must stay eligible for the next one.
+   */
   async seedTemplates(): Promise<void> {
     await this.dbs.transaction(async (tx) => {
       for (const t of TEMPLATE_SEEDS) {
         await tx
           .insert(notificationTemplates)
           .values(t)
-          .onConflictDoNothing({
+          .onConflictDoUpdate({
             target: [
               notificationTemplates.kind,
               notificationTemplates.channel,
               notificationTemplates.audience,
             ],
+            set: {
+              subject: t.subject ?? null,
+              body: t.body,
+              updatedAt: sql`${notificationTemplates.createdAt}`,
+            },
+            setWhere: sql`${notificationTemplates.updatedAt} = ${notificationTemplates.createdAt}`,
           });
       }
     });
@@ -250,10 +269,15 @@ export class NotificationService {
       const transport = this.transports.find((t) => t.channel === row.channel);
       try {
         if (!transport) throw new Error(`no ${row.channel} transport`);
+        // Stored on the row at enqueue time, because the shipment it describes may have
+        // moved on by the time a retry sends: the message must say what was true when the
+        // thing happened, not when the mail host finally answered.
+        const consignment = (row.payload as { consignment?: ConsignmentRow[] }).consignment ?? null;
         const result = await transport.send({
           to: row.toAddress,
           subject: row.subject,
-          body: row.body,
+          // The parcels follow the words in the text part, as they do in the HTML.
+          body: row.channel === "email" ? row.body + consignmentText(consignment) : row.body,
           fromName,
           // Built here rather than stored on the row, so restyling the layout changes every
           // message from the next send onwards -- including ones already queued -- instead
@@ -272,6 +296,7 @@ export class NotificationService {
                     waSubject: row.subject,
                   },
                   webUrl: this.webUrl,
+                  consignment,
                 })
               : null,
           bcc: this.adminCopyFor(row.kind, row.channel, row.toAddress, adminCopy),

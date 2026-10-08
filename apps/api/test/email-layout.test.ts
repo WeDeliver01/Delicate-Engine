@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { renderEmailHtml } from "../src/modules/notifications/email-layout.js";
+import {
+  consignmentText,
+  renderEmailHtml,
+  type ConsignmentRow,
+} from "../src/modules/notifications/email-layout.js";
 
 const COMPANY = {
   name: "Delicate Courier",
@@ -56,6 +60,14 @@ Track it: ${WEB}/track?waybill=DCW-1`);
   it("names the button after where it goes", () => {
     expect(html(`Top up.\n\nGo to ${WEB}/portal/wallet`)).toContain("Top up your wallet");
     expect(html(`Invoice ready.\n\nSee ${WEB}/portal/invoices`)).toContain("View your invoice");
+    expect(html(`Book one.\n\nStart at ${WEB}/portal/book`)).toContain("Book a delivery");
+  });
+
+  it("does not invite another booking from a booking confirmation", () => {
+    // /portal/bookings/<id> contains /book, so the order of those checks is load-bearing.
+    const out = html(`Confirmed.\n\nTrack it any time at ${WEB}/portal/bookings/abc`);
+    expect(out).toContain("View your booking");
+    expect(out).not.toContain("Book a delivery");
   });
 
   it("leaves a link inside a sentence as a link", () => {
@@ -113,6 +125,78 @@ Track it: ${WEB}/track?waybill=DCW-1`);
     });
     expect(out).not.toContain("wa.me");
     expect(out).toContain("0800 000 000");
+  });
+
+  describe("the consignment", () => {
+    const parcel = {
+      waybill: "DCW-0000412",
+      destination: "Centurion",
+      recipient: "Jane Dube",
+      contents: "1 x Xsmall Cake Box",
+      weight: "1.0 kg",
+    };
+    const withRows = (rows: ConsignmentRow[]) =>
+      renderEmailHtml({
+        heading: "Booking DC-7 confirmed",
+        body: "Your booking is confirmed.",
+        company: COMPANY,
+        webUrl: WEB,
+        consignment: rows,
+      });
+
+    it("labels a single parcel instead of putting a header row above it", () => {
+      const out = withRows([parcel]);
+      expect(out).toContain("Your parcel");
+      expect(out).toContain("DCW-0000412");
+      expect(out).toContain("1 x Xsmall Cake Box");
+      expect(out).toContain("Jane Dube");
+      expect(out).toContain("1.0 kg");
+      // A five-column header above one row reads worse than labels.
+      expect(out).not.toContain(">Waybill</th>");
+    });
+
+    it("uses a table once there is more than one", () => {
+      const out = withRows([parcel, { ...parcel, waybill: "DCW-0000413", destination: "Menlyn" }]);
+      expect(out).toContain("Your parcels (2)");
+      expect(out).toContain(">Waybill</th>");
+      expect(out).toContain("DCW-0000413");
+      expect(out).toContain("Menlyn");
+    });
+
+    it("leaves the block out entirely when there is nothing to show", () => {
+      expect(withRows([])).not.toContain("Your parcel");
+      expect(html("Just words.")).not.toContain("Your parcel");
+    });
+
+    it("copes with a parcel we know little about", () => {
+      const out = withRows([
+        {
+          waybill: "DCW-1",
+          destination: "Hatfield",
+          recipient: null,
+          contents: "1 x parcel",
+          weight: null,
+        },
+      ]);
+      expect(out).toContain("DCW-1");
+      expect(out).not.toContain("Recipient");
+      expect(out).not.toContain("Weight");
+    });
+
+    it("escapes a recipient name, which is customer-supplied", () => {
+      const out = withRows([{ ...parcel, recipient: '<img src=x onerror="alert(1)">' }]);
+      expect(out).not.toContain('onerror="alert');
+      expect(out).toContain("&lt;img");
+    });
+
+    it("says the same thing in the text part", () => {
+      const text = consignmentText([parcel]);
+      expect(text).toContain("DCW-0000412");
+      expect(text).toContain("To: Centurion (Jane Dube)");
+      expect(text).toContain("Contents: 1 x Xsmall Cake Box");
+      expect(consignmentText([])).toBe("");
+      expect(consignmentText(null)).toBe("");
+    });
   });
 
   it("renders without a heading", () => {

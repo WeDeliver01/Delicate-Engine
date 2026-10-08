@@ -44,6 +44,24 @@ export interface EmailLayoutInput {
   };
   /** Absolute base URL of the portal, for the logo and links. */
   webUrl: string;
+  /** What is actually being delivered, one row per parcel. Rendered as a table. */
+  consignment?: ConsignmentRow[] | null;
+}
+
+/**
+ * One parcel on its way.
+ *
+ * Structured rather than prose because it is a table: a customer checking a confirmation is
+ * scanning down a column for the one that is wrong, not reading a sentence.
+ */
+export interface ConsignmentRow {
+  waybill: string;
+  /** Where it is going — suburb, or the full address when there is no suburb. */
+  destination: string;
+  recipient: string | null;
+  /** "1 x Xsmall Cake Box", already counted and named. */
+  contents: string;
+  weight: string | null;
 }
 
 export function renderEmailHtml(input: EmailLayoutInput): string {
@@ -105,6 +123,8 @@ export function renderEmailHtml(input: EmailLayoutInput): string {
     <tr><td class="pad" style="padding:34px 40px 8px 40px; font-family:${SANS}; font-size:16px; line-height:1.65; color:#2A2724;">
       ${paragraphs}
     </td></tr>
+
+    ${consignmentTable(input.consignment ?? null)}
 
     ${cta ? ctaButton(cta) : ""}
 
@@ -212,6 +232,80 @@ function whatsAppLink(phone: string | null, subject: string | null): string | nu
   return `https://wa.me/27${subscriber}${text}`;
 }
 
+/**
+ * What is being delivered, as a table.
+ *
+ * Headers are dropped on a single-parcel consignment, which is most of them: a five-column
+ * header above one row is a worse way to read five facts than labelling them in place. So one
+ * parcel is a labelled block and several are a table, which is also how it survives a phone --
+ * a five-column table at 375px is unreadable whatever the media query says.
+ */
+function consignmentTable(rows: ConsignmentRow[] | null): string {
+  if (!rows || rows.length === 0) return "";
+
+  const cell = `font-family:${SANS}; font-size:14px; line-height:1.55; color:#2A2724;`;
+  const head = `font-family:${SANS}; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:${BRAND.muted};`;
+
+  const body =
+    rows.length === 1
+      ? labelled(rows[0]!, cell)
+      : `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+          <tr>
+            <th align="left" style="${head} padding:0 0 8px 0;">Waybill</th>
+            <th align="left" style="${head} padding:0 0 8px 12px;">To</th>
+            <th align="left" style="${head} padding:0 0 8px 12px;">Contents</th>
+          </tr>
+          ${rows
+            .map(
+              (r) => `<tr>
+            <td valign="top" style="${cell} padding:8px 0 0 0; border-top:1px solid ${BRAND.line};"><strong style="color:${BRAND.ink};">${esc(r.waybill)}</strong></td>
+            <td valign="top" style="${cell} padding:8px 0 0 12px; border-top:1px solid ${BRAND.line};">${esc(r.destination)}${r.recipient ? `<br /><span style="color:${BRAND.muted};">${esc(r.recipient)}</span>` : ""}</td>
+            <td valign="top" style="${cell} padding:8px 0 0 12px; border-top:1px solid ${BRAND.line};">${esc(r.contents)}${r.weight ? `<br /><span style="color:${BRAND.muted};">${esc(r.weight)}</span>` : ""}</td>
+          </tr>`,
+            )
+            .join("\n          ")}
+        </table>`;
+
+  return `<tr><td class="pad" style="padding:6px 40px 10px 40px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid ${BRAND.line}; border-radius:12px;">
+        <tr><td style="padding:18px 20px;">
+          <div style="${head} padding:0 0 12px 0;">${rows.length === 1 ? "Your parcel" : `Your parcels (${rows.length})`}</div>
+          ${body}
+        </td></tr>
+      </table>
+    </td></tr>`;
+}
+
+/** One parcel, as labelled facts rather than a one-row table. */
+function labelled(r: ConsignmentRow, cell: string): string {
+  const label = `font-family:${SANS}; font-size:13px; color:${BRAND.muted};`;
+  const line = (k: string, v: string) =>
+    `<tr><td style="${label} padding:2px 12px 2px 0; white-space:nowrap;" valign="top">${k}</td><td style="${cell} padding:2px 0;" valign="top">${esc(v)}</td></tr>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          ${line("Waybill", r.waybill)}
+          ${line("To", r.destination)}
+          ${r.recipient ? line("Recipient", r.recipient) : ""}
+          ${line("Contents", r.contents)}
+          ${r.weight ? line("Weight", r.weight) : ""}
+        </table>`;
+}
+
+/** The same facts as text, for the plain-text part of the message. */
+export function consignmentText(rows: ConsignmentRow[] | null): string {
+  if (!rows || rows.length === 0) return "";
+  const block = rows
+    .map((r) =>
+      [
+        `  ${r.waybill}`,
+        `    To: ${r.destination}${r.recipient ? ` (${r.recipient})` : ""}`,
+        `    Contents: ${r.contents}${r.weight ? ` — ${r.weight}` : ""}`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+  const title = rows.length === 1 ? "Your parcel" : `Your parcels (${rows.length})`;
+  return `\n\n${title}:\n${block}`;
+}
+
 /* ── turning plain text into a page ──────────────────────────────────────── */
 
 const URL_RE = /https?:\/\/[^\s<>"')]+/g;
@@ -243,12 +337,18 @@ function findCta(body: string): { label: string; url: string } | null {
   return null;
 }
 
+/**
+ * Ordered, and the order matters: `/portal/bookings/<id>` contains `/book`, so a confirmed
+ * booking would invite the customer to make another one instead of showing them this one.
+ * Longest and most specific first.
+ */
 function ctaLabel(url: string): string {
   if (url.includes("/track")) return "Track your delivery";
-  if (url.includes("/wallet")) return "Top up your wallet";
+  if (url.includes("/bookings")) return "View your booking";
   if (url.includes("/invoices")) return "View your invoice";
-  if (url.includes("/book")) return "Book a delivery";
+  if (url.includes("/wallet")) return "Top up your wallet";
   if (url.includes("/members")) return "Manage who has access";
+  if (url.includes("/book")) return "Book a delivery";
   return "Open your portal";
 }
 
@@ -283,7 +383,7 @@ function toParagraphs(body: string, cta: { label: string; url: string } | null):
   return blocks
     .map((block) => {
       // Whatever newlines survive unwrapping were meant.
-      const html = linkify(esc(unwrap(block.trim()))).replace(/\r?\n/g, "<br />");
+      const html = inline(esc(unwrap(block.trim()))).replace(/\r?\n/g, "<br />");
       return `<p style="margin:0 0 16px 0;">${html}</p>`;
     })
     .join("\n      ");
@@ -312,6 +412,23 @@ function unwrap(block: string): string {
     else out.push(line);
   }
   return out.join("\n");
+}
+
+/**
+ * The two bits of markup a template author can reach for: **bold** and a bare URL.
+ *
+ * Not a Markdown parser. Templates are plain text that has to read correctly as plain text --
+ * it is still sent that way -- so the only markup allowed is the kind that already looks like
+ * emphasis when nothing renders it. `**Ready to send your first delivery?**` reads fine in a
+ * text client and becomes a heading-ish line in HTML, and that is the whole feature.
+ *
+ * Runs after escaping, so a customer-supplied value cannot smuggle a tag in through it.
+ */
+function inline(escaped: string): string {
+  return linkify(escaped).replace(
+    /\*\*([^*\n]+)\*\*/g,
+    (_m, text: string) => `<strong style="color:${BRAND.ink};">${text}</strong>`,
+  );
 }
 
 function linkify(escaped: string): string {
