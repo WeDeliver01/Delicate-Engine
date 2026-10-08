@@ -119,7 +119,20 @@ export class IdentityService {
 
       const [account] = await tx
         .insert(accounts)
-        .values({ name: input.name, type: input.type, organizationId, billingMode: "prepaid" })
+        .values({
+          name: input.name,
+          type: input.type,
+          organizationId,
+          billingMode: "prepaid",
+          /*
+            The address we write to. Without it every notification this account ever earns is
+            recorded as suppressed for having nowhere to go, and every invoice is addressed to
+            nobody -- quietly, because a suppressed message is not a failed one and nothing
+            raises its hand. The person creating the account is the right default; they can
+            change it to accounts@ later.
+          */
+          billingEmail: user.email,
+        })
         .returning();
       await tx
         .insert(memberships)

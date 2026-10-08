@@ -414,4 +414,98 @@ describe("notifications", () => {
     expect(after[0]!.status).toBe("dead");
     expect(after[0]!.attempts).toBe(1);
   });
+
+  // ── having somewhere to send at all ───────────────────────────────────────
+
+  describe("who we write to", () => {
+    /*
+      `accounts.billing_email` was read in two places and written in none, so every message an
+      account ever earned was filed as suppressed for having no address -- quietly, because a
+      suppressed message is not a failed one. These are the two halves of the fix.
+    */
+    it("gives a new account the address of whoever created it", async () => {
+      const res = await h
+        .http()
+        .post("/v1/accounts")
+        .set("Authorization", `Bearer ${owner}`)
+        .send({ name: "Second Shop", type: "business", organization: { name: "Second Shop Ltd" } });
+      expect(res.status).toBe(201);
+
+      const row = await h.db.db.query.accounts.findFirst({
+        where: eq(accounts.id, res.body.id as string),
+      });
+      expect(row?.billingEmail).toBe(USERS.alice.email);
+    });
+
+    it("welcomes a brand new account instead of suppressing the welcome", async () => {
+      const res = await h
+        .http()
+        .post("/v1/accounts")
+        .set("Authorization", `Bearer ${owner}`)
+        .send({ name: "Third Shop", type: "business", organization: { name: "Third Shop Ltd" } });
+      await h.dispatcher.tick();
+
+      const rows = await h.db.db
+        .select()
+        .from(notificationsTable)
+        .where(eq(notificationsTable.accountId, res.body.id as string));
+      const welcome = rows.find((n) => n.kind === "account.created");
+      expect(welcome, "a new account should be welcomed").toBeTruthy();
+      expect(welcome!.status).toBe("queued");
+      expect(welcome!.toAddress).toBe(USERS.alice.email);
+      expect(welcome!.detail).toBeNull();
+    });
+
+    it("falls back to the owner when an older account has no billing address", async () => {
+      // Exactly the state every account created before the fix is in.
+      await h.db.db.update(accounts).set({ billingEmail: null }).where(eq(accounts.id, accountId));
+
+      await book();
+      await h.dispatcher.tick();
+
+      const rows = await rawRows();
+      const confirm = rows.find((n) => n.kind === "booking.confirmed")!;
+      expect(confirm.toAddress).toBe(USERS.alice.email);
+      expect(confirm.status).toBe("queued");
+    });
+  });
+
+  // ── money and access the customer did not initiate ────────────────────────
+
+  describe("changes made for a customer", () => {
+    it("tells them when we adjust their balance, and which way", async () => {
+      await wallet.adjust(accountId, -25_000, "damaged in transit refund reversal");
+      await h.dispatcher.tick();
+
+      const row = (await rawRows()).find((n) => n.kind === "wallet.adjusted");
+      expect(row, "an adjustment should be announced").toBeTruthy();
+      expect(row!.subject).toContain("A deduction");
+      expect(row!.body).toContain("taken");
+      expect(row!.body).toContain("from your wallet");
+      expect(row!.body).not.toMatch(/\{\{|\}\}/);
+    });
+
+    it("tells them when their payment terms change", async () => {
+      await h
+        .http()
+        .put(`/v1/admin/accounts/${accountId}/credit-terms`)
+        .set(asStaff())
+        .send({ billingMode: "postpaid", creditLimitCents: 500_000 })
+        .expect(200);
+      await h.dispatcher.tick();
+
+      const row = (await rawRows()).find((n) => n.kind === "account.terms_changed");
+      expect(row, "a terms change should be announced").toBeTruthy();
+      expect(row!.body).toContain("on account");
+      expect(row!.body).not.toMatch(/\{\{|\}\}/);
+    });
+
+    it("does not tell an owner they were added to their own account", async () => {
+      // membership.granted fires for the first member too, and "you were added to your own
+      // account" immediately after the welcome is noise.
+      await h.dispatcher.tick();
+      const rows = (await rawRows()).filter((n) => n.kind === "account.member_added");
+      expect(rows).toHaveLength(0);
+    });
+  });
 });

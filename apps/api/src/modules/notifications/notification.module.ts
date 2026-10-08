@@ -1,8 +1,16 @@
 import { Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { formatCents, formatOperatingDateTime } from "@delicate/contracts";
-import { accounts, drivers, shipments, type DbExecutor } from "@delicate/db";
+import {
+  accounts,
+  drivers,
+  memberships,
+  shipments,
+  users,
+  wallets,
+  type DbExecutor,
+} from "@delicate/db";
 import { ENV, type Env } from "../../config/env.js";
 import { DbService } from "../../infra/db.module.js";
 import { EventHandlerRegistry } from "../../worker/event-handlers.js";
@@ -381,12 +389,122 @@ export class NotificationModule implements OnModuleInit {
       });
     });
 
+    /*
+      Money that moved without the customer asking. A refund, a goodwill credit, a correction
+      against a complaint -- all legitimate, and all invisible until a balance is different
+      from the one they remember. Telling them is also the cheapest fraud control we have:
+      an adjustment nobody outside the business can explain gets queried the same day.
+    */
+    this.registry.register("wallet.adjusted", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const account = await this.account(tx, e.payload.accountId);
+        const credit = e.payload.amountCents >= 0;
+        const balance = await this.balance(tx, e.payload.accountId);
+        await this.notifications.enqueue(tx, {
+          kind: "wallet.adjusted",
+          audience: "customer",
+          to: account.email,
+          accountId: e.payload.accountId,
+          // The entry, not the account: an account gets adjusted more than once.
+          dedupeKey: `wallet:${e.payload.entryId}:adjusted`,
+          payload: {
+            customerName: account.name,
+            amount: formatCents(Math.abs(e.payload.amountCents)),
+            direction: credit ? "A credit" : "A deduction",
+            verb: credit ? "added" : "taken",
+            preposition: credit ? "to" : "from",
+            reason: humanise(e.payload.reason),
+            balance: balance === null ? "" : formatCents(balance),
+            portalUrl: `${this.webUrl()}/portal/wallet`,
+          },
+        });
+      });
+    });
+
+    this.registry.register("account.credit_terms_changed", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const account = await this.account(tx, e.payload.accountId);
+        const postpaid = e.payload.billingMode === "postpaid";
+        await this.notifications.enqueue(tx, {
+          kind: "account.terms_changed",
+          audience: "customer",
+          to: account.email,
+          accountId: e.payload.accountId,
+          dedupeKey: `account:${e.payload.accountId}:terms:${e.payload.billingMode}:${e.payload.creditLimitCents}`,
+          payload: {
+            customerName: account.name,
+            accountName: account.name,
+            billingMode: postpaid ? "on account" : "prepaid",
+            explanation: postpaid
+              ? `You can book up to ${formatCents(e.payload.creditLimitCents)} against your account and settle on invoice.`
+              : "Deliveries are paid from your wallet balance. Top up before you book.",
+            portalUrl: `${this.webUrl()}/portal/money`,
+          },
+        });
+      });
+    });
+
+    /*
+      Anyone on an account can spend its wallet, so adding somebody is a money event as much
+      as an admin one. The owner hears about it whether they did it or somebody else did.
+    */
+    this.registry.register("membership.granted", async (e) => {
+      await this.dbs.transaction(async (tx) => {
+        const account = await this.account(tx, e.payload.accountId);
+        const member = await tx.query.users.findFirst({ where: eq(users.id, e.payload.userId) });
+        // The first membership is the owner creating their own account; account.created
+        // already welcomed them, and "you were added to your own account" helps nobody.
+        if (!member || member.email === account.email) return;
+        await this.notifications.enqueue(tx, {
+          kind: "account.member_added",
+          audience: "customer",
+          to: account.email,
+          accountId: e.payload.accountId,
+          dedupeKey: `membership:${e.payload.accountId}:${e.payload.userId}:granted`,
+          payload: {
+            customerName: account.name,
+            accountName: account.name,
+            memberEmail: member.email,
+            role: humanise(e.payload.role),
+            portalUrl: `${this.webUrl()}/portal/members`,
+          },
+        });
+      });
+    });
+
     this.logger.info("notification handlers registered");
   }
 
+  /**
+   * Who to write to for an account, and what to call them.
+   *
+   * The billing address is the one the customer chose, so it wins. Falling back to the owner's
+   * sign-in address matters more than it looks: an account created before we started setting a
+   * billing address has none, and a message with nowhere to go is filed as suppressed rather
+   * than failed -- so the whole account goes quiet and nothing anywhere says why.
+   */
   private async account(tx: DbExecutor, accountId: string) {
     const row = await tx.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
-    return { name: row?.name ?? "there", email: row?.billingEmail ?? null };
+    if (!row) return { name: "there", email: null };
+    return { name: row.name, email: row.billingEmail ?? (await this.ownerEmail(tx, accountId)) };
+  }
+
+  /** The wallet balance as it stands now, for a message that quotes it. */
+  private async balance(tx: DbExecutor, accountId: string): Promise<number | null> {
+    const row = await tx.query.wallets.findFirst({ where: eq(wallets.accountId, accountId) });
+    return row?.balanceCents ?? null;
+  }
+
+  /** The sign-in address of whoever owns the account, oldest membership first. */
+  private async ownerEmail(tx: DbExecutor, accountId: string): Promise<string | null> {
+    const [owner] = await tx
+      .select({ email: users.email })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(and(eq(memberships.accountId, accountId), eq(memberships.role, "customer_owner")))
+      .orderBy(asc(memberships.createdAt))
+      .limit(1);
+    return owner?.email ?? null;
   }
 
   private async driverName(tx: DbExecutor, driverId: string): Promise<string> {
