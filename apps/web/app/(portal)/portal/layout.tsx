@@ -1,8 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useMe } from "@/components/use-me";
+import { ActingAsBanner } from "@/components/shell/acting-as-banner";
 import { signOut } from "@/lib/session";
 import { AppShell, IdentityFooter, type NavSection } from "@/components/shell/app-shell";
 
@@ -45,17 +46,35 @@ const NAV: NavSection[] = [
   },
 ];
 
+const ONBOARDING = "/portal/accounts/new";
+
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const me = useMe();
 
   useEffect(() => {
     if (me.error?.status === 401) router.replace("/login?next=/portal");
   }, [me.error, router]);
 
+  /*
+    Somebody who has just signed up — by email or through Google — has a profile and no
+    account, because an account is ours to create and theirs to name. Every page in here
+    needs one, so there is exactly one place for them to be, and the dashboard is not it.
+    Staff reaching into a customer are exempt: they are working inside an account that exists,
+    it is simply not one of their own.
+  */
+  const needsOnboarding = Boolean(me.data) && me.data!.accounts.length === 0 && !me.data!.actingAs;
+  useEffect(() => {
+    if (needsOnboarding && pathname !== ONBOARDING) router.replace(ONBOARDING);
+  }, [needsOnboarding, pathname, router]);
+
   if (me.isLoading) return <Centered>Loading your account…</Centered>;
   if (me.error) return <Centered>Could not load your profile: {me.error.message}</Centered>;
   if (!me.data) return null;
+  // Hold the frame back for the one render between deciding to redirect and arriving, rather
+  // than flashing an empty dashboard on the way past.
+  if (needsOnboarding && pathname !== ONBOARDING) return <Centered>Setting you up…</Centered>;
 
   const { user, accounts } = me.data;
   const active = me.activeAccount;
@@ -63,7 +82,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   return (
     <AppShell
       home="/portal"
-      title="Delicate"
+      title="Delicate Courier"
       subtitle={active ? active.name : "Customer portal"}
       nav={NAV}
       aside={
@@ -94,6 +113,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         />
       }
     >
+      {me.data.actingAs && <ActingAsBanner account={me.data.actingAs} />}
       {children}
     </AppShell>
   );

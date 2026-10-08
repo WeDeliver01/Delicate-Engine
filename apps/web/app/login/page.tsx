@@ -1,10 +1,13 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseEnabled } from "@/lib/env";
 import { getSupabase, supabaseMisconfigured } from "@/lib/supabase";
 import { setDevToken } from "@/lib/session";
+import { AuthShell, Divider, Field, GoogleButton, safeNext } from "@/components/auth/auth-ui";
+import { useAuthProviders } from "@/components/auth/use-auth-providers";
 
 export default function LoginPage() {
   return (
@@ -22,33 +25,43 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [devToken, setDev] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // Say it up front: this is wrong before anyone types a password, not after.
   const misconfigured = supabaseMisconfigured();
+  const providers = useAuthProviders();
   const [busy, setBusy] = useState(false);
 
   async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
     if (misconfigured) return setError(misconfigured);
     const supabase = getSupabase();
     if (!supabase) return;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setBusy(false);
     if (error) return setError(error.message);
     router.replace(next);
   }
 
-  async function signInWithGoogle() {
+  /**
+   * Supabase sends the reset link; the callback exchanges it for a session and drops them in
+   * the portal, where they can set a new password from their profile.
+   */
+  async function resetPassword() {
     if (misconfigured) return setError(misconfigured);
+    if (!email.trim()) return setError("Type your email address first, then ask for the link.");
     const supabase = getSupabase();
     if (!supabase) return;
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
+
+    setError(null);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset`,
     });
+    if (error) return setError(error.message);
+    setNotice(`If we know ${email.trim()}, a reset link is on its way.`);
   }
 
   function useDevToken(e: React.FormEvent) {
@@ -60,92 +73,84 @@ function LoginForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <h1 className="text-2xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-[#6B6661]">Delicate Courier portal</p>
-
+    <AuthShell
+      title="Sign in"
+      lede="Your deliveries, wallet and invoices."
+      footer={
+        supabaseEnabled ? (
+          <>
+            New to Delicate Courier?{" "}
+            <Link href={`/signup?next=${encodeURIComponent(next)}`} className="link-accent">
+              Create an account
+            </Link>
+          </>
+        ) : (
+          <Link href="/" className="link-quiet">
+            Back to the site
+          </Link>
+        )
+      }
+    >
       {supabaseEnabled ? (
-        <form onSubmit={signInWithPassword} className="mt-8 space-y-4">
-          <Field
-            label="Email"
-            type="email"
-            value={email}
-            onChange={setEmail}
-            autoComplete="email"
-          />
-          <Field
-            label="Password"
-            type="password"
-            value={password}
-            onChange={setPassword}
-            autoComplete="current-password"
-          />
-          <button
-            disabled={busy}
-            className="w-full rounded-xl bg-ink py-2 font-medium text-white disabled:opacity-50"
+        <>
+          {providers.google && (
+            <div className="mt-8 space-y-4">
+              <GoogleButton next={next} label="Continue with Google" onError={setError} />
+              <Divider>or</Divider>
+            </div>
+          )}
+
+          <form
+            onSubmit={signInWithPassword}
+            className={providers.google ? "mt-4 space-y-4" : "mt-8 space-y-4"}
           >
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
-          <button
-            type="button"
-            onClick={signInWithGoogle}
-            className="w-full rounded-xl border border-[#DAD6CF] py-2 font-medium"
-          >
-            Continue with Google
-          </button>
-        </form>
+            <Field
+              label="Email"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              autoComplete="email"
+            />
+            <div>
+              <Field
+                label="Password"
+                type="password"
+                value={password}
+                onChange={setPassword}
+                autoComplete="current-password"
+              />
+              <button type="button" onClick={resetPassword} className="link-quiet mt-1.5 text-xs">
+                Forgot your password?
+              </button>
+            </div>
+            {error && <p className="alert-error">{error}</p>}
+            {notice && <p className="alert-success">{notice}</p>}
+            <button disabled={busy} className="btn btn-primary w-full">
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </>
       ) : (
         <form onSubmit={useDevToken} className="mt-8 space-y-4">
-          <div className="rounded-xl border border-[#F7A8CE] bg-[#FCEEF4] p-3 text-sm text-ink">
+          <div className="alert-info">
             Supabase is not configured. Local development uses a dev token from the API:
             <code className="mt-1 block text-xs">
               pnpm --filter @delicate/api run dev:token owner
             </code>
           </div>
-          <label className="block text-sm">
-            <span className="font-medium">Dev token</span>
+          <label className="block">
+            <span className="field-label">Dev token</span>
             <textarea
               value={devToken}
               onChange={(e) => setDev(e.target.value)}
               rows={4}
-              className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2 font-mono text-xs"
+              className="input mt-1.5 font-mono text-xs"
             />
           </label>
-          <button className="w-full rounded-xl bg-ink py-2 font-medium text-white">
-            Use token
-          </button>
+          {error && <p className="alert-error">{error}</p>}
+          <button className="btn btn-primary w-full">Use token</button>
         </form>
       )}
-
-      {error && <p className="mt-4 text-sm text-[#C13B73]">{error}</p>}
-    </main>
+    </AuthShell>
   );
-}
-
-function Field(props: {
-  label: string;
-  type: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete?: string;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="font-medium">{props.label}</span>
-      <input
-        type={props.type}
-        value={props.value}
-        autoComplete={props.autoComplete}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="mt-1 w-full rounded-xl border border-[#DAD6CF] p-2"
-        required
-      />
-    </label>
-  );
-}
-
-/** Only allow same-origin relative redirects. */
-function safeNext(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/portal";
-  return value;
 }

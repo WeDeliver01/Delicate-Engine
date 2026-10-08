@@ -16,6 +16,8 @@ const SUPABASE_AUDIENCE = "authenticated";
 export interface VerifiedToken {
   userId: string;
   email: string | null;
+  /** From the provider's profile, when it gives us one. See `displayName`. */
+  fullName: string | null;
   issuer: "supabase" | "dev";
   claims: JWTPayload;
 }
@@ -131,10 +133,17 @@ export class TokenVerifier {
   async signDevToken(input: {
     userId: string;
     email: string;
+    fullName?: string;
     ttlSeconds?: number;
   }): Promise<string> {
     if (!this.devSecret) throw new Error("AUTH_DEV_SECRET is not configured");
-    return new SignJWT({ email: input.email, role: SUPABASE_AUDIENCE })
+    return new SignJWT({
+      email: input.email,
+      role: SUPABASE_AUDIENCE,
+      // Shaped like Supabase's, so what the dev issuer mints exercises the same claim path
+      // a real token does rather than a simplified one that proves nothing.
+      ...(input.fullName ? { user_metadata: { full_name: input.fullName } } : {}),
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(DEV_ISSUER)
       .setSubject(input.userId)
@@ -147,7 +156,25 @@ export class TokenVerifier {
 function toVerified(payload: JWTPayload, issuer: VerifiedToken["issuer"]): VerifiedToken {
   if (!payload.sub) throw AppError.unauthorized("token has no subject");
   const email = typeof payload["email"] === "string" ? payload["email"] : null;
-  return { userId: payload.sub, email, issuer, claims: payload };
+  return { userId: payload.sub, email, fullName: displayName(payload), issuer, claims: payload };
+}
+
+/**
+ * The name the identity provider knows them by.
+ *
+ * Supabase puts it in `user_metadata`: Google fills in `name` and `full_name` from the Google
+ * profile, and our own sign-up form passes `full_name` through `signUp`. Taking it here is the
+ * difference between a portal that greets someone by name and one that shows their email
+ * address on every page because nobody ever asked.
+ */
+function displayName(payload: JWTPayload): string | null {
+  const meta = payload["user_metadata"];
+  if (!meta || typeof meta !== "object") return null;
+  for (const key of ["full_name", "name"] as const) {
+    const value = (meta as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 120);
+  }
+  return null;
 }
 
 function peekIssuer(token: string): string | undefined {

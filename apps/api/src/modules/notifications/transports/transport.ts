@@ -22,6 +22,12 @@ export interface OutboundMessage {
   to: string;
   subject: string | null;
   body: string;
+  /**
+   * The same message as HTML, where the channel has a use for one. Sent alongside `body`
+   * rather than instead of it: a client that cannot or will not render HTML still gets the
+   * words, and a text part is worth real deliverability points to spam filters.
+   */
+  html?: string | null;
   /** For an email "from" line and an SMS sender id. */
   fromName: string;
   /**

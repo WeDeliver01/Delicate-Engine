@@ -31,6 +31,12 @@ export interface Principal {
   account: {
     id: string;
     role: AccountRole | null;
+    /**
+     * True when a staff member named an account they do not belong to. The request proceeds —
+     * that is the point of the capability — but everything it writes is marked, and the portal
+     * says so on screen rather than letting someone forget whose account they are in.
+     */
+    impersonating: boolean;
   } | null;
 }
 

@@ -21,6 +21,7 @@ import {
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
+import { renderEmailHtml } from "./email-layout.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { Clock } from "../../infra/clock.js";
 import { AppError } from "../../common/errors.js";
@@ -61,6 +62,11 @@ export class NotificationService {
     private readonly clock: Clock,
     @Inject(NOTIFICATION_TRANSPORTS) private readonly transports: NotificationTransport[],
   ) {}
+
+  /** Absolute base URL of the portal, for links and the logo in the email layout. */
+  private get webUrl(): string {
+    return process.env["WEB_PUBLIC_URL"] ?? "http://localhost:3000";
+  }
 
   /** Copy the shipped templates in once. Never overwrites: the operator owns the words. */
   async seedTemplates(): Promise<void> {
@@ -249,6 +255,25 @@ export class NotificationService {
           subject: row.subject,
           body: row.body,
           fromName,
+          // Built here rather than stored on the row, so restyling the layout changes every
+          // message from the next send onwards -- including ones already queued -- instead
+          // of baking the design of the day into the database forever.
+          html:
+            row.channel === "email"
+              ? renderEmailHtml({
+                  heading: row.subject,
+                  body: row.body,
+                  company: {
+                    name: fromName,
+                    legalName: company.legalName,
+                    address: company.address?.formatted ?? null,
+                    email: company.email ?? null,
+                    phone: company.phone ?? null,
+                    waSubject: row.subject,
+                  },
+                  webUrl: this.webUrl,
+                })
+              : null,
           bcc: this.adminCopyFor(row.kind, row.channel, row.toAddress, adminCopy),
         });
         await this.dbs.db

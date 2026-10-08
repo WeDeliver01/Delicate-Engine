@@ -47,6 +47,12 @@ export default function SiteNav() {
             Login
           </a>
           <a
+            href="/signup"
+            className="text-[13.5px] text-[#6B6661] hover:text-[#0A0A0A] transition-all active:scale-95"
+          >
+            Sign up
+          </a>
+          <a
             href="/quote"
             className="bg-[#0A0A0A] text-white text-[13.5px] font-medium px-6 py-2.5 rounded-full hover:bg-[#E84A8A] transition-all active:scale-95"
           >
@@ -92,6 +98,13 @@ export default function SiteNav() {
               className="py-2.5 text-[15px] text-[#3A3631] border-b border-[#F4F2EF]"
             >
               Login
+            </a>
+            <a
+              href="/signup"
+              onClick={() => setOpen(false)}
+              className="py-2.5 text-[15px] text-[#3A3631] border-b border-[#F4F2EF]"
+            >
+              Sign up
             </a>
             <a
               href="/quote"

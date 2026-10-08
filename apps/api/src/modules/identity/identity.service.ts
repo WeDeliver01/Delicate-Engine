@@ -32,7 +32,7 @@ export class IdentityService {
     private readonly wallet: WalletService,
   ) {}
 
-  async me(user: AuthenticatedUser): Promise<MeResponse> {
+  async me(user: AuthenticatedUser, actingAsId_?: string | null): Promise<MeResponse> {
     const { db } = this.dbs;
     const row = await db.query.users.findFirst({ where: eq(users.id, user.id) });
     if (!row) throw AppError.notFound("user");
@@ -53,11 +53,23 @@ export class IdentityService {
       .where(eq(memberships.userId, user.id))
       .orderBy(accounts.name);
 
+    // Only when the account is not one of their own. Staff looking at an account they
+    // genuinely belong to are not acting as anyone, and a banner there would be noise that
+    // teaches people to ignore the banner that matters.
+    const actingAsId = actingAsId_ && !rows.some((r) => r.id === actingAsId_) ? actingAsId_ : null;
+    const actingAs = actingAsId
+      ? ((await db.query.accounts.findFirst({
+          where: eq(accounts.id, actingAsId),
+          columns: { id: true, name: true },
+        })) ?? null)
+      : null;
+
     return {
       user: toProfile(row),
       accounts: rows.map(
         (r) => ({ ...r, createdAt: r.createdAt.toISOString() }) as AccountMembership,
       ),
+      actingAs,
     };
   }
 
@@ -107,7 +119,20 @@ export class IdentityService {
 
       const [account] = await tx
         .insert(accounts)
-        .values({ name: input.name, type: input.type, organizationId, billingMode: "prepaid" })
+        .values({
+          name: input.name,
+          type: input.type,
+          organizationId,
+          billingMode: "prepaid",
+          /*
+            The address we write to. Without it every notification this account ever earns is
+            recorded as suppressed for having nowhere to go, and every invoice is addressed to
+            nobody -- quietly, because a suppressed message is not a failed one and nothing
+            raises its hand. The person creating the account is the right default; they can
+            change it to accounts@ later.
+          */
+          billingEmail: user.email,
+        })
         .returning();
       await tx
         .insert(memberships)

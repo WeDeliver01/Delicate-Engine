@@ -293,6 +293,60 @@ Please let us know if someone can receive it, or reply here to make other arrang
 Track it: {{trackUrl}}
 — {{companyName}}`,
   },
+  {
+    /*
+      A balance that moved without the customer doing anything. Nearly always us putting right
+      something they told us about -- a refund, a goodwill credit, a correction -- and the one
+      kind of money movement they cannot see coming, so it is the one that most needs saying.
+    */
+    kind: "wallet.adjusted",
+    channel: "email",
+    audience: "customer",
+    subject: "{{direction}} of {{amount}} on your {{companyName}} wallet",
+    body: `Hi {{customerName}},
+
+We have {{verb}} {{amount}} {{preposition}} your wallet.
+
+Reason: {{reason}}
+New balance: {{balance}}
+
+If this does not look right, reply to this email and we will sort it out.
+
+See the full history at {{portalUrl}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "account.terms_changed",
+    channel: "email",
+    audience: "customer",
+    subject: "Your {{companyName}} payment terms have changed",
+    body: `Hi {{customerName}},
+
+Your account {{accountName}} is now **{{billingMode}}**.
+
+{{explanation}}
+
+See your balance at {{portalUrl}}.
+
+— {{companyName}}`,
+  },
+  {
+    kind: "account.member_added",
+    channel: "email",
+    audience: "customer",
+    subject: "{{memberEmail}} was added to your {{companyName}} account",
+    body: `Hi {{customerName}},
+
+{{memberEmail}} can now book and see deliveries on {{accountName}}, as {{role}}.
+
+If you did not expect this, reply to this email straight away -- anyone on the account can
+spend from its wallet.
+
+Manage who has access at {{portalUrl}}.
+
+— {{companyName}}`,
+  },
 ];
 
 /**

@@ -4,6 +4,8 @@ import { use, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { BillingMode, WalletEntry, WalletSummary } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
+import { setActiveAccountId } from "@/lib/session";
+import { useMe } from "@/components/use-me";
 import { dateTime, rands } from "@/lib/money";
 
 /** Finance view of one account: wallet, ledger, credit terms, adjustments. All audited. */
@@ -74,8 +76,31 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
     onError,
   });
 
+  const me = useMe();
+  const canActAs = me.data?.user.platformRole === "super_admin";
+
   return (
     <div className="grid gap-6 lg:grid-cols-3">
+      {canActAs && (
+        <section className="panel flex flex-wrap items-center justify-between gap-3 p-4 lg:col-span-3">
+          <p className="text-sm text-[#6B6661]">
+            Open the portal as this account — to see what they see, or to book for them against
+            their wallet. Everything you do is recorded against your name.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveAccountId(id);
+              // A full load, not a client navigation: the portal has to fetch everything
+              // fresh as this account rather than reuse anything cached as the console.
+              window.location.assign("/portal");
+            }}
+            className="btn btn-secondary btn-sm"
+          >
+            Act as this account
+          </button>
+        </section>
+      )}
       <div className="space-y-6 lg:col-span-2">
         <section className="panel p-5">
           <p className="font-mono text-xs text-muted">{id}</p>

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { users } from "@delicate/db";
+import { eq } from "drizzle-orm";
+import { settings as settingsTable, users } from "@delicate/db";
 import type { AllocationWallet, SettingsBundle } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
 import { SettingsService } from "../src/infra/settings.service.js";
@@ -194,5 +195,38 @@ describe("operator settings", () => {
     );
     expect(entry).toBeTruthy();
     expect((entry!.after as { vatNumber: string }).vatNumber).toBe("4999888777");
+  });
+
+  /*
+    `get` throws when a key has no row and most callers do not catch it, so a key added after
+    a database was seeded takes out every endpoint that reads it. That happened: the admin
+    settings endpoint 500'd on a missing notifications.admin_copy, which hid the very panel
+    for setting it.
+  */
+  it("puts a setting back at its default when its row is missing", async () => {
+    await h.db.db.delete(settingsTable).where(eq(settingsTable.key, "notifications.admin_copy"));
+    settings.invalidate();
+
+    await settings.onModuleInit();
+
+    const value = await settings.get("notifications.admin_copy");
+    expect(value.address).toBeTruthy();
+    // Off until somebody names an address that can receive: a blind copy to a mailbox that
+    // does not exist bounces every message we send.
+    expect(value.enabled).toBe(false);
+  });
+
+  it("does not reset a setting somebody has already configured", async () => {
+    await settings.set("notifications.admin_copy", {
+      enabled: true,
+      address: "ops@example.co.za",
+      kinds: "all",
+    });
+
+    await settings.onModuleInit();
+
+    const value = await settings.get("notifications.admin_copy");
+    expect(value.address).toBe("ops@example.co.za");
+    expect(value.enabled).toBe(true);
   });
 });

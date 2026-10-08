@@ -49,13 +49,19 @@ export const NotificationKind = z.enum([
   "shipment.change_rejected",
   "wallet.topped_up",
   "wallet.low_balance",
+  "wallet.adjusted",
   "invoice.issued",
   "invoice.overdue",
+  "account.terms_changed",
+  "account.member_added",
 ]);
 
 /** Grouped for the console, so a screen of toggles reads as a few decisions rather than 17. */
 export const NOTIFICATION_GROUPS: { group: string; kinds: string[] }[] = [
-  { group: "Sign-ups", kinds: ["account.created"] },
+  {
+    group: "Account",
+    kinds: ["account.created", "account.terms_changed", "account.member_added"],
+  },
   { group: "Bookings", kinds: ["booking.confirmed", "booking.rejected", "booking.cancelled"] },
   {
     group: "Tracking",
@@ -80,7 +86,13 @@ export const NOTIFICATION_GROUPS: { group: string; kinds: string[] }[] = [
   },
   {
     group: "Money",
-    kinds: ["wallet.topped_up", "wallet.low_balance", "invoice.issued", "invoice.overdue"],
+    kinds: [
+      "wallet.topped_up",
+      "wallet.low_balance",
+      "wallet.adjusted",
+      "invoice.issued",
+      "invoice.overdue",
+    ],
   },
 ];
 

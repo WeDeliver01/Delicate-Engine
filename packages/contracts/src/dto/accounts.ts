@@ -57,6 +57,14 @@ export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequest>;
 export const MeResponse = z.object({
   user: UserProfile,
   accounts: z.array(AccountMembership),
+  /**
+   * Set when staff are working inside an account they do not belong to.
+   *
+   * The portal has to be able to say so on screen. Someone who forgets whose account they are
+   * in books a real delivery against a real customer's wallet, and the only thing standing
+   * between that and a refund is whether the page told them.
+   */
+  actingAs: z.object({ id: Uuid, name: z.string() }).nullable().default(null),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 

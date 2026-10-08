@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { accounts, memberships, users } from "@delicate/db";
 import { DbService } from "../infra/db.module.js";
 import { AppError } from "../common/errors.js";
@@ -19,23 +19,31 @@ export class PrincipalService {
     const { db } = this.dbs;
     const existing = await db.query.users.findFirst({ where: eq(users.id, token.userId) });
     if (existing) {
-      return {
-        id: existing.id,
-        email: existing.email,
-        fullName: existing.fullName,
-        platformRole: existing.platformRole,
-      };
+      /*
+        Fill in a name we did not have. Users provisioned before we read the claim, and anyone
+        who signed up with Google after a password account, arrive here with a null name and a
+        perfectly good one in the token. It is a single write, once, because after it the name
+        is no longer null — not a write on every request.
+      */
+      if (!existing.fullName && token.fullName) {
+        await db
+          .update(users)
+          .set({ fullName: token.fullName })
+          .where(and(eq(users.id, existing.id), isNull(users.fullName)));
+        return { ...toUser(existing), fullName: token.fullName };
+      }
+      return toUser(existing);
     }
     if (!token.email) throw AppError.unauthorized("token has no email; cannot provision user");
 
     const [created] = await db
       .insert(users)
-      .values({ id: token.userId, email: token.email })
+      .values({ id: token.userId, email: token.email, fullName: token.fullName })
       .onConflictDoNothing()
       .returning();
     const row = created ?? (await db.query.users.findFirst({ where: eq(users.id, token.userId) }));
     if (!row) throw AppError.unauthorized("could not provision user");
-    return { id: row.id, email: row.email, fullName: row.fullName, platformRole: row.platformRole };
+    return toUser(row);
   }
 
   async resolveAccount(
@@ -50,15 +58,34 @@ export class PrincipalService {
     if (!account) throw AppError.forbidden("unknown account");
     if (account.status !== "active") throw AppError.forbidden("account is not active");
 
-    if (isStaff({ user, service: null, account: null })) {
-      return { id: account.id, role: null };
-    }
-
     const membership = await db.query.memberships.findFirst({
       where: and(eq(memberships.accountId, accountId), eq(memberships.userId, user.id)),
       columns: { role: true },
     });
-    if (!membership) throw AppError.forbidden("not a member of this account");
-    return { id: account.id, role: membership.role };
+    if (membership) return { id: account.id, role: membership.role, impersonating: false };
+
+    // No membership. Staff may still act here — support cannot help with a booking they
+    // cannot see — but it is recorded as acting on someone's behalf rather than passed off
+    // as the customer's own doing. Their account role stays null: authority comes from the
+    // platform role, not from a membership they do not have.
+    if (isStaff({ user, service: null, account: null })) {
+      return { id: account.id, role: null, impersonating: true };
+    }
+
+    throw AppError.forbidden("not a member of this account");
   }
+}
+
+function toUser(row: {
+  id: string;
+  email: string;
+  fullName: string | null;
+  platformRole: AuthenticatedUser["platformRole"];
+}): AuthenticatedUser {
+  return {
+    id: row.id,
+    email: row.email,
+    fullName: row.fullName,
+    platformRole: row.platformRole,
+  };
 }

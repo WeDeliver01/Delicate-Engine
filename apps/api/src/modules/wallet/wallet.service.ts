@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { PinoLogger } from "nestjs-pino";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type {
   CreditTermsRequest,
@@ -26,6 +27,14 @@ export interface MovementInput {
 }
 
 export interface HoldInput {
+  /**
+   * Let the hold take the wallet past its balance and credit limit.
+   *
+   * Only ever set from a super-admin override: the engine's job is to refuse a booking the
+   * account cannot pay for, and the one person allowed to overrule that should have to say so
+   * explicitly rather than have the rule quietly not apply to them.
+   */
+  allowOverdraw?: boolean;
   accountId: string;
   amountCents: number;
   reference?: string | null;
@@ -44,7 +53,10 @@ export class WalletService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
     private readonly ledger: LedgerService,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(WalletService.name);
+  }
 
   /** Create the wallet row if missing. Called on account creation and lazily on first use. */
   async ensure(tx: DbExecutor, accountId: string): Promise<void> {
@@ -119,12 +131,26 @@ export class WalletService {
     const wallet = await this.lock(tx, input.accountId);
     const held = await this.activeHoldsCents(tx, input.accountId);
     const available = wallet.balanceCents + wallet.creditLimitCents - held;
-    if (available < input.amountCents) {
+    if (available < input.amountCents && !input.allowOverdraw) {
       throw new AppError("insufficient_funds", "insufficient funds for this booking", 402, {
         availableCents: available,
         requiredCents: input.amountCents,
         shortfallCents: input.amountCents - available,
       });
+    }
+    if (available < input.amountCents) {
+      // Taken past the limit on purpose. Logged at warn rather than info: a wallet going
+      // further into the red is a commercial decision somebody made, and it should be
+      // findable later without knowing to look for it.
+      this.logger.warn(
+        {
+          accountId: input.accountId,
+          availableCents: available,
+          requiredCents: input.amountCents,
+          overdrawnByCents: input.amountCents - available,
+        },
+        "hold placed beyond the available balance",
+      );
     }
     const [hold] = await tx
       .insert(walletHolds)
