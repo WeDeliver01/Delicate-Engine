@@ -26,6 +26,12 @@ function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /*
+    What the provider actually said, when we have replaced it with something kinder.
+    Rewording an error is for the customer; throwing the original away is for nobody --
+    "we could not send the email" with no reason is unfixable by whoever has to fix it.
+  */
+  const [detail, setDetail] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resent, setResent] = useState(false);
@@ -52,7 +58,7 @@ function SignUpForm() {
       },
     });
     setBusy(false);
-    if (error) return setError(readable(error.message));
+    if (error) return fail(error.message);
 
     // Confirmations switched off on the project: they are already signed in.
     if (data.session) return router.replace(next);
@@ -66,6 +72,13 @@ function SignUpForm() {
     setSentTo(email.trim());
   }
 
+  /** Show our wording, and keep theirs where it differs. */
+  function fail(providerMessage: string) {
+    const friendly = readable(providerMessage);
+    setError(friendly);
+    setDetail(friendly === providerMessage ? null : providerMessage);
+  }
+
   /** Nothing arrived. Usually spam, sometimes a typo, occasionally our mail is not sending. */
   async function resend() {
     const supabase = getSupabase();
@@ -76,7 +89,7 @@ function SignUpForm() {
       email: sentTo,
       options: { emailRedirectTo: confirmUrl(next) },
     });
-    if (error) return setError(readable(error.message));
+    if (error) return fail(error.message);
     setResent(true);
   }
 
@@ -100,7 +113,12 @@ function SignUpForm() {
           password.
         </p>
         <div className="mt-4 space-y-3">
-          {error && <p className="alert-error">{error}</p>}
+          {error && (
+            <div className="alert-error">
+              <p>{error}</p>
+              {detail && <p className="mt-1.5 text-xs opacity-75">Reported as: {detail}</p>}
+            </div>
+          )}
           {resent ? (
             <p className="alert-success">Sent again. Check your spam folder too.</p>
           ) : (
@@ -116,7 +134,7 @@ function SignUpForm() {
   return (
     <AuthShell
       title="Create your account"
-      lede="Same-day delivery across Pretoria and Tshwane. No monthly fee — you load what you need."
+      lede="Same-day delivery across Gauteng, for the things that cannot wait."
       footer={
         <>
           Already with us?{" "}
@@ -178,7 +196,12 @@ function SignUpForm() {
               minLength={8}
               hint="At least 8 characters."
             />
-            {error && <p className="alert-error">{error}</p>}
+            {error && (
+              <div className="alert-error">
+                <p>{error}</p>
+                {detail && <p className="mt-1.5 text-xs opacity-75">Reported as: {detail}</p>}
+              </div>
+            )}
             <button disabled={busy} className="btn btn-primary w-full">
               {busy ? "Creating your account…" : "Create account"}
             </button>
