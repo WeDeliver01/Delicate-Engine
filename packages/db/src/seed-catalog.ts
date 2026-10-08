@@ -92,16 +92,21 @@ export const CATALOG_SEED = {
       "is otherwise limited in terms of our standard conditions. Signature below acknowledges " +
       "that the parcels listed were received in apparent good order and condition.",
     /**
-     * Every outbound message is copied to the office by default, which is what was asked for.
-     * It is a lot of mail: at a few hundred shipments a month with an email per status change,
-     * this mailbox receives thousands of messages nobody needs to read, and the ones that do
-     * need a human — a failed booking, a new sign-up — get buried among them.
+     * Copying the office on everything is what was asked for, and it is still off here,
+     * because the address is the part we cannot guess. A blind copy to a mailbox that does
+     * not receive yet bounces every single outbound message, and a bounce rate like that
+     * costs the sending domain its reputation — so the one setting that would help becomes
+     * the reason none of the mail arrives.
      *
-     * Everything is logged and searchable in the console either way, so narrowing `kinds` to
-     * the handful that need acting on costs nothing and is a one-line change in Settings.
+     * Turn it on in the console, with an address that can actually receive. Nothing is lost
+     * in the meantime: every message is recorded and searchable there regardless.
+     *
+     * It is also a lot of mail. At a few hundred shipments a month with an email per status
+     * change, this mailbox takes thousands nobody reads, and the ones that do need a human —
+     * a failed booking, a new sign-up — get buried. Narrowing `kinds` is a click.
      */
     "notifications.admin_copy": {
-      enabled: true,
+      enabled: false,
       address: "admin@delicatecourier.co.za",
       kinds: "all",
     },

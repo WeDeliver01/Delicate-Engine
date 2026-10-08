@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, type OnModuleInit } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -12,7 +12,7 @@ import {
   AdminCopySettings,
   type SettingKey,
 } from "@delicate/contracts";
-import { settings, type DbExecutor } from "@delicate/db";
+import { CATALOG_SEED, settings, type DbExecutor } from "@delicate/db";
 import { DbService } from "./db.module.js";
 import { AuditService } from "./audit.service.js";
 import { AppError } from "../common/errors.js";
@@ -38,7 +38,7 @@ type Schemas = typeof SCHEMAS;
 export type SettingValue<K extends SettingKey> = z.infer<Schemas[K]>;
 
 @Injectable()
-export class SettingsService {
+export class SettingsService implements OnModuleInit {
   private cache = new Map<string, { value: unknown; at: number }>();
   private readonly ttlMs = 10_000;
 
@@ -46,6 +46,24 @@ export class SettingsService {
     private readonly dbs: DbService,
     private readonly audit: AuditService,
   ) {}
+
+  /**
+   * Put any missing setting at its shipped default.
+   *
+   * `get` throws when a key has no row, and most callers do not catch it -- so a key added to
+   * the code after a database was seeded takes out every endpoint that reads it. That is not
+   * hypothetical: `notifications.admin_copy` was added to the seed long after dev was seeded,
+   * so the admin settings endpoint 500'd and the panel for setting it could not render. The
+   * one screen that fixes the problem was behind the problem.
+   *
+   * Seeding on boot instead of only on `db:seed` makes that class of fault go away. Existing
+   * values are never touched: this fills gaps, it does not reset anybody's configuration.
+   */
+  async onModuleInit(): Promise<void> {
+    for (const [key, value] of Object.entries(CATALOG_SEED.settings)) {
+      await this.dbs.db.insert(settings).values({ key, value }).onConflictDoNothing();
+    }
+  }
 
   async get<K extends SettingKey>(key: K, tx?: DbExecutor): Promise<SettingValue<K>> {
     const cached = this.cache.get(key);
