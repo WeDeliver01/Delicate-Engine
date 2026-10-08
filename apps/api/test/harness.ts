@@ -13,7 +13,7 @@ export interface Harness {
   db: DbService;
   dispatcher: OutboxDispatcher;
   http: () => request.Agent;
-  tokenFor: (user: { id: string; email: string }) => Promise<string>;
+  tokenFor: (user: { id: string; email: string; fullName?: string }) => Promise<string>;
   reset: () => Promise<void>;
   close: () => Promise<void>;
 }
@@ -129,7 +129,8 @@ export async function createHarness(): Promise<Harness> {
     db,
     dispatcher,
     http: () => request.agent(app.getHttpServer()),
-    tokenFor: (user) => verifier.signDevToken({ userId: user.id, email: user.email }),
+    tokenFor: (user) =>
+      verifier.signDevToken({ userId: user.id, email: user.email, fullName: user.fullName }),
     reset: async () => {
       await truncateAll(db);
       await db.transaction((tx) => seedCatalog(tx));

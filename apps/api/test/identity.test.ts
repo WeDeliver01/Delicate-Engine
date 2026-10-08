@@ -36,6 +36,43 @@ describe("identity & accounts", () => {
     expect(row?.email).toBe(USERS.alice.email);
   });
 
+  /*
+    Sign-up carries a name: our own form passes one through Supabase's `signUp`, and Google
+    supplies one from the profile. Both arrive as `user_metadata` on the token, and if nobody
+    reads it the portal greets every new customer by email address forever.
+  */
+  it("takes the name from the token when it provisions a new user", async () => {
+    const token = await h.tokenFor({ ...USERS.bob, fullName: "Thandi Mokoena" });
+    const res = await h.http().get("/v1/me").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.fullName).toBe("Thandi Mokoena");
+  });
+
+  it("fills in a name it did not have, and then leaves it alone", async () => {
+    // Provisioned before we read the claim, or signed up with a password and linked Google
+    // later: either way the row has no name and the token does.
+    await h.http().get("/v1/me").set("Authorization", `Bearer ${bob}`).expect(200);
+    let row = await h.db.db.query.users.findFirst({ where: eq(users.id, USERS.bob.id) });
+    expect(row?.fullName).toBeNull();
+
+    const named = await h.tokenFor({ ...USERS.bob, fullName: "Thandi Mokoena" });
+    await h.http().get("/v1/me").set("Authorization", `Bearer ${named}`).expect(200);
+    row = await h.db.db.query.users.findFirst({ where: eq(users.id, USERS.bob.id) });
+    expect(row?.fullName).toBe("Thandi Mokoena");
+
+    // The profile is ours once it is set. A provider that changes its mind about someone's
+    // name must not quietly overwrite what they typed on their own profile page.
+    await h
+      .http()
+      .patch("/v1/me")
+      .set("Authorization", `Bearer ${named}`)
+      .send({ fullName: "T. Mokoena" })
+      .expect(200);
+    const renamed = await h.tokenFor({ ...USERS.bob, fullName: "Thandi Mokoena" });
+    const after = await h.http().get("/v1/me").set("Authorization", `Bearer ${renamed}`);
+    expect(after.body.user.fullName).toBe("T. Mokoena");
+  });
+
   it("creates a business account with its organization, audit rows and outbox events atomically", async () => {
     const res = await h
       .http()
