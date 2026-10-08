@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabaseEnabled } from "@/lib/env";
 import { getSupabase, supabaseMisconfigured } from "@/lib/supabase";
 import { AuthShell, Divider, Field, GoogleButton, safeNext } from "@/components/auth/auth-ui";
+import { useAuthProviders } from "@/components/auth/use-auth-providers";
 
 export default function SignUpPage() {
   return (
@@ -28,6 +29,7 @@ function SignUpForm() {
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const misconfigured = supabaseMisconfigured();
+  const providers = useAuthProviders();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,12 +111,22 @@ function SignUpForm() {
         </p>
       ) : (
         <>
-          <div className="mt-8 space-y-4">
-            <GoogleButton next={next} label="Continue with Google" onError={setError} />
-            <Divider>or</Divider>
-          </div>
+          {providers.signupDisabled && (
+            <p className="alert-info mt-8">
+              We are not taking new sign-ups at the moment. Email us and we will set you up.
+            </p>
+          )}
+          {providers.google && (
+            <div className="mt-8 space-y-4">
+              <GoogleButton next={next} label="Continue with Google" onError={setError} />
+              <Divider>or</Divider>
+            </div>
+          )}
 
-          <form onSubmit={submit} className="mt-4 space-y-4">
+          <form
+            onSubmit={submit}
+            className={providers.google ? "mt-4 space-y-4" : "mt-8 space-y-4"}
+          >
             <Field
               label="Your name"
               type="text"

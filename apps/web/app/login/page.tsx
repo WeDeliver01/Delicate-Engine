@@ -7,6 +7,7 @@ import { supabaseEnabled } from "@/lib/env";
 import { getSupabase, supabaseMisconfigured } from "@/lib/supabase";
 import { setDevToken } from "@/lib/session";
 import { AuthShell, Divider, Field, GoogleButton, safeNext } from "@/components/auth/auth-ui";
+import { useAuthProviders } from "@/components/auth/use-auth-providers";
 
 export default function LoginPage() {
   return (
@@ -27,6 +28,7 @@ function LoginForm() {
   const [notice, setNotice] = useState<string | null>(null);
   // Say it up front: this is wrong before anyone types a password, not after.
   const misconfigured = supabaseMisconfigured();
+  const providers = useAuthProviders();
   const [busy, setBusy] = useState(false);
 
   async function signInWithPassword(e: React.FormEvent) {
@@ -91,12 +93,17 @@ function LoginForm() {
     >
       {supabaseEnabled ? (
         <>
-          <div className="mt-8 space-y-4">
-            <GoogleButton next={next} label="Continue with Google" onError={setError} />
-            <Divider>or</Divider>
-          </div>
+          {providers.google && (
+            <div className="mt-8 space-y-4">
+              <GoogleButton next={next} label="Continue with Google" onError={setError} />
+              <Divider>or</Divider>
+            </div>
+          )}
 
-          <form onSubmit={signInWithPassword} className="mt-4 space-y-4">
+          <form
+            onSubmit={signInWithPassword}
+            className={providers.google ? "mt-4 space-y-4" : "mt-8 space-y-4"}
+          >
             <Field
               label="Email"
               type="email"
