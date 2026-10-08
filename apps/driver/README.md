@@ -32,6 +32,33 @@ Expo's servers.
 Without them the app falls back to the dev-token box and says so on screen — which a production
 engine refuses anyway, so an unconfigured build cannot sign anyone in.
 
+### Check before you build
+
+A build takes about twenty minutes and an unsigned-in app looks identical whichever link in the
+chain is broken. Check the chain first, from the repository root:
+
+```bash
+infra/scripts/check-driver-signin.sh driver@delicatecourier.co.za
+```
+
+It asks for the password rather than taking it as an argument, then walks the chain in the order
+it breaks: the values are filled in and not a pasted placeholder, the anon key belongs to the
+project the URL names and is not the `service_role` key, the project answers, the account exists
+and is confirmed, the engine is configured for that same project, and — the only step that proves
+anything — the engine accepts a real token from it and agrees this login is an active driver.
+
+It reads the profile's `env` from `eas.json`, or takes exported values if you keep them in
+`eas env:create` instead:
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=https://<project>.supabase.co \
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<anon key> \
+  infra/scripts/check-driver-signin.sh driver@delicatecourier.co.za
+```
+
+Run it on the VPS if you can: that is the only place `infra/docker/.env` exists, so it is the
+only place the engine's half of step 5 can be checked.
+
 The session is kept in the device keystore and renewed a minute before it expires. That matters
 more than it sounds: a Supabase access token lasts about an hour and a shift lasts five, so
 without renewal a driver is signed out somewhere around the fourth delivery. Renewal is

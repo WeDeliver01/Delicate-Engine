@@ -258,12 +258,27 @@ need raising; a single IP walking `/v1/public/track` is someone enumerating wayb
 The driver app is Expo (`apps/driver`). It is not published by CI, because an app store release
 is deliberate.
 
+`eas-cli` is deliberately not a dependency of the package — it is a 40MB tool nobody needs to
+install a hundred times — so run it through `npx`, not `pnpm exec`:
+
 ```bash
 cd apps/driver
-pnpm exec eas build --platform android --profile production
-pnpm exec eas build --platform ios --profile production
-pnpm exec eas submit --platform android   # and --platform ios
+npx eas-cli@latest build --platform android --profile production
+npx eas-cli@latest build --platform ios --profile production
+npx eas-cli@latest submit --platform android   # and --platform ios
 ```
+
+Check the sign-in chain before starting a build. It takes twenty minutes and an app that cannot
+sign in looks the same whichever link is broken — a wrong URL, a key from another project, an
+unconfirmed user, an engine configured for a different project, a login with no driver record:
+
+```bash
+infra/scripts/check-driver-signin.sh driver@delicatecourier.co.za    # from the repository root
+```
+
+It ends by asking the live engine for `/v1/driver/me` with a real token, so a green run means the
+app will get in. See `apps/driver/README.md` for the case where the values live in `eas env:create`
+rather than `eas.json`.
 
 Before submitting:
 
