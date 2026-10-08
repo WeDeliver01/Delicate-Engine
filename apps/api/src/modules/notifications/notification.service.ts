@@ -28,6 +28,36 @@ import { AppError } from "../../common/errors.js";
 import { TEMPLATE_SEEDS, render } from "./templates.js";
 import { NOTIFICATION_TRANSPORTS, type NotificationTransport } from "./transports/transport.js";
 
+/** The sort of thing that stopped a message, for a caller that has to tell them apart. */
+export type SuppressedBy = "template" | "address" | "preference" | "transport";
+
+/**
+ * What `enqueue` wrote, for a caller that has to act on it.
+ *
+ * Most callers are event handlers and ignore this: the message is written, the worker sends
+ * it. It matters where something is waiting on the answer — the driver's app, which needs to
+ * know whether the engine is going to deliver the message or whether the driver has to send it
+ * from their own phone.
+ */
+export interface EnqueuedMessage {
+  /** Null when the dedupe key already existed, so nothing new was written. */
+  id: string | null;
+  channel: NotificationChannel;
+  audience: NotificationAudience;
+  to: string | null;
+  subject: string | null;
+  /** The rendered words, which is what a driver's phone would pre-fill. */
+  body: string;
+  /** Why it will not be sent, or null if it will. */
+  suppressedBecause: string | null;
+  /**
+   * Which kind of reason that was. `transport` is our own gap and can be worked around;
+   * `preference` is the account's decision and must not be.
+   */
+  suppressedBy: SuppressedBy | null;
+  duplicate: boolean;
+}
+
 export interface EnqueueInput {
   kind: NotificationKind;
   audience: NotificationAudience;
@@ -107,7 +137,7 @@ export class NotificationService {
 
   // ── enqueue ───────────────────────────────────────────────────────────────────
 
-  async enqueue(tx: DbExecutor, input: EnqueueInput): Promise<void> {
+  async enqueue(tx: DbExecutor, input: EnqueueInput): Promise<EnqueuedMessage[]> {
     const templates = await tx
       .select()
       .from(notificationTemplates)
@@ -118,19 +148,20 @@ export class NotificationService {
           input.channel ? eq(notificationTemplates.channel, input.channel) : undefined,
         ),
       );
-    if (templates.length === 0) return; // nothing configured to say for this event
+    if (templates.length === 0) return []; // nothing configured to say for this event
 
     const prefs = input.accountId ? await this.preferencesFor(tx, input.accountId) : null;
     const chosen = this.oneInstantChannel(templates, prefs);
     const company = await this.settings.get("company.tax_profile", tx);
     const payload = { companyName: company.tradingName ?? company.legalName, ...input.payload };
 
+    const written: EnqueuedMessage[] = [];
     for (const template of chosen) {
       const suppression = this.suppressionReason(template, input, prefs);
       const body = render(template.body, payload);
       const subject = template.subject ? render(template.subject, payload) : null;
 
-      await tx
+      const [row] = await tx
         .insert(notifications)
         .values({
           kind: input.kind,
@@ -143,14 +174,29 @@ export class NotificationService {
           subject,
           body,
           payload,
-          detail: suppression,
+          detail: suppression?.detail ?? null,
           // Stamped from the engine's clock, not the database's: the dispatcher compares this
           // against the same clock, and two sources of "now" only ever drift apart.
           nextAttemptAt: this.clock.now(),
           dedupeKey: `${input.dedupeKey}:${template.channel}:${template.audience}`,
         })
-        .onConflictDoNothing({ target: notifications.dedupeKey });
+        .onConflictDoNothing({ target: notifications.dedupeKey })
+        .returning({ id: notifications.id });
+      // A row is absent when the dedupe key already existed: this exact message has been said
+      // once and saying it again is the thing the key exists to prevent.
+      written.push({
+        id: row?.id ?? null,
+        channel: template.channel,
+        audience: template.audience,
+        to: input.to ?? null,
+        subject,
+        body,
+        suppressedBecause: suppression?.detail ?? null,
+        suppressedBy: suppression?.by ?? null,
+        duplicate: !row,
+      });
     }
+    return written;
   }
 
   /**
@@ -182,31 +228,49 @@ export class NotificationService {
     return templates.filter((t) => !losers.has(t.id));
   }
 
-  /** Why this message will not be sent, or null to send it. */
+  /**
+   * Why this message will not be sent, or null to send it.
+   *
+   * The `by` is as important as the words. A caller deciding what to do about a suppressed
+   * message has to tell our own gap from the customer's decision: no SMS provider is something
+   * we can work around — the driver sends the text from their phone — while an opt-out is a
+   * choice the account made, and working around that is not a feature. Matching on the
+   * sentence would be one reworded string away from quietly doing the wrong thing.
+   */
   private suppressionReason(
     template: typeof notificationTemplates.$inferSelect,
     input: EnqueueInput,
     prefs: NotificationPreferences | null,
-  ): string | null {
-    if (!template.enabled) return "This template is switched off.";
+  ): { by: SuppressedBy; detail: string } | null {
+    if (!template.enabled) return { by: "template", detail: "This template is switched off." };
     if (!input.to) {
-      return template.channel === "email"
-        ? "No email address on file for this recipient."
-        : "No phone number on file for this recipient.";
+      return {
+        by: "address",
+        detail:
+          template.channel === "email"
+            ? "No email address on file for this recipient."
+            : "No phone number on file for this recipient.",
+      };
     }
     if (prefs) {
       if (template.channel === "email" && !prefs.email)
-        return "The account has opted out of email.";
-      if (template.channel === "sms" && !prefs.sms) return "The account has opted out of SMS.";
+        return { by: "preference", detail: "The account has opted out of email." };
+      if (template.channel === "sms" && !prefs.sms)
+        return { by: "preference", detail: "The account has opted out of SMS." };
       if (template.channel === "whatsapp" && !prefs.whatsapp)
-        return "The account has not opted in to WhatsApp.";
+        return { by: "preference", detail: "The account has not opted in to WhatsApp." };
       if (template.audience === "recipient" && !prefs.notifyRecipients)
-        return "The account has asked us not to contact their recipients.";
+        return {
+          by: "preference",
+          detail: "The account has asked us not to contact their recipients.",
+        };
     }
     const transport = this.transports.find((t) => t.channel === template.channel);
-    if (!transport) return `No ${template.channel} transport exists.`;
+    if (!transport) return { by: "transport", detail: `No ${template.channel} transport exists.` };
     const status = transport.status();
-    return status.configured ? null : status.detail;
+    return status.configured
+      ? null
+      : { by: "transport", detail: status.detail ?? `No ${template.channel} provider is set up.` };
   }
 
   /**
@@ -386,6 +450,19 @@ export class NotificationService {
   }
 
   /** Per-channel health: is it wired up, and what has it done in the last day. */
+  /**
+   * Can this channel actually send, right now.
+   *
+   * `channels()` answers the same question with a day of counts attached, for the console.
+   * This is the cheap form, for a caller deciding what to do about it — the driver's app,
+   * which needs to know whether to send a text itself.
+   */
+  channelConfigured(channel: NotificationChannel): { configured: boolean; detail: string | null } {
+    const transport = this.transports.find((t) => t.channel === channel);
+    if (!transport) return { configured: false, detail: `No ${channel} transport exists.` };
+    return transport.status();
+  }
+
   async channels(): Promise<NotificationChannelStatus[]> {
     const since = new Date(this.clock.now().getTime() - 86_400_000);
     const counts = await this.dbs.db

@@ -2,7 +2,9 @@ import { Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { BookingModule } from "../bookings/booking.module.js";
 import { WalletModule } from "../wallet/wallet.module.js";
+import { NotificationModule } from "../notifications/notification.module.js";
 import { FleetService } from "./fleet.service.js";
+import { DriverNotifyService } from "./driver-notify.service.js";
 import { DriverGuard } from "./driver.guard.js";
 import { DriverController, FilesController } from "./driver.controller.js";
 import {
@@ -17,7 +19,7 @@ import { EventHandlerRegistry } from "../../worker/event-handlers.js";
 
 /** Fleet + dispatch + settlement live together: they share the driver/assignment model. */
 @Module({
-  imports: [BookingModule, WalletModule],
+  imports: [BookingModule, WalletModule, NotificationModule],
   controllers: [
     DriverController,
     FilesController,
@@ -25,7 +27,14 @@ import { EventHandlerRegistry } from "../../worker/event-handlers.js";
     AdminDispatchController,
     AdminLedgerController,
   ],
-  providers: [FleetService, DriverGuard, AssignmentService, SettlementService, DispatchService],
+  providers: [
+    FleetService,
+    DriverGuard,
+    AssignmentService,
+    SettlementService,
+    DispatchService,
+    DriverNotifyService,
+  ],
   exports: [FleetService, AssignmentService, SettlementService, DispatchService],
 })
 export class FleetModule implements OnModuleInit {

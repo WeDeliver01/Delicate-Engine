@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   CollectRequest,
   DeliverRequest,
+  DriverNotifyRequest,
   DriverStatusRequest,
   FailRequest,
   FuelLogRequest,
@@ -18,6 +19,7 @@ import { PlatformRoles } from "../../auth/decorators.js";
 import { FleetService } from "./fleet.service.js";
 import { CurrentDriver, DriverGuard } from "./driver.guard.js";
 import { DispatchService } from "../dispatch/dispatch.service.js";
+import { DriverNotifyService } from "./driver-notify.service.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 
 /** What the native driver app talks to. */
@@ -30,6 +32,7 @@ export class DriverController {
     private readonly fleet: FleetService,
     private readonly dispatch: DispatchService,
     private readonly ledger: LedgerService,
+    private readonly notifier: DriverNotifyService,
   ) {}
 
   @Get("me")
@@ -75,6 +78,17 @@ export class DriverController {
   @Post("status")
   setStatus(@CurrentDriver() d: Driver, @Body(DriverStatusRequest) body: DriverStatusRequest) {
     return this.dispatch.setStatus(d, body);
+  }
+
+  /**
+   * Tell the collection contact or the recipient where the driver is.
+   *
+   * The answer says who is going to deliver the message: the engine, or the driver's own phone
+   * when no SMS provider is configured. The app reads that rather than assuming it was sent.
+   */
+  @Post("notify")
+  notify(@CurrentDriver() d: Driver, @Body(DriverNotifyRequest) body: DriverNotifyRequest) {
+    return this.notifier.notify(d, body);
   }
 
   @Post("deliver")
