@@ -5,6 +5,8 @@ import {
   AccountRole,
   AddMemberRequest,
   CreateAccountRequest,
+  UpdateAccountRequest,
+  UpdateOrganizationRequest,
   UpdateProfileRequest,
   Uuid,
 } from "@delicate/contracts";
@@ -12,6 +14,7 @@ import {
   AccountRoles,
   ActiveAccountId,
   CurrentPrincipal,
+  PlatformRoles,
   RequireAccount,
 } from "../../auth/decorators.js";
 import { isStaff, requireUser, type Principal } from "../../auth/principal.js";
@@ -112,5 +115,77 @@ export class ActiveAccountController {
     @Params(MemberParams) params: z.infer<typeof MemberParams>,
   ) {
     await this.identity.removeMember(accountId, params.userId);
+  }
+}
+
+const AccountParams = z.object({ id: Uuid });
+const AccountMemberParams = z.object({ id: Uuid, userId: Uuid });
+
+/**
+ * One customer's account, as the people who run the business see it.
+ *
+ * The customer's own `/v1/account` routes act on whichever account they are in; these name
+ * the account in the path, because ops are looking at somebody else's and the account they
+ * happen to be "in" has nothing to do with it.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/accounts")
+@PlatformRoles("super_admin", "finance", "dispatcher")
+export class AdminAccountsController {
+  constructor(private readonly identity: IdentityService) {}
+
+  @Get(":id")
+  detail(@Params(AccountParams) p: z.infer<typeof AccountParams>) {
+    return this.identity.adminDetail(p.id);
+  }
+
+  @Patch(":id")
+  @PlatformRoles("super_admin")
+  update(
+    @Params(AccountParams) p: z.infer<typeof AccountParams>,
+    @Body(UpdateAccountRequest) body: UpdateAccountRequest,
+  ) {
+    return this.identity.updateAccount(p.id, body);
+  }
+
+  @Patch(":id/organization")
+  @PlatformRoles("super_admin")
+  updateOrganization(
+    @Params(AccountParams) p: z.infer<typeof AccountParams>,
+    @Body(UpdateOrganizationRequest) body: UpdateOrganizationRequest,
+  ) {
+    return this.identity.updateOrganization(p.id, body);
+  }
+
+  @Get(":id/members")
+  members(@Params(AccountParams) p: z.infer<typeof AccountParams>) {
+    return this.identity.listMembers(p.id);
+  }
+
+  /** Give somebody access to a customer's account. Super admin only: it is their account. */
+  @Post(":id/members")
+  @PlatformRoles("super_admin")
+  addMember(
+    @Params(AccountParams) p: z.infer<typeof AccountParams>,
+    @Body(AddMemberRequest) body: AddMemberRequest,
+  ) {
+    return this.identity.addMember(p.id, body);
+  }
+
+  @Patch(":id/members/:userId")
+  @PlatformRoles("super_admin")
+  changeRole(
+    @Params(AccountMemberParams) p: z.infer<typeof AccountMemberParams>,
+    @Body(ChangeRoleBody) body: z.infer<typeof ChangeRoleBody>,
+  ) {
+    return this.identity.changeMemberRole(p.id, p.userId, body.role);
+  }
+
+  @Delete(":id/members/:userId")
+  @HttpCode(204)
+  @PlatformRoles("super_admin")
+  async removeMember(@Params(AccountMemberParams) p: z.infer<typeof AccountMemberParams>) {
+    await this.identity.removeMember(p.id, p.userId);
   }
 }

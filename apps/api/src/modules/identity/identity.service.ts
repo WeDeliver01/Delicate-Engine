@@ -2,12 +2,15 @@ import { Injectable } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import type {
   Account,
+  AdminAccountDetail,
   AccountMembership,
   AccountRole,
   AddMemberRequest,
   CreateAccountRequest,
   Member,
   MeResponse,
+  UpdateAccountRequest,
+  UpdateOrganizationRequest,
   UpdateProfileRequest,
   UserProfile,
 } from "@delicate/contracts";
@@ -223,6 +226,102 @@ export class IdentityService {
     const row = await this.dbs.db.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
     if (!row) throw AppError.notFound("account");
     return toAccount(row);
+  }
+
+  /** Everything the console shows about one account, in one round trip. */
+  async adminDetail(accountId: string): Promise<AdminAccountDetail> {
+    const row = await this.dbs.db.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
+    if (!row) throw AppError.notFound("account");
+    const organization = row.organizationId
+      ? ((await this.dbs.db.query.organizations.findFirst({
+          where: eq(organizations.id, row.organizationId),
+        })) ?? null)
+      : null;
+    return {
+      account: toAccount(row),
+      billingEmail: row.billingEmail,
+      billingAddress: row.billingAddress ?? null,
+      requiresVehicleClass: row.requiresVehicleClass,
+      organization: organization
+        ? {
+            id: organization.id,
+            name: organization.name,
+            registrationNumber: organization.registrationNumber,
+            vatNumber: organization.vatNumber,
+          }
+        : null,
+      members: await this.listMembers(accountId),
+    };
+  }
+
+  /**
+   * Change an account on the customer's behalf.
+   *
+   * Staff only, and every field here is one somebody can be wrong about in a way that costs
+   * money -- an invoice to the wrong address, a suspended account that should be open -- so
+   * the before and after of each change is kept.
+   */
+  async updateAccount(accountId: string, patch: UpdateAccountRequest): Promise<AdminAccountDetail> {
+    await this.dbs.transaction(async (tx) => {
+      const before = await tx.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
+      if (!before) throw AppError.notFound("account");
+      const [after] = await tx
+        .update(accounts)
+        .set({
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.type === undefined ? {} : { type: patch.type }),
+          ...(patch.status === undefined ? {} : { status: patch.status }),
+          ...(patch.billingEmail === undefined ? {} : { billingEmail: patch.billingEmail }),
+          ...(patch.requiresVehicleClass === undefined
+            ? {}
+            : { requiresVehicleClass: patch.requiresVehicleClass }),
+        })
+        .where(eq(accounts.id, accountId))
+        .returning();
+      await this.audit.record(tx, {
+        action: "account.update",
+        entityType: "account",
+        entityId: accountId,
+        before,
+        after,
+      });
+    });
+    return this.adminDetail(accountId);
+  }
+
+  /** The business behind the account: what goes on the invoice above the address. */
+  async updateOrganization(
+    accountId: string,
+    patch: UpdateOrganizationRequest,
+  ): Promise<AdminAccountDetail> {
+    await this.dbs.transaction(async (tx) => {
+      const account = await tx.query.accounts.findFirst({ where: eq(accounts.id, accountId) });
+      if (!account?.organizationId) {
+        throw AppError.notFound("organization", { accountId });
+      }
+      const before = await tx.query.organizations.findFirst({
+        where: eq(organizations.id, account.organizationId),
+      });
+      const [after] = await tx
+        .update(organizations)
+        .set({
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.registrationNumber === undefined
+            ? {}
+            : { registrationNumber: patch.registrationNumber }),
+          ...(patch.vatNumber === undefined ? {} : { vatNumber: patch.vatNumber }),
+        })
+        .where(eq(organizations.id, account.organizationId))
+        .returning();
+      await this.audit.record(tx, {
+        action: "organization.update",
+        entityType: "organization",
+        entityId: account.organizationId,
+        before,
+        after,
+      });
+    });
+    return this.adminDetail(accountId);
   }
 
   async listMembers(accountId: string): Promise<Member[]> {

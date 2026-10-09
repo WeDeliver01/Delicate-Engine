@@ -8,6 +8,7 @@ import { setActiveAccountId } from "@/lib/session";
 import { useMe } from "@/components/use-me";
 import { dateTime, rands } from "@/lib/money";
 import { AddTransaction } from "@/components/admin/add-transaction";
+import { AccountDetail } from "@/components/admin/account-detail";
 
 /** Finance view of one account: wallet, ledger, credit terms, adjustments. All audited. */
 export default function AdminAccountPage({ params }: { params: Promise<{ id: string }> }) {
@@ -102,6 +103,9 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
           </button>
         </section>
       )}
+      <div className="space-y-6 lg:col-span-3">
+        <AccountDetail accountId={id} />
+      </div>
       <div className="space-y-6 lg:col-span-2">
         <section className="panel p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
