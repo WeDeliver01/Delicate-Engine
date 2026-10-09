@@ -8,6 +8,7 @@ import type {
   Booking,
   CatalogResponse,
   Quote,
+  ServiceLevel,
   SlotAvailability,
   TimedWindow,
   WindowBandAvailability,
@@ -396,34 +397,49 @@ function Book() {
         </div>
       </header>
 
-      {/* ── Service level: one row across the top, because it is one choice ── */}
-      <section className="panel p-4">
-        <p className="field-label mb-2">Service level</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {catalog.data?.serviceLevels.map((s) => (
-            <label
-              key={s.code}
-              className={`cursor-pointer rounded-xl border p-3 transition-colors ${
-                serviceLevel === s.code
-                  ? "border-ink bg-[#FAFAF9]"
-                  : "border-line hover:border-[#DAD6CF]"
-              }`}
-            >
-              <input
-                type="radio"
-                className="sr-only"
-                checked={serviceLevel === s.code}
-                onChange={() => {
-                  setServiceLevel(s.code);
-                  clearQuote();
-                }}
-              />
-              <span className="block text-[14px] font-semibold">{s.name}</span>
-              <span className="mt-0.5 block text-xs leading-snug text-[#6B6661]">
-                {s.description}
-              </span>
-            </label>
-          ))}
+      {/* ── First, and across the top, because it sets the price of everything below ── */}
+      <section className="panel p-5">
+        <h2 className="section-title">Choose your speed</h2>
+        <p className="lede mt-1">
+          Every delivery we do is same-day. The difference is how much notice we have — and it sets
+          your price, so start here.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {catalog.data?.serviceLevels.map((s) => {
+            const chosen = serviceLevel === s.code;
+            return (
+              <label
+                key={s.code}
+                className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                  chosen ? "border-ink bg-[#FAFAF9]" : "border-line hover:border-[#DAD6CF]"
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="sr-only"
+                  checked={chosen}
+                  onChange={() => {
+                    setServiceLevel(s.code);
+                    clearQuote();
+                  }}
+                />
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="text-[15px] font-semibold">{s.name}</span>
+                  {/* Read off the rate card rather than written here, so it cannot disagree
+                      with what the quote comes back with. */}
+                  <span className="text-xs text-muted">{priceEffect(s)}</span>
+                </span>
+                <span className="mt-1 block text-sm leading-snug text-[#6B6661]">
+                  {s.description}
+                </span>
+                <span className="mt-2 block text-xs text-muted">
+                  {s.requiresSlot
+                    ? "You pick the day and the time slot."
+                    : "No slot to pick — we go as soon as you confirm."}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </section>
 
@@ -884,6 +900,23 @@ function Check({
     </label>
   );
 }
+
+/**
+ * What picking this service level does to the price, in the customer's terms.
+ *
+ * Taken from the rate card rather than written into the page: the multiplier and the
+ * surcharge are both editable in the console, and a hard-coded "+50%" would go on saying so
+ * long after somebody changed it.
+ */
+function priceEffect(s: ServiceLevel): string {
+  const times = s.multiplierBps / 10_000;
+  const parts: string[] = [];
+  if (times !== 1) parts.push(`${trimZeros(times)}× the distance`);
+  if (s.surchargeCents > 0) parts.push(`${rands(s.surchargeCents)} more`);
+  return parts.length === 0 ? "Our standard rate" : parts.join(" + ");
+}
+
+const trimZeros = (n: number): string => String(Number(n.toFixed(2)));
 
 /**
  * Where the payment gateway should put the customer down: this booking, as they left it.

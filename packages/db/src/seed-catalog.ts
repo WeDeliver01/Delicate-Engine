@@ -152,7 +152,7 @@ export const CATALOG_SEED = {
       code: "standard",
       name: "Standard",
       description:
-        "Book at least one day in advance. Arrives the same day within your selected time slot.",
+        "Pre-scheduled. Book at least a day ahead and we collect and deliver on the day you choose, inside the time slot you pick.",
       multiplierBps: 10_000,
       surchargeCents: 0,
       requiresSlot: true,
@@ -162,7 +162,8 @@ export const CATALOG_SEED = {
     {
       code: "on_demand",
       name: "On-demand",
-      description: "We dispatch a driver immediately and reach the destination within 90 minutes.",
+      description:
+        "Last minute. We collect and deliver today — a driver is dispatched as soon as you book and reaches the destination within 90 minutes.",
       multiplierBps: 15_000,
       surchargeCents: 5_000,
       requiresSlot: false,

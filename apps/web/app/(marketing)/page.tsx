@@ -319,8 +319,9 @@ export default function Home() {
               <div>
                 <h3 className="text-[20px] font-semibold">Standard delivery</h3>
                 <p className="text-sm text-[#6B6661] mt-2 leading-relaxed">
-                  Book at least one day in advance. Arrives the same day within your selected time
-                  slot. Cost-effective and ideal for routine deliveries.
+                  Pre-scheduled. Book at least a day ahead and we collect and deliver on the day you
+                  choose, inside the time slot you pick. Cost-effective and ideal for routine
+                  deliveries.
                 </p>
                 <a
                   href="/quote"
