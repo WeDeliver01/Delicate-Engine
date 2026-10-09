@@ -1,6 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq } from "drizzle-orm";
-import { haversineKm, type LatLng } from "@delicate/contracts";
+import {
+  haversineKm,
+  SHIPMENT_STATUS_LABELS,
+  type LatLng,
+  type PublicLiveTracking,
+  type PublicTrackingState,
+  type ShipmentStatus,
+} from "@delicate/contracts";
 import {
   assignments,
   drivers,
@@ -8,7 +15,6 @@ import {
   proofsOfDelivery,
   shipmentEvents,
   shipments,
-  users,
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { Clock } from "../../infra/clock.js";
@@ -67,7 +73,9 @@ export class LiveTrackingService {
         slotDate: shipments.slotDate,
         accountId: shipments.accountId,
         driverId: drivers.id,
-        driverName: users.fullName,
+        // From the driver record, which always has a name, rather than the linked user row,
+        // which has one only once that person has signed in.
+        driverName: drivers.fullName,
         driverPhone: drivers.phone,
       })
       .from(shipments)
@@ -76,7 +84,6 @@ export class LiveTrackingService {
         and(eq(assignments.shipmentId, shipments.id), eq(assignments.active, true)),
       )
       .leftJoin(drivers, eq(drivers.id, assignments.driverId))
-      .leftJoin(users, eq(users.id, drivers.userId))
       .where(eq(shipments.id, shipmentId));
 
     if (!row) throw AppError.notFound("shipment", { shipmentId });
@@ -191,6 +198,51 @@ export class LiveTrackingService {
   }
 
   /**
+   * The same view, for the person waiting at the door.
+   *
+   * Reached by a token, so it is narrower than the account's view in two ways: the driver's
+   * phone number is withheld (a link in an SMS gets forwarded, and the number is theirs), and
+   * the destination is a suburb rather than a street — the recipient knows their own address,
+   * and whoever the link was forwarded to does not need it.
+   */
+  async publicView(shipmentId: string): Promise<PublicLiveTracking> {
+    const [row] = await this.dbs.db
+      .select({
+        waybill: shipments.waybill,
+        status: shipments.status,
+        deliveryAddress: shipments.deliveryAddress,
+      })
+      .from(shipments)
+      .where(eq(shipments.id, shipmentId));
+    if (!row) throw AppError.notFound("shipment", { shipmentId });
+
+    const live = await this.forShipment(shipmentId, null);
+    const address = row.deliveryAddress as { suburb?: string | null; city?: string | null };
+
+    return {
+      waybill: row.waybill,
+      status: row.status,
+      statusLabel: SHIPMENT_STATUS_LABELS[row.status],
+      state: publicState(row.status),
+      message: live.message,
+      driverFirstName: firstName(live.driver?.name ?? null),
+      position: live.position,
+      destination: live.destination,
+      destinationPlace: { suburb: address.suburb ?? null, city: address.city ?? null },
+      distanceKm: live.distanceKm,
+      etaMinutes: live.etaMinutes,
+      stopsAway: live.stopsAway,
+      deliveredAt: live.deliveredAt,
+      proofOfDelivery: live.proofOfDelivery
+        ? {
+            receivedBy: live.proofOfDelivery.receivedBy,
+            capturedAt: live.proofOfDelivery.capturedAt,
+          }
+        : null,
+    };
+  }
+
+  /**
    * How many of this driver's other deliveries are still open and were sequenced before this
    * one. "Third stop away" is more use than a raw ETA when traffic makes the minutes a guess.
    */
@@ -208,13 +260,16 @@ export class LiveTrackingService {
       .length;
   }
 
-  /** The tracking timeline: every status this shipment has been through. */
-  async timeline(shipmentId: string) {
-    const rows = await this.dbs.db
-      .select()
-      .from(shipmentEvents)
-      .where(eq(shipmentEvents.shipmentId, shipmentId))
-      .orderBy(desc(shipmentEvents.occurredAt));
+  /**
+   * The tracking timeline: every status this shipment has been through.
+   *
+   * `accountId` scopes it to the caller's own shipments. It used to be looked up by id alone,
+   * which let any signed-in customer read any other customer's timeline by guessing nothing
+   * harder than a uuid.
+   */
+  async timeline(shipmentId: string, accountId: string | null = null) {
+    if (accountId) await this.assertOwned(shipmentId, accountId);
+    const rows = await this.events(shipmentId);
     return {
       items: rows.map((e) => ({
         id: e.id,
@@ -225,11 +280,67 @@ export class LiveTrackingService {
     };
   }
 
-  /** An address only has coordinates once it has been geocoded; some never are. */
+  /**
+   * The same history for the recipient's link, without the notes. A note is written for the
+   * office — "gate code wrong, phoned the shop" — and the public waybill lookup withholds them
+   * for the same reason.
+   */
+  async publicTimeline(shipmentId: string) {
+    const rows = await this.events(shipmentId);
+    return {
+      items: rows.map((e) => ({
+        status: e.status,
+        label: SHIPMENT_STATUS_LABELS[e.status],
+        occurredAt: e.occurredAt.toISOString(),
+      })),
+    };
+  }
+
+  private events(shipmentId: string) {
+    return this.dbs.db
+      .select()
+      .from(shipmentEvents)
+      .where(eq(shipmentEvents.shipmentId, shipmentId))
+      .orderBy(desc(shipmentEvents.occurredAt));
+  }
+
+  private async assertOwned(shipmentId: string, accountId: string): Promise<void> {
+    const [row] = await this.dbs.db
+      .select({ accountId: shipments.accountId })
+      .from(shipments)
+      .where(eq(shipments.id, shipmentId));
+    if (!row || row.accountId !== accountId) throw AppError.notFound("shipment", { shipmentId });
+  }
+
+  /**
+   * An address only has coordinates once it has been geocoded; some never are.
+   *
+   * They live under `location`, which is where a stored `Address` keeps them. This read used
+   * to look for `lat`/`lng` on the address itself and so always found nothing: no destination
+   * pin, no distance, and no ETA on anybody's tracking view.
+   */
   private coordsOf(address: unknown): LatLng | null {
-    const a = address as { lat?: number; lng?: number } | null;
-    return a && typeof a.lat === "number" && typeof a.lng === "number"
-      ? { lat: a.lat, lng: a.lng }
+    const at = (address as { location?: { lat?: number; lng?: number } } | null)?.location;
+    return at && typeof at.lat === "number" && typeof at.lng === "number"
+      ? { lat: at.lat, lng: at.lng }
       : null;
   }
+}
+
+/**
+ * What the page has to render, as opposed to what the status is called. A failed attempt reads
+ * as "pending" because the parcel is still coming; `returned_to_sender` and `cancelled` read as
+ * "closed" because it is not, and a map with no van on it would leave someone waiting.
+ */
+function publicState(status: ShipmentStatus): PublicTrackingState {
+  if (status === "delivered") return "delivered";
+  if (status === "out_for_delivery") return "live";
+  if (status === "returned_to_sender" || status === "cancelled") return "closed";
+  return "pending";
+}
+
+/** "Thabo Mokoena" → "Thabo". Enough to recognise someone at the gate, and no more. */
+function firstName(name: string | null): string | null {
+  const first = name?.trim().split(/\s+/)[0];
+  return first ? first : null;
 }

@@ -7,21 +7,25 @@ import {
   CreateSavedFilter,
   DecideChangeRequest,
   ShipmentFilterQuery,
+  TrackingToken,
   Uuid,
 } from "@delicate/contracts";
 import {
   ActiveAccountId,
   CurrentPrincipal,
   PlatformRoles,
+  Public,
   RequireAccount,
 } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { requireUser, type Principal } from "../../auth/principal.js";
+import { AppError } from "../../common/errors.js";
 import { ShipmentQueryService } from "./shipment-query.service.js";
 import { ChangeRequestService } from "./change-request.service.js";
 import { SavedFilterService } from "./saved-filter.service.js";
 import { LiveTrackingService } from "./live-tracking.service.js";
 import { WaybillService } from "./waybill.service.js";
+import { TrackingTokenService } from "./tracking-token.service.js";
 
 const IdParam = z.object({ id: Uuid });
 const SavedFilterScope = z.object({ scope: z.enum(["portal", "admin"]).default("portal") });
@@ -62,8 +66,8 @@ export class AccountShipmentsController {
   }
 
   @Get("shipments/:id/timeline")
-  timeline(@Params(IdParam) p: { id: string }) {
-    return this.tracking.timeline(p.id);
+  timeline(@ActiveAccountId() accountId: string, @Params(IdParam) p: { id: string }) {
+    return this.tracking.timeline(p.id, accountId);
   }
 
   @Get("shipment-counts")
@@ -190,5 +194,43 @@ export class AdminChangeDecisionController {
   @Post(":id/decide")
   decide(@Params(IdParam) p: { id: string }, @Body(DecideChangeRequest) body: DecideChangeRequest) {
     return this.changes.decide(p.id, body);
+  }
+}
+
+/**
+ * The recipient's own view of their parcel, reached by the token in their SMS or email.
+ *
+ * Public because the person waiting for a delivery has no account with us and should not need
+ * one. The token is the authorisation: 256 bits, issued per shipment, and useless for finding
+ * any other. See `packages/contracts/src/dto/live-tracking.ts` for why it is not the waybill.
+ */
+@ApiTags("tracking")
+@Controller("v1/public/live")
+export class PublicLiveTrackingController {
+  constructor(
+    private readonly tokens: TrackingTokenService,
+    private readonly tracking: LiveTrackingService,
+  ) {}
+
+  @Public()
+  @Get(":token")
+  async live(@Params(z.object({ token: TrackingToken })) p: { token: string }) {
+    return this.tracking.publicView(await this.shipmentFor(p.token));
+  }
+
+  @Public()
+  @Get(":token/timeline")
+  async timeline(@Params(z.object({ token: TrackingToken })) p: { token: string }) {
+    return this.tracking.publicTimeline(await this.shipmentFor(p.token));
+  }
+
+  /**
+   * An unknown token is a missing page, not a forbidden one: saying "that token exists but you
+   * may not use it" would confirm a guess, and there is nothing else to tell apart here.
+   */
+  private async shipmentFor(token: string): Promise<string> {
+    const shipmentId = await this.tokens.resolve(token);
+    if (!shipmentId) throw AppError.notFound("tracking_link", {});
+    return shipmentId;
   }
 }

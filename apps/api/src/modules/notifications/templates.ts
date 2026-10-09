@@ -92,7 +92,7 @@ Track it at {{trackUrl}}.
     channel: "sms",
     audience: "recipient",
     subject: null,
-    body: `Hi {{recipientName}}, your delivery from {{customerName}} is on the way with {{driverName}}. Track: {{trackUrl}}`,
+    body: `Hi {{recipientName}}, your delivery from {{customerName}} is on the way with {{driverName}}. Follow it: {{liveUrl}}`,
   },
   {
     kind: "shipment.on_hold",
@@ -132,6 +132,10 @@ and we will collect it.
     subject: null,
     // `{{eta}}` carries "has arrived" or "is about 10 minutes away", so the gap the driver
     // chose is a value and not four near-identical templates to keep in step.
+    //
+    // No tracking link, on purpose. This is the one message that has to fit a single SMS
+    // segment: it is sent when minutes matter, and the recipient already has the link from
+    // the out-for-delivery message. The email twin below does carry it.
     body: `Hi {{recipientName}}, your driver {{driverName}} {{eta}} with your delivery from {{customerName}}.`,
   },
   {
@@ -142,6 +146,8 @@ and we will collect it.
     body: `Hi {{recipientName}},
 
 Your driver {{driverName}} {{eta}} with your delivery from {{customerName}}.
+
+Follow the van: {{liveUrl}}
 
 — {{companyName}}`,
   },
@@ -194,7 +200,7 @@ Proof of delivery is on your booking at {{trackUrl}}.
     channel: "sms",
     audience: "recipient",
     subject: null,
-    body: `Your delivery from {{customerName}} has arrived. Thank you! — {{companyName}}`,
+    body: `Your delivery from {{customerName}} has arrived. Thank you! Delivery note: {{liveUrl}} — {{companyName}}`,
   },
   {
     kind: "shipment.failed",
@@ -358,7 +364,7 @@ The delivery goes ahead as originally booked. Call us if you would like to talk 
 
 Please let us know if someone can receive it, or reply here to make other arrangements.
 
-Track it: {{trackUrl}}
+Follow it: {{liveUrl}}
 — {{companyName}}`,
   },
   {

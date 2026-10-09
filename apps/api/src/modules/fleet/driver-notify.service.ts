@@ -6,11 +6,12 @@ import {
   type DriverNotifyResult,
   type Driver,
 } from "@delicate/contracts";
-import { bookings, shipments } from "@delicate/db";
+import { accounts, bookings, shipments } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AppError } from "../../common/errors.js";
 import { NotificationService } from "../notifications/notification.service.js";
 import { AssignmentService } from "../dispatch/assignment.service.js";
+import { TrackingTokenService } from "../bookings/tracking-token.service.js";
 
 interface Contactable {
   name?: string | null;
@@ -34,6 +35,7 @@ export class DriverNotifyService {
     private readonly dbs: DbService,
     private readonly notifications: NotificationService,
     private readonly assignment: AssignmentService,
+    private readonly trackingTokens: TrackingTokenService,
   ) {}
 
   async notify(driver: Driver, input: DriverNotifyRequest): Promise<DriverNotifyResult> {
@@ -50,6 +52,10 @@ export class DriverNotifyService {
 
       const who = await this.addressee(tx, shipment, input);
       const to = (input.channel === "sms" ? who.contact.phone : who.contact.email) ?? null;
+      // Only the recipient's messages carry the live link; the collection contact is not shown
+      // a driver's position before collection (docs/TRACKING.md §6).
+      const liveUrl =
+        input.target === "recipient" ? await this.trackingTokens.linkFor(tx, shipment.id) : "";
 
       const [message] = await this.notifications.enqueue(tx, {
         kind:
@@ -69,6 +75,7 @@ export class DriverNotifyService {
           waybill: shipment.waybill,
           driverName: driver.fullName,
           eta: etaPhrase(input.eta),
+          liveUrl,
         },
       });
 
@@ -125,9 +132,18 @@ export class DriverNotifyService {
   ): Promise<{ contact: Contactable; payload: Record<string, unknown> }> {
     if (input.target === "recipient") {
       const recipient = (shipment.recipient ?? {}) as Contactable;
+      // The recipient's templates say who the parcel is from, so the sender's name has to be
+      // in the payload. It was not, and the message read "your delivery from ."
+      const [account] = await tx
+        .select({ name: accounts.name })
+        .from(accounts)
+        .where(eq(accounts.id, shipment.accountId));
       return {
         contact: recipient,
-        payload: { recipientName: recipient.name ?? "there" },
+        payload: {
+          recipientName: recipient.name ?? "there",
+          customerName: account?.name ?? "the sender",
+        },
       };
     }
     // The collection contact is whoever is handing the parcel over, which is on the booking

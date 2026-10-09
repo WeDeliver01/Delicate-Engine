@@ -52,6 +52,7 @@ const TRUNCATE = [
   "vehicles",
   "files",
   "shipment_events",
+  "shipment_tracking_tokens",
   "shipments",
   "bookings",
   "waybill_counters",

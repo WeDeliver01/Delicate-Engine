@@ -8,6 +8,7 @@ import { ChangeRequestService } from "./change-request.service.js";
 import { SavedFilterService } from "./saved-filter.service.js";
 import { LiveTrackingService } from "./live-tracking.service.js";
 import { WaybillService } from "./waybill.service.js";
+import { TrackingTokenService } from "./tracking-token.service.js";
 import { ServiceBookingService } from "./service-booking.service.js";
 import {
   AdminBookingsController,
@@ -19,6 +20,7 @@ import {
   AccountShipmentsController,
   AdminChangeDecisionController,
   AdminShipmentsController,
+  PublicLiveTrackingController,
 } from "./shipment.controller.js";
 
 @Module({
@@ -30,6 +32,7 @@ import {
     AccountShipmentsController,
     AdminShipmentsController,
     AdminChangeDecisionController,
+    PublicLiveTrackingController,
     ServiceBookingsController,
   ],
   providers: [
@@ -38,6 +41,7 @@ import {
     ChangeRequestService,
     SavedFilterService,
     LiveTrackingService,
+    TrackingTokenService,
     WaybillService,
     ServiceBookingService,
   ],
@@ -46,6 +50,7 @@ import {
     ShipmentQueryService,
     ChangeRequestService,
     LiveTrackingService,
+    TrackingTokenService,
     WaybillService,
   ],
 })

@@ -8,9 +8,11 @@ export const metadata = { title: "Track a Delivery | Delicate Courier" };
 export default async function TrackPage({
   searchParams,
 }: {
-  searchParams: Promise<{ w?: string }>;
+  searchParams: Promise<{ w?: string; waybill?: string }>;
 }) {
-  const { w } = await searchParams;
+  // Both spellings: every notification we have ever sent links to `?waybill=`, and this page
+  // only read `?w=`, so those links all landed on an empty form.
+  const { w, waybill } = await searchParams;
   return (
     <>
       <SiteNav />
@@ -29,7 +31,7 @@ export default async function TrackPage({
             Enter the waybill number from your booking confirmation to see every step of its
             journey.
           </p>
-          <TrackForm initial={w ?? ""} />
+          <TrackForm initial={w ?? waybill ?? ""} />
         </section>
       </main>
       <Footer />

@@ -16,6 +16,8 @@ import {
 import { ENV, type Env } from "../../config/env.js";
 import { DbService } from "../../infra/db.module.js";
 import { EventHandlerRegistry } from "../../worker/event-handlers.js";
+import { BookingModule } from "../bookings/booking.module.js";
+import { TrackingTokenService } from "../bookings/tracking-token.service.js";
 import { NotificationService } from "./notification.service.js";
 import type { ConsignmentRow } from "./email-layout.js";
 import { NotificationDispatcher } from "./notification.dispatcher.js";
@@ -34,6 +36,9 @@ import { TwilioTransport } from "./transports/twilio.transport.js";
  * to be down when the event arrived — the worker sends it later.
  */
 @Module({
+  // For the recipient's live-tracking token. BookingModule knows nothing of notifications, so
+  // this direction has no cycle in it.
+  imports: [BookingModule],
   controllers: [AccountNotificationController, AdminNotificationController],
   providers: [
     NotificationService,
@@ -61,6 +66,7 @@ export class NotificationModule implements OnModuleInit {
     private readonly registry: EventHandlerRegistry,
     private readonly notifications: NotificationService,
     private readonly dbs: DbService,
+    private readonly trackingTokens: TrackingTokenService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(NotificationModule.name);
@@ -152,7 +158,9 @@ export class NotificationModule implements OnModuleInit {
       const to = e.payload.to;
       if (to !== "out_for_delivery" && to !== "on_hold" && to !== "returned_to_sender") return;
       await this.dbs.transaction(async (tx) => {
-        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId, {
+          live: to === "out_for_delivery",
+        });
         if (!ctx) return;
         if (to === "out_for_delivery") {
           // The person waiting for a cake is the one who most needs to know it is coming.
@@ -195,7 +203,7 @@ export class NotificationModule implements OnModuleInit {
       if (e.payload.kind !== "drop" || !e.payload.shipmentId) return;
       const shipmentId = e.payload.shipmentId;
       await this.dbs.transaction(async (tx) => {
-        const ctx = await this.shipmentContext(tx, shipmentId);
+        const ctx = await this.shipmentContext(tx, shipmentId, { live: true });
         if (!ctx) return;
         const driverName = await this.driverName(tx, e.payload.driverId);
         await this.notifications.enqueue(tx, {
@@ -241,7 +249,10 @@ export class NotificationModule implements OnModuleInit {
 
     this.registry.register("delivery.completed", async (e) => {
       await this.dbs.transaction(async (tx) => {
-        const ctx = await this.shipmentContext(tx, e.payload.shipmentId);
+        // The recipient's copy links to the delivery note. Issuing the token here as well as
+        // on dispatch costs nothing — the same one comes back — and covers the parcel that
+        // was delivered without an out-for-delivery message ever going out.
+        const ctx = await this.shipmentContext(tx, e.payload.shipmentId, { live: true });
         if (!ctx) return;
         const payload = {
           ...ctx.payload,
@@ -623,12 +634,18 @@ export class NotificationModule implements OnModuleInit {
   }
 
   /** Everything a shipment template needs, or null if the shipment has gone. */
-  private async shipmentContext(tx: DbExecutor, shipmentId: string) {
+  /**
+   * `live` mints the recipient's tracking token, and is opt-in rather than always on: only
+   * messages addressed to the person waiting carry that link, so a shipment that is only ever
+   * written about to the customer never has a token issued for it at all.
+   */
+  private async shipmentContext(tx: DbExecutor, shipmentId: string, opts?: { live?: boolean }) {
     const shipment = await tx.query.shipments.findFirst({ where: eq(shipments.id, shipmentId) });
     if (!shipment) return null;
     const account = await this.account(tx, shipment.accountId);
     const address = shipment.deliveryAddress as { suburb?: string | null; city?: string | null };
     const recipient = shipment.recipient as { name?: string; phone?: string };
+    const liveUrl = opts?.live ? await this.trackingTokens.linkFor(tx, shipmentId) : "";
     return {
       accountId: shipment.accountId,
       accountEmail: account.email,
@@ -639,6 +656,7 @@ export class NotificationModule implements OnModuleInit {
         waybill: shipment.waybill,
         destination: address.suburb ?? address.city ?? "the destination",
         trackUrl: `${this.webUrl()}/track?waybill=${shipment.waybill}`,
+        liveUrl,
       },
     };
   }

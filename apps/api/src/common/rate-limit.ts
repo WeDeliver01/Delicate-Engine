@@ -35,6 +35,10 @@ export const DEFAULT_RULES: RateLimitRule[] = [
   // Every quote is a paid routing call.
   { prefix: "/v1/public/estimate", limit: 20, windowMs: 60_000, what: "quote estimates" },
   { prefix: "/v1/public/geocode", limit: 60, windowMs: 60_000, what: "address lookups" },
+  // A recipient watching the van refreshes every few seconds, which is fine and should not
+  // spend the bucket everything else under /v1/public shares. Guessing is not the worry here:
+  // the token is 128 bits, and no number of tries inside a minute makes that reachable.
+  { prefix: "/v1/public/live", limit: 60, windowMs: 60_000, what: "tracking refreshes" },
   { prefix: "/v1/public", limit: 120, windowMs: 60_000, what: "public requests" },
 ];
 

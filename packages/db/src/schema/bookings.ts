@@ -159,3 +159,30 @@ export const waybillCounters = pgTable("waybill_counters", {
   day: text("day").primaryKey(), // YYMMDD
   next: integer("next").notNull().default(1),
 });
+
+/**
+ * The capability a recipient is given to watch their own parcel arrive.
+ *
+ * Keyed on a random token rather than the waybill, because waybills count up and this exposes
+ * a driver's live position (see `packages/contracts/src/dto/live-tracking.ts`). One token per
+ * shipment, issued the first time the parcel goes out for delivery and reused after that: a
+ * failed attempt that goes out again must not kill the link in yesterday's SMS.
+ *
+ * The token is stored as issued, not hashed. A hash would mean a new token per message and a
+ * dead link in every older one, and it would buy nothing here — unlike an API secret, this
+ * grants no more than reading one shipment, which anyone who can read this table can already
+ * do by reading the shipment.
+ */
+export const shipmentTrackingTokens = pgTable(
+  "shipment_tracking_tokens",
+  {
+    shipmentId: uuid("shipment_id")
+      .primaryKey()
+      .references(() => shipments.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    issuedAt: timestamp("issued_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    /** Set to stop a leaked link without touching the shipment. Nothing sets it yet. */
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+  },
+  (t) => [uniqueIndex("shipment_tracking_tokens_token_uq").on(t.token)],
+);

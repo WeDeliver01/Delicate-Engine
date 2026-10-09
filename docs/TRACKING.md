@@ -48,6 +48,20 @@ the shipment goes out for delivery and carried in the SMS or email link. It answ
 shipment, and only while that shipment is out for delivery — the same rule
 `LiveTrackingService` already applies to the account's view.
 
+**Built.** `shipment_tracking_tokens` holds one `trk_`-prefixed token per shipment, minted the
+first time the parcel is written about to its recipient and reused after that, so the link in
+yesterday's SMS still works today. `GET /v1/public/live/:token` answers it without a login;
+`/timeline` beside it gives the history without the notes. The page is
+`apps/web/app/live/[token]`, `noindex` because the link is the authorisation.
+
+Three things it withholds that the account's own view shows: the driver's phone number, their
+surname, and the street address. A link sent by SMS gets forwarded, and none of those three are
+needed by the person waiting — they know their own address, and the driver's mobile is theirs.
+
+128 bits rather than 256, because every character of the URL is billed on an SMS. The
+`/v1/public/live` prefix gets its own rate-limit bucket so a page polling every twenty seconds
+does not spend the one the rest of `/v1/public` shares.
+
 ## 3. The status model
 
 Three statuses are added. `in_transit` stays and keeps its meaning.
@@ -118,6 +132,20 @@ asks for the proof itself, and where it was dropped, to reach both.
 - The recipient gets the email **when we have an address for them**, which is optional at
   booking. No address means the SMS alone, as now — recipients are not made to supply an email
   to receive their parcel.
+
+## 5a. Three things that were already broken
+
+Found while wiring the above, fixed with it:
+
+- `LiveTrackingService.coordsOf` read `lat`/`lng` off the delivery address, but a stored
+  `Address` keeps them under `location`. Every tracking view had a null destination, a null
+  distance and a null ETA — the map drew one pin and the ETA said "—".
+- The same query named the driver from `users.fullName`, which is null until that driver has
+  signed in and a user row exists. It now reads `drivers.fullName`, which is never null.
+- `GET /v1/account/shipments/:id/timeline` took an id and no account, so any signed-in
+  customer could read any other customer's timeline.
+- Every notification links to `/track?waybill=…` and that page only ever read `?w=`, so all of
+  them landed on an empty form. It now accepts both.
 
 ## 6. Deliberately not in this phase
 
