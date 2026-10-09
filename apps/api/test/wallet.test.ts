@@ -105,6 +105,57 @@ describe("wallet & top-ups", () => {
     expect(denied.status).toBe(403);
   });
 
+  /*
+    Topping up is often a step inside something else — being short at the end of a booking,
+    most of all — so the caller may say where the gateway should put the customer down
+    afterwards. That value is handed to a payment provider as a redirect target, which makes
+    anything able to name another host an open redirect with our name on it.
+  */
+  describe("where the gateway sends them back to", () => {
+    const create = (returnTo: unknown) =>
+      h
+        .http()
+        .post("/v1/account/wallet/top-ups")
+        .set(asOwner())
+        .send({ provider: "payfast", amountCents: 25_000, returnTo });
+
+    it("carries a path inside the portal through to the provider", async () => {
+      const res = await create("/portal/book?quote=abc&slotDate=2026-10-12");
+      expect(res.status).toBe(201);
+      const body = res.body as CreateTopUpResponse;
+      expect(body.instructions.type).toBe("redirect");
+      const fields = (body.instructions as { fields?: Record<string, string> }).fields ?? {};
+      expect(fields["return_url"]).toContain("/portal/book?quote=abc");
+      // Still identifies the top-up, so the page knows what it is waiting for.
+      expect(fields["return_url"]).toContain(`topup=${body.topUp.id}`);
+    });
+
+    it("refuses anything that could point at another site", async () => {
+      for (const hostile of [
+        "https://evil.example/steal",
+        "//evil.example/steal",
+        "/admin/settings",
+        "/portal/../../evil",
+        "javascript:alert(1)",
+      ]) {
+        const res = await create(hostile);
+        expect(res.status, hostile).toBe(422);
+      }
+    });
+
+    it("falls back to the wallet when nothing is asked for", async () => {
+      const res = await h
+        .http()
+        .post("/v1/account/wallet/top-ups")
+        .set(asOwner())
+        .send({ provider: "payfast", amountCents: 25_000 });
+      const fields = (res.body as CreateTopUpResponse).instructions as {
+        fields?: Record<string, string>;
+      };
+      expect(fields.fields?.["return_url"]).toContain("/portal/wallet?topup=");
+    });
+  });
+
   it("PayFast: credits only on a correctly signed ITN with the matching amount, once", async () => {
     const created = (
       await h

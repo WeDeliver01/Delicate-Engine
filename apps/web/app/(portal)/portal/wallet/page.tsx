@@ -13,13 +13,7 @@ import type {
 import { useMe } from "@/components/use-me";
 import { api, ApiRequestError } from "@/lib/api";
 import { dateTime, rands } from "@/lib/money";
-
-const PROVIDER_LABELS: Record<PaymentProviderName, string> = {
-  manual_eft: "Bank transfer (EFT)",
-  payfast: "Card / Instant EFT via PayFast",
-  yoco: "Card via Yoco",
-  bobpay: "Bob Pay",
-};
+import { PROVIDER_LABELS, submitRedirect } from "@/lib/pay";
 
 /**
  * `useSearchParams` reads the ?result= the payment provider sends the customer back with, and
@@ -255,29 +249,6 @@ function Wallet() {
       </div>
     </div>
   );
-}
-
-function submitRedirect(i: {
-  url: string;
-  method: "GET" | "POST";
-  fields?: Record<string, string>;
-}) {
-  if (i.method === "GET") {
-    window.location.assign(i.url);
-    return;
-  }
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = i.url;
-  for (const [k, v] of Object.entries(i.fields ?? {})) {
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = k;
-    input.value = v;
-    form.appendChild(input);
-  }
-  document.body.appendChild(form);
-  form.submit();
 }
 
 function Stat({

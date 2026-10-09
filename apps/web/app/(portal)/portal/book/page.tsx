@@ -19,6 +19,7 @@ import { rands } from "@/lib/money";
 import { AddressInput } from "@/components/booking/address-input";
 import { Breakdown } from "@/components/booking/breakdown";
 import { SlotCalendar } from "@/components/booking/slot-calendar";
+import { PayShortfall } from "@/components/booking/pay-shortfall";
 import { useCollectionPoint } from "@/components/booking/use-collection-point";
 
 type Drop = {
@@ -68,6 +69,12 @@ function Book() {
   const me = useMe();
   const params = useSearchParams();
   const resumeQuoteId = params.get("quote");
+  /*
+    Back from the payment gateway. The money is credited by a webhook, not by this redirect,
+    so arriving here proves nothing except that they went — the wallet is polled until it
+    actually shows up, and the booking waits.
+  */
+  const paymentReturned = params.get("result") === "return";
   const router = useRouter();
   const qc = useQueryClient();
   const account = me.activeAccount;
@@ -80,6 +87,8 @@ function Book() {
     queryKey: ["account", account?.id, "wallet"],
     queryFn: () => api<WalletSummary>("/v1/account/wallet"),
     enabled: !!account,
+    // Only while we are expecting money: the webhook lands seconds after the customer does.
+    refetchInterval: paymentReturned ? 4_000 : false,
   });
 
   const [serviceLevel, setServiceLevel] = useState("standard");
@@ -168,9 +177,27 @@ function Book() {
       signatureOnDelivery: r.options.signatureOnDelivery ?? false,
       weddingVenue: r.options.weddingVenue ?? false,
     });
+    // A timed window is part of what the quote was priced on, and the engine refuses a
+    // booking whose window differs from its quote's. Losing it here would make every resumed
+    // quote with a window unbookable.
+    if (r.timedWindow?.delivery) setTimedWindow(r.timedWindow.delivery);
     // Only offer to book it if the price is still live.
     if (q.status === "priced" && Date.parse(q.expiresAt) > Date.now()) setQuote(q);
   }, [resumed.data]);
+
+  /*
+    The slot they had chosen before being sent off to pay. Carried in the URL rather than
+    remembered on the server, because it is a choice, not a reservation — somebody else may
+    well have taken the last place in it while the card was being typed, and the confirm step
+    is where that is found out, exactly as it would be otherwise.
+  */
+  const resumeSlotDate = params.get("slotDate");
+  const resumeSlotWindow = params.get("slotWindow");
+  useEffect(() => {
+    if (resumeSlotDate && resumeSlotWindow) {
+      setSlot({ date: resumeSlotDate, windowKey: resumeSlotWindow });
+    }
+  }, [resumeSlotDate, resumeSlotWindow]);
 
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
   const needsSlot = sl?.requiresSlot ?? true;
@@ -187,15 +214,50 @@ function Book() {
     enabled: !!quote && needsSlot,
   });
 
-  const detailsComplete = useMemo(
-    () =>
-      !!collection &&
-      drops.every(
-        (d) =>
-          d.address && d.name.trim().length >= 2 && d.phone.trim().length >= 6 && d.packageTypeId,
-      ),
-    [collection, drops],
-  );
+  /**
+   * Everything still missing, field by field.
+   *
+   * It used to be one boolean that greyed the button out, which tells somebody staring at a
+   * long form that they have got something wrong and not a word about what. So the check
+   * names each gap, the button stays live, and pressing it marks the fields and says so.
+   */
+  const problems = useMemo(() => {
+    const out: { field: string; message: string }[] = [];
+    if (!collection) {
+      out.push({
+        field: "collection",
+        message: "Choose the collection address from the list of suggestions.",
+      });
+    }
+    // The name alone is no use to a driver standing outside a locked gate.
+    if (collectionName.trim() && collectionPhone.trim().length < 6) {
+      out.push({
+        field: "collectionPhone",
+        message: "Add a phone number for the collection contact.",
+      });
+    }
+    if (opts.liabilityCover && !(Number(opts.declaredValue) > 0)) {
+      out.push({
+        field: "declaredValue",
+        message: "Liability cover needs the value of what you are sending.",
+      });
+    }
+    drops.forEach((d, i) => {
+      const where = drops.length > 1 ? `Drop ${i + 1}: ` : "";
+      const add = (field: string, message: string) =>
+        out.push({ field: `drop.${i}.${field}`, message: `${where}${message}` });
+      if (!d.address) add("address", "choose the delivery address from the list of suggestions.");
+      if (d.name.trim().length < 2) add("name", "who is receiving this?");
+      if (d.phone.trim().length < 6) add("phone", "add a phone number for the recipient.");
+      if (!d.packageTypeId) add("package", "choose what is being sent.");
+    });
+    return out;
+  }, [collection, collectionName, collectionPhone, drops, opts.liabilityCover, opts.declaredValue]);
+
+  /** Nothing is marked red until they have asked us for a price. Then everything is. */
+  const [checked, setChecked] = useState(false);
+  const problemAt = (field: string) =>
+    checked ? (problems.find((p) => p.field === field)?.message ?? null) : null;
 
   function setDrop(i: number, patch: Partial<Drop>) {
     setDrops((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
@@ -205,6 +267,17 @@ function Book() {
   const clearQuote = () => setQuote(null);
 
   async function getQuote() {
+    setChecked(true);
+    if (problems.length > 0) {
+      // Take them to the first gap rather than leaving them to find it. On a wide screen the
+      // price panel is pinned beside the form, so the list is already in view; on a phone it
+      // is at the bottom, and the field is where the answer goes.
+      const first = problems[0]!.field;
+      const el = document.getElementById(first);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (el as HTMLInputElement | null)?.focus({ preventScroll: true });
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -255,6 +328,13 @@ function Book() {
 
   async function confirm() {
     if (!quote) return;
+    if (needsSlot && !slot) {
+      setError("Pick the day and the time window for the delivery first.");
+      document
+        .getElementById("delivery-slot")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -276,6 +356,12 @@ function Book() {
       if (err instanceof ApiRequestError && err.code === "slot_unavailable") {
         void slots.refetch();
         setSlot(null);
+      }
+      // The wallet moved under us — money spent on another booking in another tab, or a hold
+      // we had not seen. Refetch it so the panel offers to take the difference instead of
+      // leaving a dead Confirm button and a sentence about money.
+      if (err instanceof ApiRequestError && err.code === "insufficient_funds") {
+        void wallet.refetch();
       }
       // Somebody else took the last place in that hour between the quote and the confirm.
       if (err instanceof ApiRequestError && err.code === "window_unavailable") {
@@ -348,7 +434,10 @@ function Book() {
           <section className="panel p-5">
             <h2 className="section-title mb-3">Collection</h2>
             <AddressInput
+              id="collection"
               label="Collect from"
+              required
+              error={problemAt("collection")}
               value={collection}
               onChange={(a) => {
                 setCollection(a);
@@ -362,7 +451,15 @@ function Book() {
                 value={collectionName}
                 onChange={setCollectionName}
               />
-              <Field label="Contact phone" value={collectionPhone} onChange={setCollectionPhone} />
+              <Field
+                id="collectionPhone"
+                label="Contact phone"
+                optional
+                hint="Who the driver calls at collection."
+                error={problemAt("collectionPhone")}
+                value={collectionPhone}
+                onChange={setCollectionPhone}
+              />
             </div>
             <Field
               label="Collection notes"
@@ -396,8 +493,10 @@ function Book() {
               />
               {opts.liabilityCover && (
                 <Field
+                  id="declaredValue"
                   label="Declared value (R)"
                   type="number"
+                  error={problemAt("declaredValue")}
                   value={opts.declaredValue}
                   onChange={(v) => {
                     setOpts({ ...opts, declaredValue: v });
@@ -474,7 +573,10 @@ function Book() {
 
               <div className="mt-3">
                 <AddressInput
+                  id={`drop.${i}.address`}
                   label="Deliver to"
+                  required
+                  error={problemAt(`drop.${i}.address`)}
                   value={d.address}
                   onChange={(a) => {
                     setDrop(i, { address: a });
@@ -485,12 +587,16 @@ function Book() {
 
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field
+                  id={`drop.${i}.name`}
                   label="Recipient name"
+                  error={problemAt(`drop.${i}.name`)}
                   value={d.name}
                   onChange={(v) => setDrop(i, { name: v })}
                 />
                 <Field
+                  id={`drop.${i}.phone`}
                   label="Recipient phone"
+                  error={problemAt(`drop.${i}.phone`)}
                   value={d.phone}
                   onChange={(v) => setDrop(i, { phone: v })}
                   hint="We message this number when the driver is on the way."
@@ -508,14 +614,19 @@ function Book() {
 
               <div className="mt-3 grid gap-3 sm:grid-cols-4">
                 <label className="block sm:col-span-2">
-                  <span className="field-label">Package</span>
+                  <span className="field-label">
+                    Package
+                    <RequiredMark />
+                  </span>
                   <select
+                    id={`drop.${i}.package`}
                     value={d.packageTypeId}
                     onChange={(e) => {
                       setDrop(i, { packageTypeId: e.target.value });
                       clearQuote();
                     }}
-                    className="input mt-1"
+                    aria-invalid={problemAt(`drop.${i}.package`) ? true : undefined}
+                    className={`input mt-1 ${problemAt(`drop.${i}.package`) ? "input-invalid" : ""}`}
                   >
                     <option value="">Select…</option>
                     {catalog.data?.packageTypes.map((p) => (
@@ -525,6 +636,9 @@ function Book() {
                       </option>
                     ))}
                   </select>
+                  {problemAt(`drop.${i}.package`) && (
+                    <span className="field-error">Choose what is being sent.</span>
+                  )}
                 </label>
                 <Field
                   label="Qty"
@@ -588,16 +702,38 @@ function Book() {
                   Fill in the collection address and each drop, then we will price it on your rate
                   card.
                 </p>
-                <button
-                  disabled={!detailsComplete || busy}
-                  onClick={getQuote}
-                  className="btn btn-primary mt-4 w-full"
-                >
+                <button disabled={busy} onClick={getQuote} className="btn btn-primary mt-4 w-full">
                   {busy ? "Pricing…" : "Get my price"}
                 </button>
-                {!detailsComplete && (
+                {checked && problems.length > 0 ? (
+                  <div className="alert-error mt-3">
+                    <p className="font-medium">
+                      {problems.length === 1
+                        ? "One thing is missing:"
+                        : `${problems.length} things are missing:`}
+                    </p>
+                    <ul className="mt-1.5 space-y-1">
+                      {problems.map((p) => (
+                        <li key={p.field}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const el = document.getElementById(p.field);
+                              el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                              (el as HTMLInputElement | null)?.focus({ preventScroll: true });
+                            }}
+                            className="text-left underline decoration-[#E8A9C5] underline-offset-2 hover:decoration-[#C13B73]"
+                          >
+                            {p.message}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
                   <p className="mt-2 text-xs text-muted">
-                    Each drop needs an address, a recipient name and phone, and a package type.
+                    Fields marked <span className="text-[#C13B73]">*</span> are needed before we can
+                    price it.
                   </p>
                 )}
               </section>
@@ -614,30 +750,46 @@ function Book() {
                 </section>
 
                 {needsSlot && (
-                  <section className="panel p-5">
+                  <section className="panel p-5" id="delivery-slot">
                     <h2 className="section-title">Delivery slot</h2>
                     <SlotCalendar slots={slots.data ?? []} value={slot} onChange={setSlot} />
                   </section>
                 )}
 
                 <section className="panel p-5">
+                  {paymentReturned && short > 0 && (
+                    <p className="alert-info mb-3">
+                      We have not seen your payment yet. It usually lands within a minute — this
+                      page is watching for it.
+                    </p>
+                  )}
                   {short > 0 ? (
-                    <>
-                      <p className="text-sm text-[#C13B73]">
-                        You are {rands(short)} short for this booking.
-                      </p>
-                      <a href="/portal/wallet" className="btn btn-primary mt-3 w-full">
-                        Top up your wallet
-                      </a>
-                    </>
+                    <PayShortfall
+                      shortCents={short}
+                      totalCents={quote.breakdown.totalCents}
+                      availableCents={available}
+                      returnTo={payReturnPath(quote.id, slot)}
+                    />
                   ) : (
-                    <button
-                      disabled={busy || (needsSlot && !slot)}
-                      onClick={confirm}
-                      className="btn w-full bg-brand-pink text-white hover:bg-ink"
-                    >
-                      {busy ? "Booking…" : `Confirm · ${rands(quote.breakdown.totalCents)}`}
-                    </button>
+                    <>
+                      {paymentReturned && (
+                        <p className="alert-success mb-3">
+                          Payment received. Your booking is ready to confirm.
+                        </p>
+                      )}
+                      <button
+                        disabled={busy}
+                        onClick={confirm}
+                        className="btn w-full bg-brand-pink text-white hover:bg-ink"
+                      >
+                        {busy ? "Booking…" : `Confirm · ${rands(quote.breakdown.totalCents)}`}
+                      </button>
+                      {needsSlot && !slot && (
+                        <p className="mt-2 text-xs text-[#C13B73]">
+                          Pick a delivery date and time above first.
+                        </p>
+                      )}
+                    </>
                   )}
                   <p className="mt-2 text-xs text-muted">
                     The amount is reserved from your wallet now and charged when delivered. Cancel
@@ -664,22 +816,50 @@ function Field(props: {
   placeholder?: string;
   hint?: string;
   optional?: boolean;
+  id?: string;
+  /** What is wrong with it, once they have asked us to price the booking. */
+  error?: string | null;
 }) {
   return (
     <label className={`block ${props.className ?? ""}`}>
       <span className="field-label">
         {props.label}
-        {props.optional && <span className="ml-1 normal-case text-[#B5AFA7]">optional</span>}
+        {props.optional ? (
+          <span className="ml-1 normal-case text-[#B5AFA7]">optional</span>
+        ) : (
+          <RequiredMark />
+        )}
       </span>
       <input
+        id={props.id}
         type={props.type ?? "text"}
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder={props.placeholder}
-        className="input mt-1"
+        aria-invalid={props.error ? true : undefined}
+        className={`input mt-1 ${props.error ? "input-invalid" : ""}`}
       />
-      {props.hint && <span className="field-hint">{props.hint}</span>}
+      {props.error ? (
+        <span className="field-error">{props.error}</span>
+      ) : (
+        props.hint && <span className="field-hint">{props.hint}</span>
+      )}
     </label>
+  );
+}
+
+/**
+ * The star next to a field we cannot do without.
+ *
+ * Marking the required ones rather than the optional ones is the wrong way round for most
+ * forms — but this one is mostly required, and a customer scanning it wants to know what they
+ * are obliged to fill in, not what they may skip. Both are marked, so neither is a guess.
+ */
+function RequiredMark() {
+  return (
+    <span className="ml-0.5 text-[#C13B73]" aria-hidden="true" title="Required">
+      *
+    </span>
   );
 }
 
@@ -705,9 +885,24 @@ function Check({
   );
 }
 
+/**
+ * Where the payment gateway should put the customer down: this booking, as they left it.
+ *
+ * The quote holds the addresses, the parcels and the price; the slot is the one thing chosen
+ * after it, so it travels in the URL beside it.
+ */
+function payReturnPath(quoteId: string, slot: { date: string; windowKey: string } | null): string {
+  const q = new URLSearchParams({ quote: quoteId });
+  if (slot) {
+    q.set("slotDate", slot.date);
+    q.set("slotWindow", slot.windowKey);
+  }
+  return `/portal/book?${q.toString()}`;
+}
+
 function describeError(err: ApiRequestError): string {
   if (err.code === "insufficient_funds")
-    return `Insufficient funds: you are ${rands((err.error.details as { shortfallCents: number }).shortfallCents)} short. Top up your wallet and try again.`;
+    return `You are ${rands((err.error.details as { shortfallCents: number }).shortfallCents)} short for this booking. Pay the difference below and we will come straight back here.`;
   if (err.code === "slot_unavailable") return "That slot just filled up. Please pick another.";
   if (err.code === "validation_failed") {
     const issues = err.error.details as

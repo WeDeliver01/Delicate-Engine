@@ -13,6 +13,10 @@ export function AddressInput(props: {
   value: Address | null;
   onChange: (a: Address | null) => void;
   placeholder?: string;
+  id?: string;
+  required?: boolean;
+  /** Set once the form has been submitted and this one is still empty. */
+  error?: string | null;
 }) {
   const [text, setText] = useState(props.value?.formatted ?? "");
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([]);
@@ -69,8 +73,17 @@ export function AddressInput(props: {
 
   return (
     <label className="relative block text-sm">
-      <span className="font-medium text-ink">{props.label}</span>
+      <span className="font-medium text-ink">
+        {props.label}
+        {props.required && (
+          <span className="ml-0.5 text-[#C13B73]" aria-hidden="true" title="Required">
+            *
+          </span>
+        )}
+      </span>
       <input
+        id={props.id}
+        aria-invalid={props.error ? true : undefined}
         value={text}
         onChange={(e) => {
           setText(e.target.value);
@@ -79,7 +92,11 @@ export function AddressInput(props: {
         onFocus={() => suggestions.length && setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         placeholder={props.placeholder ?? "Start typing an address…"}
-        className={`mt-1 w-full rounded-xl border p-3 outline-none focus:border-[#0A0A0A] ${props.value ? "border-[#0A0A0A]" : "border-[#DAD6CF]"}`}
+        className={`mt-1 w-full rounded-xl border p-3 outline-none ${
+          props.error
+            ? "border-[#C13B73] focus:border-[#C13B73]"
+            : `focus:border-[#0A0A0A] ${props.value ? "border-[#0A0A0A]" : "border-[#DAD6CF]"}`
+        }`}
         autoComplete="off"
       />
       {loading && <span className="absolute right-3 top-9 text-xs text-muted">…</span>}
@@ -98,10 +115,17 @@ export function AddressInput(props: {
           ))}
         </ul>
       )}
-      {!props.value && text.length >= 4 && !loading && suggestions.length === 0 && (
-        <span className="mt-1 block text-xs text-muted">
-          Pick an address from the list so we can measure the route.
-        </span>
+      {props.error ? (
+        <span className="mt-1 block text-xs text-[#C13B73]">{props.error}</span>
+      ) : (
+        !props.value &&
+        text.length >= 4 &&
+        !loading &&
+        suggestions.length === 0 && (
+          <span className="mt-1 block text-xs text-muted">
+            Pick an address from the list so we can measure the route.
+          </span>
+        )
       )}
     </label>
   );

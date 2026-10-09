@@ -79,6 +79,25 @@ export type TopUp = z.infer<typeof TopUp>;
 export const CreateTopUpRequest = z.object({
   provider: PaymentProviderName,
   amountCents: PositiveCents.min(5_000).max(100_000_00), // R50 – R100 000
+  /**
+   * Where in the portal the gateway should drop the customer afterwards.
+   *
+   * Paying is a round trip through somebody else's site, and the default — the wallet — is
+   * the wrong place to land when the top-up was only ever a step in booking a delivery. A
+   * path inside our own portal and nothing else: this is handed to a payment provider as a
+   * redirect target, and anything that can name another host is an open redirect with our
+   * name on it.
+   */
+  returnTo: z
+    .string()
+    .max(300)
+    .regex(/^\/portal\/[A-Za-z0-9\-._~/]*(\?[A-Za-z0-9\-._~/?:@!$'()*+,;=&%]*)?$/, {
+      message: "must be a path inside the portal",
+    })
+    // `/portal/../../somewhere` satisfies the pattern and is not in the portal once a
+    // browser has resolved it.
+    .refine((v) => !v.includes(".."), { message: "must be a path inside the portal" })
+    .optional(),
 });
 export type CreateTopUpRequest = z.infer<typeof CreateTopUpRequest>;
 

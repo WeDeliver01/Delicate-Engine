@@ -269,6 +269,14 @@ h1, h2, h3, h4, h5, h6 {
   .field-hint {
     @apply mt-1 block text-xs text-muted;
   }
+  /* Takes the hint's place rather than sitting under it: two lines of small print below a
+     box is how the one that matters gets skipped. */
+  .field-error {
+    @apply mt-1 block text-xs text-[#C13B73];
+  }
+  .input-invalid {
+    @apply border-[#C13B73] focus:border-[#C13B73] focus:ring-[#C13B73]/20;
+  }
   .input {
     @apply w-full rounded-xl border border-[#DAD6CF] bg-white px-3 py-2 text-sm text-ink
            transition-colors placeholder:text-[#B5AFA7]

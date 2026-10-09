@@ -78,9 +78,17 @@ export class TopUpService {
     });
 
     const base = this.env.WEB_PUBLIC_URL.replace(/\/$/, "");
+    /*
+      Back where they started. Usually the wallet, but a top-up is often only a step in
+      something else — being short at the end of a booking, most of all — and the schema
+      restricts this to a path inside our own portal, so it cannot be bent into a redirect
+      to somebody else's site.
+    */
+    const path = input.returnTo ?? "/portal/wallet";
+    const sep = path.includes("?") ? "&" : "?";
     const instructions = await provider.initiate(topUp, {
-      returnUrl: `${base}/portal/wallet?topup=${topUp.id}&result=return`,
-      cancelUrl: `${base}/portal/wallet?topup=${topUp.id}&result=cancel`,
+      returnUrl: `${base}${path}${sep}topup=${topUp.id}&result=return`,
+      cancelUrl: `${base}${path}${sep}topup=${topUp.id}&result=cancel`,
       notifyUrl: `${this.env.API_PUBLIC_URL.replace(/\/$/, "")}/v1/webhooks/${provider.name}`,
       payerEmail,
     });
