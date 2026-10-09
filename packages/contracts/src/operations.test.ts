@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allocateDay,
+  feasibleGapMinutes,
   groupCollections,
   groupingAdvisories,
   scoreAllocation,
@@ -461,5 +462,56 @@ describe("allocating a day", () => {
   it("answers when there are no drivers at all rather than throwing", () => {
     const result = allocateDay({ drivers: [], jobs: [job("j1", MENLYN, HATFIELD)] });
     expect(result.assignment).toEqual({});
+  });
+});
+
+/**
+ * The soonest a parcel could reach the door. A floor, not a promise -- the van is usually
+ * doing other work on the way -- so these pin down that it is honest about the short case,
+ * which a flat ninety minutes never was, and that it refuses to go below what dispatch can
+ * physically start.
+ */
+describe("feasibleGapMinutes", () => {
+  it("is not ninety minutes for a twenty-minute drive", () => {
+    // Menlyn to Centurion, one cake: 10 to load, ~20 to drive, 4 to hand over, +25%.
+    const gap = feasibleGapMinutes({ km: 12, collectionPieces: 1, dropPieces: 1 });
+    expect(gap).toBeLessThan(60);
+    expect(gap).toBeGreaterThanOrEqual(45);
+  });
+
+  it("grows with the distance", () => {
+    const near = feasibleGapMinutes({ km: 5 });
+    const far = feasibleGapMinutes({ km: 60 });
+    expect(far).toBeGreaterThan(near);
+    // Pretoria to Sandton is not an hour and a half of slack either way -- it is most of one.
+    expect(far).toBeGreaterThan(90);
+  });
+
+  it("grows with how much there is to carry", () => {
+    const one = feasibleGapMinutes({ km: 30, collectionPieces: 1, dropPieces: 1 });
+    const many = feasibleGapMinutes({ km: 30, collectionPieces: 12, dropPieces: 12 });
+    expect(many).toBeGreaterThan(one);
+  });
+
+  it("never goes below what dispatch can start", () => {
+    // Next door is still a driver getting there, loading, and getting out again.
+    expect(feasibleGapMinutes({ km: 0 })).toBe(45);
+    expect(feasibleGapMinutes({ km: 0.2 })).toBe(45);
+  });
+
+  it("takes the operator's speed and buffer rather than ours", () => {
+    const slow = feasibleGapMinutes({ km: 30, averageSpeedKph: 20 });
+    const quick = feasibleGapMinutes({ km: 30, averageSpeedKph: 60 });
+    expect(slow).toBeGreaterThan(quick);
+
+    const generous = feasibleGapMinutes({ km: 30, bufferBps: 10_000 });
+    const tight = feasibleGapMinutes({ km: 30, bufferBps: 0 });
+    expect(generous).toBeGreaterThan(tight);
+  });
+
+  it("rounds out to the next five minutes", () => {
+    for (const km of [3, 7, 11, 19, 23, 41]) {
+      expect(feasibleGapMinutes({ km }) % 5).toBe(0);
+    }
   });
 });

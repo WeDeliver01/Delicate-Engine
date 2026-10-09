@@ -2,10 +2,12 @@ import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   SHIPMENT_TRANSITIONS,
+  feasibleGapMinutes,
   type Booking,
   type BookingStatus,
   type CreateBookingRequest,
   type Quote,
+  type QuoteBreakdown,
   type QuoteRequest,
   toCustomerBreakdown,
   type Shipment,
@@ -154,6 +156,41 @@ export class BookingService {
         "window_not_quoted",
         "this booking asks for a different window from the one it was priced with; please re-quote",
       );
+    }
+
+    /*
+      Both ends pinned, and the clock says no.
+
+      This refuses the impossible and nothing more. It does not promise that a parcel
+      collected at eight arrives at nine, because the van is usually collecting three other
+      jobs on the way -- that is what the slot the customer bought is for. What it stops is
+      selling an eight o'clock collection with an eight-thirty delivery on a forty-minute
+      drive, which no amount of good dispatching can honour, and which we would only find out
+      about when somebody rang to ask where their cake was.
+
+      The furthest drop binds: one pair of windows covers every drop on the booking.
+    */
+    if (timedWindow?.collection && timedWindow.delivery) {
+      const breakdown = quote.breakdown as QuoteBreakdown;
+      const km = Math.max(0, ...(breakdown.dropKm.length ? breakdown.dropKm : [0]));
+      const pieces = (quote.request as QuoteRequest).drops.reduce(
+        (n, drop) => n + drop.parcels.reduce((m, parcel) => m + parcel.quantity, 0),
+        0,
+      );
+      const needed = feasibleGapMinutes({
+        km,
+        collectionPieces: pieces,
+        dropPieces: Math.max(1, Math.ceil(pieces / (quote.request as QuoteRequest).drops.length)),
+      });
+      const offered = timedWindow.delivery.endMinute - timedWindow.collection.startMinute;
+      if (offered < needed) {
+        throw AppError.validation([
+          {
+            path: ["timedWindow"],
+            message: `that drive needs about ${needed} minutes from collection to the door; this booking allows ${offered}`,
+          },
+        ]);
+      }
     }
 
     try {

@@ -38,6 +38,51 @@ export function serviceMinutes(kind: StopKind, pieces: number): number {
 
 export type StopKind = "collection" | "drop";
 
+// ── how soon a delivery can honestly follow its collection ────────────────────
+
+export interface FeasibleGapInput {
+  /** Road kilometres from the collection to the door. */
+  km: number;
+  /** Pieces handled at each end. Both affect how long the driver is standing there. */
+  collectionPieces?: number;
+  dropPieces?: number;
+  /** Average road speed. The same default the planner and the live board use. */
+  averageSpeedKph?: number;
+  /** Proportional allowance for traffic and the unexpected. 2500 = a quarter again. */
+  bufferBps?: number;
+  /** Never shorter than this, however short the drive. */
+  minimumMinutes?: number;
+}
+
+/**
+ * The soonest a parcel could reach the door, if the van went straight there.
+ *
+ * This is a floor, not a promise, and the difference matters. A driver collecting at eight
+ * is usually collecting three other jobs on the same run, so the parcel rides along while
+ * they work; what this number says is only that nothing faster than this is physically
+ * possible. Use it to refuse the impossible -- an eight o'clock collection with an
+ * eight-thirty delivery on a forty-minute drive -- and to price and promise a dedicated run,
+ * where the van really does go straight there. Never to tell a customer when a batched
+ * delivery will arrive: that is what the slot they bought says, and what the live estimate
+ * says once a driver is actually moving.
+ *
+ * Built from the same parts as the rest of the day: `serviceMinutes` at both ends, the
+ * planner's road speed, and a proportional buffer, rounded out to the next five minutes
+ * because a promise of 41 minutes is a lie about how precisely anyone knows.
+ */
+export function feasibleGapMinutes(input: FeasibleGapInput): number {
+  const speed = input.averageSpeedKph ?? 35;
+  const buffer = (input.bufferBps ?? 2_500) / 10_000;
+  const minimum = input.minimumMinutes ?? 45;
+
+  const load = serviceMinutes("collection", input.collectionPieces ?? 1);
+  const unload = serviceMinutes("drop", input.dropPieces ?? 1);
+  const drive = (Math.max(0, input.km) / speed) * 60;
+
+  const total = (load + drive + unload) * (1 + buffer);
+  return Math.max(minimum, Math.ceil(total / 5) * 5);
+}
+
 // ── grouping collections ──────────────────────────────────────────────────────
 
 export interface GroupableStop {

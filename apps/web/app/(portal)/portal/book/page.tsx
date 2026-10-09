@@ -143,6 +143,15 @@ function Book() {
    * window differs from the one its quote was priced with, so the two cannot drift.
    */
   const [timedWindow, setTimedWindow] = useState<TimedWindow | null>(null);
+  /*
+    Which end of the job the hour is for.
+
+    Only the customer knows. A wedding cake is pinned at the door -- it has to be there before
+    the guests are -- and a bakery clearing its counter before the lunch rush is pinned at the
+    collection. Asking for one time and guessing which they meant is how a delivery is early
+    for one of them and late for the other.
+  */
+  const [windowEnd, setWindowEnd] = useState<"delivery" | "collection">("delivery");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [idempotencyKey] = useState(() => `web-${crypto.randomUUID()}`);
@@ -198,7 +207,13 @@ function Book() {
     // A timed window is part of what the quote was priced on, and the engine refuses a
     // booking whose window differs from its quote's. Losing it here would make every resumed
     // quote with a window unbookable.
-    if (r.timedWindow?.delivery) setTimedWindow(r.timedWindow.delivery);
+    if (r.timedWindow?.delivery) {
+      setTimedWindow(r.timedWindow.delivery);
+      setWindowEnd("delivery");
+    } else if (r.timedWindow?.collection) {
+      setTimedWindow(r.timedWindow.collection);
+      setWindowEnd("collection");
+    }
     // Only offer to book it if the price is still live.
     if (q.status === "priced" && Date.parse(q.expiresAt) > Date.now()) setQuote(q);
   }, [resumed.data]);
@@ -433,7 +448,7 @@ function Book() {
             signatureOnDelivery: opts.signatureOnDelivery,
             weddingVenue: opts.weddingVenue,
           },
-          ...(timedWindow ? { timedWindow: { collection: null, delivery: timedWindow } } : {}),
+          ...(timedWindow ? { timedWindow: timedWindowFor(windowEnd, timedWindow) } : {}),
         },
       });
       setQuote(q);
@@ -465,7 +480,7 @@ function Book() {
           idempotencyKey,
           customerReference: customerReference.trim() || undefined,
           // Must match what the quote was priced with, or the engine refuses it.
-          ...(timedWindow ? { timedWindow: { collection: null, delivery: timedWindow } } : {}),
+          ...(timedWindow ? { timedWindow: timedWindowFor(windowEnd, timedWindow) } : {}),
         },
       });
       await qc.invalidateQueries({ queryKey: ["account", account?.id] });
@@ -864,11 +879,34 @@ function Book() {
         {/* A narrow window is priced, so it is chosen before the price, not after. */}
         {(bands.data ?? []).length > 0 && (
           <section className="panel p-5 xl:col-span-8">
-            <h2 className="section-title">Delivery window</h2>
+            <h2 className="section-title">Pin it to an hour</h2>
             <p className="lede mt-1">
-              Optional. Pick an hour and we will be there inside it; leave it and we will come some
-              time in your slot.
+              Optional, and priced. Without one we collect and deliver inside the slot you chose,
+              which is the honest promise: a driver on a run has other stops on the way.
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(
+                [
+                  ["delivery", "It must arrive by a time"],
+                  ["collection", "It must be fetched at a time"],
+                ] as const
+              ).map(([end, label]) => (
+                <button
+                  key={end}
+                  type="button"
+                  onClick={() => {
+                    setWindowEnd(end);
+                    setTimedWindow(null);
+                    clearQuote();
+                  }}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    windowEnd === end ? "border-ink bg-ink text-white" : "border-[#DAD6CF]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <WindowPicker
               bands={bands.data ?? []}
               value={timedWindow}
@@ -877,6 +915,11 @@ function Book() {
                 clearQuote();
               }}
             />
+            <p className="mt-3 text-xs text-muted">
+              {windowEnd === "delivery"
+                ? "We will be at the door inside this hour. When we collect is ours to arrange."
+                : "We will be at the collection inside this hour. When it arrives depends on the run."}
+            </p>
           </section>
         )}
 
@@ -1088,6 +1131,16 @@ function Check({
       <span>{label}</span>
     </label>
   );
+}
+
+/** One end or the other, never both: an hour at each end is two promises, priced as one. */
+function timedWindowFor(
+  end: "delivery" | "collection",
+  window: TimedWindow,
+): { collection: TimedWindow | null; delivery: TimedWindow | null } {
+  return end === "collection"
+    ? { collection: window, delivery: null }
+    : { collection: null, delivery: window };
 }
 
 /** The box, said the way somebody choosing one needs to hear it. */

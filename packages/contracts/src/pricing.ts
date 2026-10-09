@@ -127,6 +127,13 @@ export type QuoteLine = z.infer<typeof QuoteLine>;
 export const QuoteBreakdown = z.object({
   distanceKm: z.number(),
   legsKm: z.array(z.number()),
+  /**
+   * Road kilometres from the collection to each drop, in order.
+   *
+   * What the drop was charged on, and what a dispatcher needs to answer "can this be there by
+   * ten". Empty on quotes priced before each drop was measured separately.
+   */
+  dropKm: z.array(z.number()).default([]),
   cogsCents: Cents,
   lines: z.array(QuoteLine),
   subtotalCents: Cents,
@@ -205,6 +212,7 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   // difference is the discount, and it belongs on the record rather than in a comment.
   const distanceKm = round2(legsKm.reduce((a, b) => a + b, 0));
 
+  const dropKm = (input.billable?.dropKm ?? []).map(round2);
   const cogsCents = roundCents(billableKm * rateCard.costPerKmCents);
   const marginFraction = Math.min(rateCard.marginBps, 9_900) / 10_000;
   let baseCents = roundCents(cogsCents / (1 - marginFraction));
@@ -324,6 +332,7 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
 
   return {
     distanceKm,
+    dropKm,
     legsKm,
     cogsCents,
     lines,
