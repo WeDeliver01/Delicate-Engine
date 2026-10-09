@@ -103,6 +103,16 @@ export const SHIPMENT_TERMINAL: readonly ShipmentStatus[] = [
 ];
 
 /**
+ * Still someone's work. Derived from the terminal list rather than written out, because the
+ * copy that was written out went stale the moment a status was added: the dispatch board's own
+ * list stopped at `in_transit`, so an on-demand parcel vanished off the board at the exact
+ * moment its driver marked it out for delivery.
+ */
+export const SHIPMENT_UNFINISHED: readonly ShipmentStatus[] = ShipmentStatus.options.filter(
+  (s) => !SHIPMENT_TERMINAL.includes(s),
+);
+
+/**
  * The parcel is in the driver's keeping: picked up, not yet handed over.
  *
  * These are the statuses a delivery or a failed attempt can be recorded from. Named once

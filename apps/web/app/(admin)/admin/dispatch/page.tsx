@@ -6,28 +6,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BOARD_EXCEPTION_LABELS,
   BOARD_LANE_LABELS,
+  BoardLane,
+  SHIPMENT_STATUS_LABELS,
+  SHIPMENT_TRANSITIONS,
   type AssignmentRecommendation,
   type BoardCard,
   type BoardDriver,
   type BoardExceptionKind,
-  type BoardLane,
   type DispatchBoard,
+  type ShipmentStatus,
 } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { minutesToClock, rands } from "@/lib/money";
 import { Chip, Empty, PageHeader, Panel } from "@/components/ui";
 
-/** Left to right is the order work actually moves through the day. */
-const LANES: BoardLane[] = [
-  "unassigned",
-  "awaiting_driver",
-  "en_route_collection",
-  "collected",
-  "in_transit",
-  "out_for_delivery",
-  "delivered",
-  "failed",
-];
+/**
+ * Left to right is the order work actually moves through the day. Taken off the contract so
+ * that adding a lane adds a column, rather than adding a lane no dispatcher can see.
+ */
+const LANES: BoardLane[] = BoardLane.options;
 
 const ACTIVITY_TONE = {
   working: "good",
@@ -173,7 +170,7 @@ export default function DispatchBoardPage() {
           date={date}
           onClose={() => setOpen(null)}
           onError={onError}
-          onAssigned={() => {
+          onDone={() => {
             setOpen(null);
             setError(null);
             void qc.invalidateQueries({ queryKey: ["admin", "board"] });
@@ -313,13 +310,14 @@ function CardDialog({
   date,
   onClose,
   onError,
-  onAssigned,
+  onDone,
 }: {
   card: BoardCard;
   date: string;
   onClose: () => void;
   onError: (e: unknown) => void;
-  onAssigned: () => void;
+  /** Called after anything that moves the card, so the board is re-read. */
+  onDone: () => void;
 }) {
   const recs = useQuery({
     queryKey: ["admin", "board", "recs", card.shipmentId],
@@ -335,7 +333,7 @@ function CardDialog({
         method: "POST",
         json: { shipmentId: card.shipmentId, driverId, date },
       }),
-    onSuccess: onAssigned,
+    onSuccess: onDone,
     onError,
   });
 
@@ -448,6 +446,8 @@ function CardDialog({
           </p>
         )}
 
+        <StatusControl card={card} onError={onError} onDone={onDone} />
+
         <div className="mt-5 flex justify-end gap-2">
           <Link
             href={`/admin/shipments?search=${card.waybill}`}
@@ -465,6 +465,108 @@ function CardDialog({
     </div>
   );
 }
+
+/**
+ * Moving a shipment by hand.
+ *
+ * Only the statuses reachable from where it is now, read off the same transition table the
+ * engine enforces — so the console cannot ask for a move the engine will refuse, and a
+ * dispatcher is not left guessing which of ten words is allowed.
+ *
+ * `returned_to_sender` lives here rather than in the driver's app on purpose: ending the job
+ * bears on what the customer is charged, and that is a dispatcher's decision.
+ */
+function StatusControl({
+  card,
+  onError,
+  onDone,
+}: {
+  card: BoardCard;
+  onError: (e: unknown) => void;
+  onDone: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [picked, setPicked] = useState<ShipmentStatus | null>(null);
+  // Cancelling has to release the wallet hold and the slot, which a status change does not,
+  // so it is the booking's own action and the engine refuses it here. Not offered rather than
+  // offered and rejected.
+  const next = SHIPMENT_TRANSITIONS[card.status].filter((x) => x !== "cancelled");
+
+  const move = useMutation({
+    mutationFn: (status: ShipmentStatus) =>
+      api(`/v1/admin/dispatch/shipments/${card.shipmentId}/status`, {
+        method: "POST",
+        json: { status, note: note.trim() || undefined },
+      }),
+    onSuccess: onDone,
+    onError,
+  });
+
+  if (next.length === 0) {
+    return (
+      <p className="mt-5 text-sm text-muted">
+        {SHIPMENT_STATUS_LABELS[card.status]} — nothing further happens to this shipment.
+      </p>
+    );
+  }
+
+  const needsNote = picked ? NOTE_REQUIRED.includes(picked) : false;
+  return (
+    <div className="mt-5 border-t border-[#F0EDE9] pt-4">
+      <h3 className="label-mini">Move this shipment</h3>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {next.map((status) => (
+          <button
+            key={status}
+            type="button"
+            onClick={() => setPicked(status === picked ? null : status)}
+            className={`btn btn-sm ${status === picked ? "btn-primary" : "btn-secondary"}`}
+          >
+            {SHIPMENT_STATUS_LABELS[status]}
+          </button>
+        ))}
+      </div>
+      {picked && (
+        <div className="mt-3">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={
+              needsNote
+                ? "Why — the customer will ask, and this is the answer"
+                : "A note, if it helps (optional)"
+            }
+            maxLength={300}
+            className="input w-full"
+          />
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <p className="text-xs text-muted">
+              {picked === "delivered"
+                ? "No proof of delivery is captured this way. Prefer the driver's app."
+                : needsNote
+                  ? "Recorded on the tracking timeline and sent to the customer."
+                  : "Recorded on the tracking timeline."}
+            </p>
+            <button
+              type="button"
+              disabled={move.isPending || (needsNote && note.trim().length < 3)}
+              onClick={() => move.mutate(picked)}
+              className="btn btn-primary btn-sm shrink-0"
+            >
+              Mark {SHIPMENT_STATUS_LABELS[picked].toLowerCase()}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The moves a customer rings up about. "On hold" with no reason is tomorrow morning's support
+ * call, and a delivery recorded without the driver's proof needs a person's name against it.
+ */
+const NOTE_REQUIRED: ShipmentStatus[] = ["on_hold", "returned_to_sender", "failed", "delivered"];
 
 function Leg({
   title,

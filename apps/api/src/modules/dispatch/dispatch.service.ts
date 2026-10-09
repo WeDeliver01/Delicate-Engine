@@ -436,6 +436,17 @@ export class DispatchService {
     to: ShipmentStatus,
     note: string | null,
   ): Promise<Shipment> {
+    // Cancelling is not a status change. The wallet hold has to be released and the slot
+    // given back, and neither happens on this path — a shipment flipped to `cancelled` here
+    // would leave the customer's money held against a job nobody is going to do. That work
+    // lives in BookingService.cancel, which is what the console must call.
+    if (to === "cancelled") {
+      throw AppError.conflict(
+        "cancel_the_booking",
+        "cancel the booking instead: that releases the hold and the slot, which this does not",
+        { shipmentId },
+      );
+    }
     if (to !== "delivered" && to !== "failed")
       return this.bookingsSvc.updateShipmentStatus(shipmentId, to, note);
     return this.dbs.transaction(async (tx) => {

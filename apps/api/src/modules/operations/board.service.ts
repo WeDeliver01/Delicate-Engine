@@ -5,11 +5,12 @@ import {
   type BoardCard,
   type BoardDriver,
   type BoardExceptionKind,
-  type BoardLane,
   type DispatchBoard,
   type LatLng,
   type QuoteParcel,
   type ShipmentStatus,
+  BoardLane,
+  SHIPMENT_UNFINISHED,
   operatingToday,
 } from "@delicate/contracts";
 import {
@@ -41,7 +42,13 @@ interface StopRow {
 }
 
 /** Statuses that are still somebody's problem today. */
-const LIVE: ShipmentStatus[] = ["booked", "assigned", "collected", "in_transit"];
+/**
+ * Work that is not finished, so an on-demand parcel with no slot date still belongs on today's
+ * board. Taken from the contracts list rather than written out here: the written-out copy
+ * stopped at `in_transit`, which dropped a parcel off the board the moment its driver marked
+ * it out for delivery — the one point in the day a dispatcher most wants to see it.
+ */
+const LIVE = SHIPMENT_UNFINISHED as ShipmentStatus[];
 
 /**
  * The dispatch board: one screen that runs the day.
@@ -209,19 +216,9 @@ export class BoardService {
       };
     });
 
+    // Off the enum, so a new lane is counted without anyone remembering to add it here.
     const laneCounts = Object.fromEntries(
-      (
-        [
-          "unassigned",
-          "awaiting_driver",
-          "en_route_collection",
-          "collected",
-          "in_transit",
-          "out_for_delivery",
-          "delivered",
-          "failed",
-        ] as BoardLane[]
-      ).map((lane) => [lane, cards.filter((c) => c.lane === lane).length]),
+      BoardLane.options.map((lane) => [lane, cards.filter((c) => c.lane === lane).length]),
     ) as Record<BoardLane, number>;
 
     const exceptionCounts = {} as Record<BoardExceptionKind, number>;
@@ -454,10 +451,18 @@ function toLane(x: {
 }): BoardLane {
   if (x.status === "delivered") return "delivered";
   if (x.status === "failed") return "failed";
+  if (x.status === "returned_to_sender") return "returned_to_sender";
+  // A held parcel is not moving, whatever its trip says. This is checked before the stop is
+  // read because a driver standing at the drop of a shipment they were told to hold is not
+  // delivering it.
+  if (x.status === "on_hold") return "on_hold";
   if (x.status === "booked") return x.hasDriver ? "awaiting_driver" : "unassigned";
   if (x.status === "assigned") {
     return x.tripStarted && x.atOwnCollection ? "en_route_collection" : "awaiting_driver";
   }
+  // The driver said so, which beats inferring it from where the van happens to be. The stop
+  // still answers for a parcel whose status is only `collected` or `in_transit`.
+  if (x.status === "out_for_delivery") return "out_for_delivery";
   if (x.tripStarted && x.atOwnDrop) return "out_for_delivery";
   return x.status === "collected" ? "collected" : "in_transit";
 }

@@ -284,6 +284,102 @@ describe("dispatch board", () => {
     expect(collected[0]!.waybill).not.toBe(nextDrop.waybill);
   });
 
+  it("keeps a held parcel in its own lane rather than showing it as moving", async () => {
+    const b = await book(1);
+    await rosterDriver();
+    const id = b.shipments[0]!.id;
+    const setStatus = (status: string, note?: string) =>
+      h
+        .http()
+        .post(`/v1/admin/dispatch/shipments/${id}/status`)
+        .set(asDispatcher())
+        .send({ status, note });
+
+    await setStatus("assigned").expect(201);
+    await setStatus("collected").expect(201);
+    await setStatus("on_hold", "nobody at the address, waiting on the sender").expect(201);
+
+    const held = (await board()).cards.find((c) => c.waybill === b.shipments[0]!.waybill)!;
+    // Not "in transit". A parcel on a shelf shown under "in transit" tells a dispatcher it is
+    // on a van, and the one thing they would do about it is the one thing they would not.
+    expect(held.lane).toBe("on_hold");
+    expect(held.status).toBe("on_hold");
+
+    // And it comes back into the run when the hold lifts.
+    await setStatus("out_for_delivery").expect(201);
+    const moving = (await board()).cards.find((c) => c.waybill === b.shipments[0]!.waybill)!;
+    expect(moving.lane).toBe("out_for_delivery");
+  });
+
+  it("takes the driver's word for out-for-delivery, with no trip at all", async () => {
+    // The lane used to be read only off the trip's current stop, so a parcel the driver had
+    // marked out for delivery sat under "in transit" whenever dispatch had not built a trip.
+    const b = await book(1);
+    await rosterDriver();
+    const id = b.shipments[0]!.id;
+    for (const status of ["assigned", "collected", "out_for_delivery"]) {
+      await h
+        .http()
+        .post(`/v1/admin/dispatch/shipments/${id}/status`)
+        .set(asDispatcher())
+        .send({ status })
+        .expect(201);
+    }
+
+    const bd = await board();
+    const card = bd.cards.find((c) => c.waybill === b.shipments[0]!.waybill)!;
+    expect(card.lane).toBe("out_for_delivery");
+    expect(bd.laneCounts.out_for_delivery).toBe(1);
+    // Every lane on the contract is counted, including the ones added last.
+    expect(bd.laneCounts).toHaveProperty("on_hold");
+    expect(bd.laneCounts).toHaveProperty("returned_to_sender");
+  });
+
+  it("keeps on-demand work on the board until it is actually finished", async () => {
+    // On-demand has no slot date, so it rides on today's board only while unfinished. That
+    // list stopped at `in_transit`, which made a parcel vanish at the moment its driver
+    // marked it out for delivery — and again the moment dispatch put it on hold.
+    const b = await book(1);
+    await rosterDriver();
+    const waybill = b.shipments[0]!.waybill;
+    const laneNow = async () => (await board()).cards.find((c) => c.waybill === waybill)?.lane;
+    const setStatus = (status: string) =>
+      h
+        .http()
+        .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/status`)
+        .set(asDispatcher())
+        .send({ status });
+
+    await setStatus("assigned").expect(201);
+    await setStatus("collected").expect(201);
+    await setStatus("out_for_delivery").expect(201);
+    expect(await laneNow()).toBe("out_for_delivery");
+    await setStatus("on_hold").expect(201);
+    expect(await laneNow()).toBe("on_hold");
+
+    // Returned is finished, so it leaves today's board as a delivered one does. The board is a
+    // live view of on-demand work, not its archive — the shipment list is that.
+    await setStatus("returned_to_sender").expect(201);
+    expect(await laneNow()).toBeUndefined();
+  });
+
+  it("will not cancel a shipment through the status endpoint", async () => {
+    // A status change does not release the wallet hold or give the slot back, so a shipment
+    // flipped to `cancelled` here would strand the customer's money against a job nobody is
+    // going to do. Cancelling is the booking's own action.
+    const b = await book(1);
+    const res = await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/status`)
+      .set(asDispatcher())
+      .send({ status: "cancelled", note: "customer changed their mind" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("cancel_the_booking");
+
+    const after = (await board()).cards.find((c) => c.waybill === b.shipments[0]!.waybill)!;
+    expect(after.status).toBe("booked");
+  });
+
   it("flags a stop as behind schedule once its window has closed on a started trip", async () => {
     const b = await book(1);
     await rosterDriver();
