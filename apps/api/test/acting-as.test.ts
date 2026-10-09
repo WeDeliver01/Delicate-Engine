@@ -96,6 +96,57 @@ describe("acting on a customer's account", () => {
       expect((res.body as WalletSummary).accountId).toBe(accountId);
     });
 
+    /*
+      The portal has to be told, or it cannot put the banner up. It cannot ask with the
+      account header either: the id comes out of a browser's localStorage, and a stale one
+      would 403 the single request that tells the page who the user is -- locking somebody
+      out of the app with no way back. So /v1/me takes the account as a query parameter and
+      answers carefully.
+    */
+    it("tells a super admin whose account they are standing in", async () => {
+      const res = await h
+        .http()
+        .get(`/v1/me?actingAs=${accountId}`)
+        .set("Authorization", `Bearer ${superAdmin}`);
+      expect(res.status).toBe(200);
+      expect(res.body.actingAs).toMatchObject({ id: accountId, name: "Ash Bakes" });
+      // Still not theirs, whatever they are doing inside it.
+      expect(res.body.accounts).toEqual([]);
+    });
+
+    it("does not tell a customer the name of an account they can name", async () => {
+      // Otherwise the parameter is a way to read any account's name out of a guessed id.
+      const stranger = await h.tokenFor(USERS.bob);
+      const res = await h
+        .http()
+        .get(`/v1/me?actingAs=${accountId}`)
+        .set("Authorization", `Bearer ${stranger}`);
+      expect(res.status).toBe(200);
+      expect(res.body.actingAs).toBeNull();
+    });
+
+    it("says nothing when the account is the caller's own", async () => {
+      // Acting as yourself is not acting as anyone, and a banner here would teach people to
+      // ignore the banner that matters.
+      const res = await h
+        .http()
+        .get(`/v1/me?actingAs=${accountId}`)
+        .set("Authorization", `Bearer ${owner}`);
+      expect(res.status).toBe(200);
+      expect(res.body.actingAs).toBeNull();
+      expect(res.body.accounts).toHaveLength(1);
+    });
+
+    it("shrugs off an account id that no longer exists", async () => {
+      // A console left open while an account was closed. It must not break the page.
+      const res = await h
+        .http()
+        .get("/v1/me?actingAs=00000000-0000-4000-8000-0000000000ff")
+        .set("Authorization", `Bearer ${superAdmin}`);
+      expect(res.status).toBe(200);
+      expect(res.body.actingAs).toBeNull();
+    });
+
     it("still refuses a customer who is not a member", async () => {
       // The staff bypass must not become a general one.
       const stranger = await h.tokenFor(USERS.bob);
@@ -104,6 +155,35 @@ describe("acting on a customer's account", () => {
         .get("/v1/account/wallet")
         .set({ Authorization: `Bearer ${stranger}`, "X-Account-Id": accountId });
       expect(res.status).toBe(403);
+    });
+
+    it("finds an account by name, because that is all ops are told on the phone", async () => {
+      const other = await h.tokenFor(USERS.bob);
+      await h
+        .http()
+        .post("/v1/accounts")
+        .set("Authorization", `Bearer ${other}`)
+        .send({
+          name: "Honey Bee Patisserie",
+          type: "business",
+          organization: { name: "Honey Bee" },
+        })
+        .expect(201);
+
+      const hit = await h
+        .http()
+        .get("/v1/admin/accounts?q=honey")
+        .set("Authorization", `Bearer ${superAdmin}`)
+        .expect(200);
+      expect(hit.body.items.map((a: { name: string }) => a.name)).toEqual(["Honey Bee Patisserie"]);
+
+      const miss = await h
+        .http()
+        .get("/v1/admin/accounts?q=%25")
+        .set("Authorization", `Bearer ${superAdmin}`)
+        .expect(200);
+      // A bare wildcard is a name, not a query for everything.
+      expect(miss.body.items).toEqual([]);
     });
 
     it("marks what staff write as done on the customer's behalf", async () => {

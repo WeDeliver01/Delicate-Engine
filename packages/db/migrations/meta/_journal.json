@@ -176,6 +176,13 @@
       "when": 1791492129051,
       "tag": "0024_harsh_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791492130051,
+      "tag": "0025_walk_in_account",
+      "breakpoints": true
     }
   ]
 }

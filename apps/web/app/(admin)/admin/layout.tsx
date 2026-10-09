@@ -14,6 +14,9 @@ const NAV: NavSection[] = [
     group: "Today",
     items: [
       { href: "/admin", label: "Overview", icon: "space_dashboard", exact: true },
+      // Super admins only — see the filter below. Taking a booking spends a customer's money,
+      // and it is listed here because the phone rings and the person answering it is us.
+      { href: "/admin/book", label: "Book a delivery", icon: "add_box" },
       { href: "/admin/dispatch", label: "Dispatch board", icon: "dashboard" },
       { href: "/admin/live", label: "Live operations", icon: "my_location" },
       { href: "/admin/shipments", label: "Shipments", icon: "local_shipping" },
@@ -91,9 +94,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       subtitle={`Ops console · ${platformRole.replace(/_/g, " ")}`}
       nav={NAV.map((section) => ({
         ...section,
-        items: section.items.map((item) =>
-          item.href === "/admin/changes" ? { ...item, badge: pending.data?.count } : item,
-        ),
+        items: section.items
+          .filter((item) => item.href !== "/admin/book" || platformRole === "super_admin")
+          .map((item) =>
+            item.href === "/admin/changes" ? { ...item, badge: pending.data?.count } : item,
+          ),
       }))}
       aside={
         <a href="/portal" className="link-quiet block text-xs">

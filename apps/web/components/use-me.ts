@@ -14,10 +14,6 @@ const getServerSnapshot = () => null;
  * when nothing valid is stored, so a fresh login lands somewhere useful.
  */
 export function useMe() {
-  const query = useQuery<MeResponse, ApiRequestError>({
-    queryKey: ["me"],
-    queryFn: () => api<MeResponse>("/v1/me", { account: null }),
-  });
   const qc = useQueryClient();
   const activeId = useSyncExternalStore(
     subscribeActiveAccount,
@@ -25,11 +21,28 @@ export function useMe() {
     getServerSnapshot,
   );
 
+  const query = useQuery<MeResponse, ApiRequestError>({
+    /*
+      Keyed on the active account, because the answer depends on it: the same user asking
+      while stepped into a customer gets `actingAs` back, and the portal needs that the moment
+      it happens rather than on the next reload.
+    */
+    queryKey: ["me", activeId],
+    queryFn: () =>
+      api<MeResponse>(`/v1/me${activeId ? `?actingAs=${encodeURIComponent(activeId)}` : ""}`, {
+        // Named in the query string instead of the header on purpose -- see the controller.
+        // A stale id must not be able to 403 the request that tells the page who you are.
+        account: null,
+      }),
+  });
+
   useEffect(() => {
     if (!query.data) return;
-    if (!query.data.accounts.some((a) => a.id === activeId)) {
-      setActiveAccountId(query.data.accounts[0]?.id ?? null);
-    }
+    // Staff stepped into a customer: the account is deliberately not one of theirs, and
+    // resetting here would throw them straight back out of it.
+    if (query.data.actingAs) return;
+    if (query.data.accounts.some((a) => a.id === activeId)) return;
+    setActiveAccountId(query.data.accounts[0]?.id ?? null);
   }, [query.data, activeId]);
 
   const switchAccount = useCallback(

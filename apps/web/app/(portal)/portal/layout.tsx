@@ -78,12 +78,15 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   const { user, accounts } = me.data;
   const active = me.activeAccount;
+  // Staff reaching in have no membership, so `activeAccount` is null while they are plainly
+  // inside an account. The shell should say whose, not "Customer portal".
+  const standingIn = active ?? me.data.actingAs;
 
   return (
     <AppShell
       home="/portal"
       title="Delicate Courier"
-      subtitle={active ? active.name : "Customer portal"}
+      subtitle={standingIn ? standingIn.name : "Customer portal"}
       nav={NAV}
       aside={
         user.platformRole ? (
@@ -95,7 +98,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       footer={
         <IdentityFooter
           name={user.fullName ?? user.email}
-          meta={active ? active.name : "No account yet"}
+          meta={standingIn ? standingIn.name : "No account yet"}
           accounts={accounts}
           activeAccountId={active?.id ?? null}
           onSwitch={(id) => me.switchAccount(id)}
