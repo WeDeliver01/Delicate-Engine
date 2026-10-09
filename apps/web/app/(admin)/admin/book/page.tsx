@@ -53,7 +53,9 @@ export default function AdminBook() {
     onSuccess: () => go(WALK_IN_ACCOUNT_ID),
     onError: (e) =>
       setError(
-        e instanceof ApiRequestError && e.status === 404
+        // The guard's own words for an id that resolves to nothing, which here means the
+        // migration has not run rather than that anyone did anything wrong.
+        e instanceof ApiRequestError && /unknown account/i.test(e.message)
           ? "The walk-in account is not in this database yet. It arrives with the migrations — deploy, then try again."
           : `Could not open the walk-in account: ${e instanceof Error ? e.message : String(e)}`,
       ),
