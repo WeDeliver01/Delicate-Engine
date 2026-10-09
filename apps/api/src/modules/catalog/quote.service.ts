@@ -9,6 +9,7 @@ import {
   type LatLng,
   type PackageType,
   type Quote,
+  QuoteBreakdown,
   type QuoteRequest,
 } from "@delicate/contracts";
 import { quotes, waybillCounters, type DbExecutor } from "@delicate/db";
@@ -197,6 +198,20 @@ export class QuoteService {
     const row = await (tx ?? this.dbs.db).query.quotes.findFirst({ where: eq(quotes.id, id) });
     if (!row || row.accountId !== accountId) throw AppError.notFound("quote");
     return toQuote(row);
+  }
+
+  /**
+   * The working the price was reached by, kilometres and all.
+   *
+   * `get` hands back the customer's version, which has the distances stripped out on purpose
+   * -- a customer with the kilometres and the price knows our rate per kilometre. This is the
+   * stored original, for the parts of the engine that have to reason about the journey rather
+   * than describe it.
+   */
+  async fullBreakdown(id: string, accountId: string, tx?: DbExecutor): Promise<QuoteBreakdown> {
+    const row = await (tx ?? this.dbs.db).query.quotes.findFirst({ where: eq(quotes.id, id) });
+    if (!row || row.accountId !== accountId) throw AppError.notFound("quote");
+    return QuoteBreakdown.parse(row.breakdown);
   }
 
   /**

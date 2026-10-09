@@ -124,8 +124,17 @@ describe("catalog & quotes", () => {
     }
     // Still recorded against the row, so a price stays explainable to us.
     const [row] = await h.db.db.select().from(quotes).where(eq(quotes.id, quote.id));
-    const stored = row!.breakdown as { legsKm: number[]; distanceKm: number; cogsCents: number };
-    expect(stored.legsKm).toHaveLength(4);
+    const stored = row!.breakdown as {
+      legsKm: number[];
+      dropKm: number[];
+      distanceKm: number;
+      cogsCents: number;
+    };
+    // Depot out, through the collection to each drop and back to it, home: with two drops
+    // that is five legs, because each drop's own distance from the collection is measured
+    // rather than inferred from where the van happened to go next.
+    expect(stored.legsKm).toHaveLength(5);
+    expect(stored.dropKm).toHaveLength(2);
     expect(stored.distanceKm).toBeGreaterThan(0);
     expect(stored.cogsCents).toBeGreaterThan(0);
 

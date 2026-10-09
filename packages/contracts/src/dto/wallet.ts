@@ -139,3 +139,95 @@ export const WalletAdjustmentRequest = z.object({
   reason: z.string().min(5).max(300),
 });
 export type WalletAdjustmentRequest = z.infer<typeof WalletAdjustmentRequest>;
+
+/**
+ * A movement a super admin or finance makes on a customer's account by hand.
+ *
+ * Everything the business does to a balance outside the ordinary flow of top-ups and
+ * deliveries: a payment that arrived by EFT, a refund paid back out, goodwill, a debt written
+ * off. Each one is a wallet entry and a balanced journal in the same transaction, so the
+ * books and the balance can never disagree about what happened.
+ *
+ * The amount is always positive. Which way it moves is the type's business, not the typist's:
+ * a debit typed as a negative number is how somebody credits an account they meant to charge.
+ */
+export const AccountTransactionType = z.enum([
+  "payment",
+  "payment_reversal",
+  "refund",
+  "refund_reversal",
+  "admin_credit",
+  "admin_debit",
+  "promotional_credit",
+  "balance_adjustment_credit",
+  "balance_adjustment_debit",
+  "bad_debt_write_off",
+]);
+export type AccountTransactionType = z.infer<typeof AccountTransactionType>;
+
+/** What each one is and which way it moves the balance. Shared so the console cannot differ. */
+export const ACCOUNT_TRANSACTIONS: Record<
+  AccountTransactionType,
+  { label: string; direction: "credit" | "debit"; help: string }
+> = {
+  payment: {
+    label: "Payment",
+    direction: "credit",
+    help: "Money received from the customer outside the payment gateway — an EFT, cash at the door.",
+  },
+  payment_reversal: {
+    label: "Payment reversal",
+    direction: "debit",
+    help: "A payment that did not stick: a bounced EFT, a chargeback.",
+  },
+  refund: {
+    label: "Refund",
+    direction: "debit",
+    help: "Money paid back out to the customer. Their balance falls by what left our bank.",
+  },
+  refund_reversal: {
+    label: "Refund reversal",
+    direction: "credit",
+    help: "A refund that failed or was recalled.",
+  },
+  admin_credit: {
+    label: "Admin credit",
+    direction: "credit",
+    help: "A correction in the customer's favour where nothing else fits.",
+  },
+  admin_debit: {
+    label: "Admin debit",
+    direction: "debit",
+    help: "A correction against the customer where nothing else fits.",
+  },
+  promotional_credit: {
+    label: "Promotional credit",
+    direction: "credit",
+    help: "Money we are giving away: a goodwill gesture, a campaign. Costs the business, not the customer.",
+  },
+  balance_adjustment_credit: {
+    label: "Balance adjustment credit",
+    direction: "credit",
+    help: "Putting the balance right after a mistake, upwards.",
+  },
+  balance_adjustment_debit: {
+    label: "Balance adjustment debit",
+    direction: "debit",
+    help: "Putting the balance right after a mistake, downwards.",
+  },
+  bad_debt_write_off: {
+    label: "Bad debt write-off",
+    direction: "credit",
+    help: "Giving up on money owed. Clears what the customer owes and books the loss to us.",
+  },
+};
+
+export const AccountTransactionRequest = z.object({
+  type: AccountTransactionType,
+  /** Always positive, VAT included. The type decides the direction. */
+  amountCents: PositiveCents.max(100_000_00),
+  description: z.string().trim().max(200).optional(),
+  /** The delivery it is about, when it is about one. Printed on the entry. */
+  waybill: z.string().trim().max(40).optional(),
+});
+export type AccountTransactionRequest = z.infer<typeof AccountTransactionRequest>;

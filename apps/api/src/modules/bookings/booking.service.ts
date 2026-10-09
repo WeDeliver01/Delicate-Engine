@@ -7,7 +7,6 @@ import {
   type BookingStatus,
   type CreateBookingRequest,
   type Quote,
-  type QuoteBreakdown,
   type QuoteRequest,
   toCustomerBreakdown,
   type Shipment,
@@ -171,8 +170,10 @@ export class BookingService {
       The furthest drop binds: one pair of windows covers every drop on the booking.
     */
     if (timedWindow?.collection && timedWindow.delivery) {
-      const breakdown = quote.breakdown as QuoteBreakdown;
-      const km = Math.max(0, ...(breakdown.dropKm.length ? breakdown.dropKm : [0]));
+      // The stored working, not the customer's copy: that one has the kilometres stripped
+      // out on purpose, and this check is about the journey rather than the price.
+      const breakdown = await this.quotes.fullBreakdown(quote.id, accountId);
+      const km = Math.max(0, ...(breakdown.dropKm.length > 0 ? breakdown.dropKm : [0]));
       const pieces = (quote.request as QuoteRequest).drops.reduce(
         (n, drop) => n + drop.parcels.reduce((m, parcel) => m + parcel.quantity, 0),
         0,
