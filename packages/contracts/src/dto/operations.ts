@@ -190,6 +190,13 @@ export type TripQuery = z.infer<typeof TripQuery>;
  * driver moves: `en_route_collection` and `out_for_delivery` are read off the trip's current
  * stop, and `awaiting_driver` is "assigned, but nobody has handed the driver a day yet".
  */
+/**
+ * The board's columns, left to right in the order work moves through a day.
+ *
+ * `on_hold` and `returned_to_sender` are lanes rather than exceptions because they are not
+ * things to fix: a held parcel is genuinely not moving, and showing it under "in transit" with
+ * a warning triangle tells a dispatcher it is on a van when it is on a shelf.
+ */
 export const BoardLane = z.enum([
   "unassigned",
   "awaiting_driver",
@@ -197,8 +204,10 @@ export const BoardLane = z.enum([
   "collected",
   "in_transit",
   "out_for_delivery",
+  "on_hold",
   "delivered",
   "failed",
+  "returned_to_sender",
 ]);
 export type BoardLane = z.infer<typeof BoardLane>;
 
@@ -209,8 +218,11 @@ export const BOARD_LANE_LABELS: Record<BoardLane, string> = {
   collected: "Collected",
   in_transit: "In transit",
   out_for_delivery: "Out for delivery",
+  on_hold: "On hold",
   delivered: "Delivered",
-  failed: "Failed",
+  // Not "Failed". The parcel is fine and it is going out again.
+  failed: "Failed attempt",
+  returned_to_sender: "Returned",
 };
 
 /**

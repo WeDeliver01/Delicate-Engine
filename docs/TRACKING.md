@@ -163,6 +163,32 @@ Found while wiring the above, fixed with it:
 - Every notification links to `/track?waybill=…` and that page only ever read `?w=`, so all of
   them landed on an empty form. It now accepts both.
 
+## 5b. The dispatcher's side of the new statuses
+
+A status nobody can set and nobody can see is not a status. Three things were needed to make
+`out_for_delivery`, `on_hold` and `returned_to_sender` real on the console:
+
+- **Lanes.** The board's `toLane` read the lane off the trip's current stop, so a parcel the
+  driver had marked out for delivery sat under "In transit" whenever dispatch had not built a
+  trip, and `on_hold` and `returned_to_sender` landed there too — a held parcel shown as
+  moving, and a returned one sitting in a live lane for ever. They are lanes rather than
+  exception flags because they are not things to fix: a held parcel is genuinely not moving.
+- **Staying on the board.** The list of unfinished statuses was written out by hand and stopped
+  at `in_transit`, so an on-demand parcel (no slot date) vanished off the board at the moment
+  its driver marked it out for delivery. It now comes from `SHIPMENT_UNFINISHED`, derived from
+  the terminal list, and the lane columns and counts come off `BoardLane.options` — a new lane
+  gets a column and a count without anyone remembering to add it in three places.
+- **A way to set them.** The console had no status control at all; the endpoint existed and
+  nothing called it. The board's card now offers exactly the statuses `SHIPMENT_TRANSITIONS`
+  allows from where the shipment is, and requires a reason for the four a customer rings up
+  about — on hold, returned, failed, and a delivery recorded without the driver's proof.
+
+**One money hazard closed on the way.** `adminStatus` would happily write `cancelled`, which
+releases no wallet hold and gives no slot back: the customer's money would stay held against a
+job nobody was going to do. It now refuses with `cancel_the_booking` and points at
+`BookingService.cancel`, which does both. The console does not offer the button either —
+refused is better than silently wrong, and not offered is better than refused.
+
 ## 6. Deliberately not in this phase
 
 - **A charge rule for `returned_to_sender`.** Whether a customer pays for a parcel that came
