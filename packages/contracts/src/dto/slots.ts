@@ -74,7 +74,7 @@ export const SlotPolicy = z.object({
   /** Bookings close this many minutes before a window starts. */
   cutoffMinutesBefore: z.number().int().min(0).max(1440),
   /** How far ahead slots are offered. */
-  horizonDays: z.number().int().min(1).max(90),
+  horizonDays: z.number().int().min(1).max(400),
   /** Timed windows sold inside a slot. Off until the business turns it on. */
   timedWindow: TimedWindowPolicy.default({
     enabled: false,

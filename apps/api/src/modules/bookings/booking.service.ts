@@ -82,6 +82,19 @@ export class BookingService {
         })),
       );
     }
+    /*
+      And somebody at the other end of the job. A quote is priced on addresses, so it may
+      carry nobody at all; a collection is a driver arriving at a door, and a door needs a
+      name to ask for and a number to ring when nobody answers it.
+    */
+    if (!(quote.request as QuoteRequest).collection.contact) {
+      throw AppError.validation([
+        {
+          path: ["collection", "contact"],
+          message: "the collection needs a contact name and number before it can be booked",
+        },
+      ]);
+    }
 
     // Booking past what the wallet can cover is a commercial decision, so it is one person's
     // to make. Refused rather than ignored for anyone else: a flag that quietly does nothing

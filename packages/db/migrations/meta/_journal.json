@@ -197,6 +197,13 @@
       "when": 1791519019815,
       "tag": "0027_service_level_copy",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791519020815,
+      "tag": "0028_booking_horizon",
+      "breakpoints": true
     }
   ]
 }

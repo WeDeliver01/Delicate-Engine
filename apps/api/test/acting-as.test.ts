@@ -74,7 +74,10 @@ describe("acting on a customer's account", () => {
       .set(headers)
       .send({
         serviceLevelCode: "standard",
-        collection: { address: addr("Honey Bee, Menlyn", MENLYN) },
+        collection: {
+          address: addr("Honey Bee, Menlyn", MENLYN),
+          contact: { name: "Baker", phone: "0821111111", altPhone: null, email: null },
+        },
         drops: [
           {
             address: addr("12 Oak St, Centurion", CENTURION),

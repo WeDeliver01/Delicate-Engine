@@ -29,6 +29,12 @@ export const CATALOG_SEED = {
     "company.vat_bps": 1_500,
     "company.timezone": "Africa/Johannesburg",
     "booking.same_day_cutoff_minutes": 10 * 60,
+    // What one driver can take to one address. Operator-editable in the console.
+    "booking.limits": {
+      maxParcelsPerDrop: 20,
+      maxParcelLinesPerDrop: 8,
+      maxWeightKgPerDrop: 200,
+    },
     "scheduling.policy": {
       operatingDays: [1, 2, 3, 4, 5, 6],
       windows: [
@@ -50,7 +56,7 @@ export const CATALOG_SEED = {
       defaultCapacity: 12,
       minLeadDays: 1,
       cutoffMinutesBefore: 120,
-      horizonDays: 14,
+      horizonDays: 180,
     },
     // PLACEHOLDERS until the real fleet economics are supplied.
     "settlement.rules": {

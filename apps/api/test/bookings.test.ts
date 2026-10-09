@@ -394,7 +394,10 @@ describe("bookings & shipments", () => {
         .set(asOwner())
         .send({
           serviceLevelCode: "standard",
-          collection: { address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn") },
+          collection: {
+            address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn"),
+            contact: { name: "Baker", phone: "0821111111", altPhone: null, email: null },
+          },
           drops: [{ address: addr("12 Oak St, Centurion", CENTURION) }],
         })
     ).body as Quote;
@@ -426,7 +429,10 @@ describe("bookings & shipments", () => {
         .set(asOwner())
         .send({
           serviceLevelCode: "standard",
-          collection: { address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn") },
+          collection: {
+            address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn"),
+            contact: { name: "Baker", phone: "0821111111", altPhone: null, email: null },
+          },
           drops: [{ address: addr("12 Oak St, Centurion", CENTURION) }],
         })
     ).body as Quote;
@@ -441,5 +447,75 @@ describe("bookings & shipments", () => {
     // Nothing was taken on the way to refusing.
     const after = await summary();
     expect(after.heldCents).toBe(0);
+  });
+
+  it("refuses to book a collection with nobody at it", async () => {
+    // The other end of the same problem. A quote is priced on addresses and may carry
+    // nobody; a collection is a driver arriving at a door, and a door needs a name to ask
+    // for and a number to ring.
+    await wallet.adjust(accountId, 1_000_000, "funds");
+    const q = (
+      await h
+        .http()
+        .post("/v1/account/quotes")
+        .set(asOwner())
+        .send({
+          serviceLevelCode: "standard",
+          collection: { address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn") },
+          drops: [
+            {
+              address: addr("12 Oak St, Centurion", CENTURION),
+              recipient: { name: "Jane", phone: "0821234567", altPhone: null, email: null },
+            },
+          ],
+        })
+    ).body as Quote;
+
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect((await summary()).heldCents).toBe(0);
+  });
+
+  it("carries the second number through to the shipment", async () => {
+    // The number that saves the delivery when nobody answers the first one, so it has to
+    // survive the trip from the form to the thing a driver looks at.
+    await wallet.adjust(accountId, 1_000_000, "funds");
+    const q = (
+      await h
+        .http()
+        .post("/v1/account/quotes")
+        .set(asOwner())
+        .send({
+          serviceLevelCode: "standard",
+          collection: {
+            address: addr("Honey Bee, Menlyn", MENLYN, "Menlyn"),
+            contact: { name: "Baker", phone: "0821111111", altPhone: null, email: null },
+          },
+          drops: [
+            {
+              address: addr("12 Oak St, Centurion", CENTURION),
+              recipient: {
+                name: "Jane",
+                phone: "0821234567",
+                altPhone: "0117654321",
+                email: null,
+              },
+            },
+          ],
+        })
+    ).body as Quote;
+
+    const res = await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect((res.body as Booking).shipments[0]!.recipient.altPhone).toBe("0117654321");
   });
 });

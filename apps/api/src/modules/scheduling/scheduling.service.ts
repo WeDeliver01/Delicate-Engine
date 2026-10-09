@@ -68,7 +68,9 @@ export class SchedulingService {
     const to = dateTo ?? addDays(now.date, policy.horizonDays);
     if (to < from)
       throw AppError.validation([{ path: ["dateTo"], message: "must be on or after dateFrom" }]);
-    if (daysBetween(from, to) > 90)
+    // Wide enough for the booking horizon — customers book months out for weddings — and
+    // still a bound, because this materialises a row per window per day.
+    if (daysBetween(from, to) > 400)
       throw AppError.validation([{ path: ["dateTo"], message: "range too large" }]);
 
     const [rows, blackouts] = await Promise.all([

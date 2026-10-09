@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   Address,
+  BookingLimits,
   Bps,
   CompanyTaxProfile,
   LoyaltyProgram,
@@ -24,6 +25,7 @@ const SCHEMAS = {
   "company.vat_bps": Bps,
   "company.timezone": z.string().min(1),
   "booking.same_day_cutoff_minutes": z.number().int().min(0).max(1439),
+  "booking.limits": BookingLimits,
   "scheduling.policy": SlotPolicy,
   "settlement.rules": SettlementRules,
   "treasury.policy": TreasuryPolicy,

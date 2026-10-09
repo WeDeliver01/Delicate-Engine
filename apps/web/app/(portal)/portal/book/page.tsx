@@ -7,6 +7,7 @@ import type {
   Address,
   Booking,
   CatalogResponse,
+  PackageType,
   Quote,
   SlotAvailability,
   TimedWindow,
@@ -22,28 +23,39 @@ import { SlotCalendar } from "@/components/booking/slot-calendar";
 import { PayShortfall } from "@/components/booking/pay-shortfall";
 import { useCollectionPoint } from "@/components/booking/use-collection-point";
 
-type Drop = {
-  address: Address | null;
-  name: string;
-  phone: string;
-  email: string;
-  instructions: string;
+/** One kind of thing at one address: three cupcake boxes is one line, not three. */
+type Parcel = {
   packageTypeId: string;
   quantity: number;
   weightKg: string;
   description: string;
 };
 
-const emptyDrop = (): Drop => ({
-  address: null,
-  name: "",
-  phone: "",
-  email: "",
-  instructions: "",
+type Drop = {
+  address: Address | null;
+  name: string;
+  phone: string;
+  altPhone: string;
+  email: string;
+  instructions: string;
+  parcels: Parcel[];
+};
+
+const emptyParcel = (): Parcel => ({
   packageTypeId: "",
   quantity: 1,
   weightKg: "",
   description: "",
+});
+
+const emptyDrop = (): Drop => ({
+  address: null,
+  name: "",
+  phone: "",
+  altPhone: "",
+  email: "",
+  instructions: "",
+  parcels: [emptyParcel()],
 });
 
 /**
@@ -162,12 +174,18 @@ function Book() {
         // the booking form is where they get filled in.
         name: d.recipient?.name ?? "",
         phone: d.recipient?.phone ?? "",
+        altPhone: d.recipient?.altPhone ?? "",
         email: d.recipient?.email ?? "",
         instructions: d.instructions ?? "",
-        packageTypeId: d.parcels[0]?.packageTypeId ?? "",
-        quantity: d.parcels[0]?.quantity ?? 1,
-        weightKg: d.parcels[0]?.weightKg != null ? String(d.parcels[0].weightKg) : "",
-        description: d.parcels[0]?.description ?? "",
+        parcels:
+          d.parcels.length > 0
+            ? d.parcels.map((parcel) => ({
+                packageTypeId: parcel.packageTypeId,
+                quantity: parcel.quantity,
+                weightKg: parcel.weightKg != null ? String(parcel.weightKg) : "",
+                description: parcel.description ?? "",
+              }))
+            : [emptyParcel()],
       })),
     );
     setOpts({
@@ -199,6 +217,8 @@ function Book() {
     }
   }, [resumeSlotDate, resumeSlotWindow]);
 
+  const limits = catalog.data?.bookingLimits ?? null;
+  const packageTypes = useMemo(() => catalog.data?.packageTypes ?? [], [catalog.data]);
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
   /** Scheduled in advance (Standard), or collected the same day it is booked (On-demand). */
   const scheduled = sl?.requiresSlot ?? true;
@@ -248,8 +268,15 @@ function Book() {
         message: "Choose the collection address from the list of suggestions.",
       });
     }
-    // The name alone is no use to a driver standing outside a locked gate.
-    if (collectionName.trim() && collectionPhone.trim().length < 6) {
+    // Both ends of the job have a person at them. A driver arriving at a shut gate with a
+    // name and no number, or a number and no name, is a delivery that does not happen.
+    if (collectionName.trim().length < 2) {
+      out.push({
+        field: "collectionName",
+        message: "Who should the driver ask for at collection?",
+      });
+    }
+    if (collectionPhone.trim().length < 6) {
       out.push({
         field: "collectionPhone",
         message: "Add a phone number for the collection contact.",
@@ -273,10 +300,45 @@ function Book() {
       if (!d.address) add("address", "choose the delivery address from the list of suggestions.");
       if (d.name.trim().length < 2) add("name", "who is receiving this?");
       if (d.phone.trim().length < 6) add("phone", "add a phone number for the recipient.");
-      if (!d.packageTypeId) add("package", "choose what is being sent.");
+      d.parcels.forEach((parcel, j) => {
+        if (!parcel.packageTypeId) {
+          add(
+            `parcel.${j}`,
+            d.parcels.length > 1
+              ? `choose what is in parcel ${j + 1}.`
+              : "choose what is being sent.",
+          );
+        }
+      });
+      // The operator's limits, said in advance rather than as a rejection from the engine.
+      const count = d.parcels.reduce((n, parcel) => n + parcel.quantity, 0);
+      if (limits && count > limits.maxParcelsPerDrop) {
+        add(
+          "parcels",
+          `one delivery can carry ${limits.maxParcelsPerDrop} parcels; this one has ${count}.`,
+        );
+      }
+      if (limits?.maxWeightKgPerDrop != null) {
+        const kg = dropWeightKg(d, packageTypes);
+        if (kg > limits.maxWeightKgPerDrop) {
+          add(
+            "parcels",
+            `one delivery can carry ${limits.maxWeightKgPerDrop} kg; this one comes to about ${Math.round(kg)} kg.`,
+          );
+        }
+      }
     });
     return out;
-  }, [collection, collectionName, collectionPhone, drops, opts.liabilityCover, opts.declaredValue]);
+  }, [
+    collection,
+    collectionName,
+    collectionPhone,
+    drops,
+    opts.liabilityCover,
+    opts.declaredValue,
+    limits,
+    packageTypes,
+  ]);
 
   /** Nothing is marked red until they have asked us for a price. Then everything is. */
   const [checked, setChecked] = useState(false);
@@ -285,6 +347,17 @@ function Book() {
 
   function setDrop(i: number, patch: Partial<Drop>) {
     setDrops((ds) => ds.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+  }
+
+  function setParcel(i: number, j: number, patch: Partial<Parcel>) {
+    setDrops((ds) =>
+      ds.map((d, di) =>
+        di === i
+          ? { ...d, parcels: d.parcels.map((p, pi) => (pi === j ? { ...p, ...patch } : p)) }
+          : d,
+      ),
+    );
+    clearQuote();
   }
 
   /** Any edit invalidates the price, so the customer can never confirm a stale one. */
@@ -311,23 +384,30 @@ function Book() {
           serviceLevelCode: serviceLevel,
           collection: {
             address: collection,
-            contact: collectionName
-              ? { name: collectionName, phone: collectionPhone, email: null }
-              : null,
+            // Always, now: the engine refuses a booking whose collection has nobody at it.
+            contact: {
+              name: collectionName,
+              phone: collectionPhone,
+              altPhone: null,
+              email: null,
+            },
             instructions: collectionNotes || null,
           },
           drops: drops.map((d) => ({
             address: d.address,
-            recipient: { name: d.name, phone: d.phone, email: d.email || null },
+            recipient: {
+              name: d.name,
+              phone: d.phone,
+              altPhone: d.altPhone || null,
+              email: d.email || null,
+            },
             instructions: d.instructions || null,
-            parcels: [
-              {
-                packageTypeId: d.packageTypeId,
-                quantity: d.quantity,
-                weightKg: d.weightKg ? Number(d.weightKg) : null,
-                description: d.description || null,
-              },
-            ],
+            parcels: d.parcels.map((parcel) => ({
+              packageTypeId: parcel.packageTypeId,
+              quantity: parcel.quantity,
+              weightKg: parcel.weightKg ? Number(parcel.weightKg) : null,
+              description: parcel.description || null,
+            })),
           })),
           options: {
             liabilityCover: opts.liabilityCover,
@@ -480,15 +560,16 @@ function Book() {
             />
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field
+                id="collectionName"
                 label="Contact name"
-                optional
+                error={problemAt("collectionName")}
                 value={collectionName}
                 onChange={setCollectionName}
+                hint="Who the driver asks for."
               />
               <Field
                 id="collectionPhone"
                 label="Contact phone"
-                optional
                 hint="Who the driver calls at collection."
                 error={problemAt("collectionPhone")}
                 value={collectionPhone}
@@ -637,62 +718,117 @@ function Book() {
                 />
               </div>
 
-              <Field
-                label="Recipient email"
-                optional
-                type="email"
-                value={d.email}
-                onChange={(v) => setDrop(i, { email: v })}
-                className="mt-3"
-              />
-
-              <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                <label className="block sm:col-span-2">
-                  <span className="field-label">
-                    Package
-                    <RequiredMark />
-                  </span>
-                  <select
-                    id={`drop.${i}.package`}
-                    value={d.packageTypeId}
-                    onChange={(e) => {
-                      setDrop(i, { packageTypeId: e.target.value });
-                      clearQuote();
-                    }}
-                    aria-invalid={problemAt(`drop.${i}.package`) ? true : undefined}
-                    className={`input mt-1 ${problemAt(`drop.${i}.package`) ? "input-invalid" : ""}`}
-                  >
-                    <option value="">Select…</option>
-                    {catalog.data?.packageTypes.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                        {p.maxWeightKg ? ` (≤ ${p.maxWeightKg} kg)` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {problemAt(`drop.${i}.package`) && (
-                    <span className="field-error">Choose what is being sent.</span>
-                  )}
-                </label>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field
-                  label="Qty"
-                  type="number"
-                  value={String(d.quantity)}
-                  onChange={(v) => {
-                    setDrop(i, { quantity: Math.max(1, Number(v) || 1) });
-                    clearQuote();
-                  }}
-                />
-                <Field
-                  label="Weight kg"
+                  label="Alternative number"
                   optional
-                  type="number"
-                  value={d.weightKg}
-                  onChange={(v) => {
-                    setDrop(i, { weightKg: v });
-                    clearQuote();
-                  }}
+                  value={d.altPhone}
+                  onChange={(v) => setDrop(i, { altPhone: v })}
+                  hint="Somebody else to try when nobody answers the door."
                 />
+                <Field
+                  label="Recipient email"
+                  optional
+                  type="email"
+                  value={d.email}
+                  onChange={(v) => setDrop(i, { email: v })}
+                />
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <p className="field-label">
+                    What is being sent
+                    <RequiredMark />
+                  </p>
+                  {limits && d.parcels.length < limits.maxParcelLinesPerDrop && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrop(i, { parcels: [...d.parcels, emptyParcel()] });
+                        clearQuote();
+                      }}
+                      className="link-accent text-xs"
+                    >
+                      + Another parcel
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-2 space-y-2">
+                  {d.parcels.map((parcel, j) => (
+                    <div
+                      key={j}
+                      className="grid items-start gap-2 sm:grid-cols-[1fr_4.5rem_6rem_auto]"
+                    >
+                      <select
+                        id={`drop.${i}.parcel.${j}`}
+                        value={parcel.packageTypeId}
+                        onChange={(e) => setParcel(i, j, { packageTypeId: e.target.value })}
+                        aria-label="Package type"
+                        aria-invalid={problemAt(`drop.${i}.parcel.${j}`) ? true : undefined}
+                        className={`input ${problemAt(`drop.${i}.parcel.${j}`) ? "input-invalid" : ""}`}
+                      >
+                        <option value="">Select…</option>
+                        {packageTypes.map((pt) => (
+                          <option key={pt.id} value={pt.id}>
+                            {pt.name}
+                            {pt.maxWeightKg ? ` (≤ ${pt.maxWeightKg} kg)` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1}
+                        value={String(parcel.quantity)}
+                        onChange={(e) =>
+                          setParcel(i, j, { quantity: Math.max(1, Number(e.target.value) || 1) })
+                        }
+                        aria-label="Quantity"
+                        title="How many"
+                        className="input"
+                      />
+                      <input
+                        type="number"
+                        value={parcel.weightKg}
+                        onChange={(e) => setParcel(i, j, { weightKg: e.target.value })}
+                        aria-label="Weight in kilograms"
+                        title="Weight in kg, if you know it"
+                        placeholder="kg"
+                        className="input"
+                      />
+                      {d.parcels.length > 1 ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDrop(i, { parcels: d.parcels.filter((_, pi) => pi !== j) });
+                            clearQuote();
+                          }}
+                          aria-label={`Remove parcel ${j + 1}`}
+                          className="px-1 py-2 text-xs text-muted transition-colors hover:text-[#C13B73]"
+                        >
+                          ✕
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {problemAt(`drop.${i}.parcels`) ? (
+                  <span className="field-error">{problemAt(`drop.${i}.parcels`)}</span>
+                ) : (
+                  limits && (
+                    <span className="field-hint">
+                      Up to {limits.maxParcelsPerDrop} parcels
+                      {limits.maxWeightKgPerDrop != null
+                        ? ` and ${limits.maxWeightKgPerDrop} kg`
+                        : ""}{" "}
+                      to one address. Leave the weight blank if you are not sure.
+                    </span>
+                  )
+                )}
               </div>
 
               <Field
@@ -934,6 +1070,22 @@ function Check({
       <span>{label}</span>
     </label>
   );
+}
+
+/**
+ * What a drop weighs, as well as we can know before anyone puts it on a scale.
+ *
+ * A customer who leaves the weight blank is not thereby exempt from the van, so an unweighed
+ * parcel counts as what its package type says it holds. That is the same arithmetic the
+ * engine does, and doing it here means the limit is a sentence under the field rather than a
+ * rejection after they press the button.
+ */
+function dropWeightKg(drop: Drop, packageTypes: PackageType[]): number {
+  return drop.parcels.reduce((total, parcel) => {
+    const pt = packageTypes.find((t) => t.id === parcel.packageTypeId);
+    const each = parcel.weightKg ? Number(parcel.weightKg) : (pt?.maxWeightKg ?? 0);
+    return total + (Number.isFinite(each) ? each : 0) * parcel.quantity;
+  }, 0);
 }
 
 /**

@@ -114,11 +114,30 @@ export const UpsertPackageTypeRequest = PackageType.omit({ id: true }).partial({
 });
 export type UpsertPackageTypeRequest = z.infer<typeof UpsertPackageTypeRequest>;
 
+/**
+ * How much one delivery may carry.
+ *
+ * A drop is one address and one driver arriving at it, so what fits is a question about a
+ * vehicle, not about the software. The operator owns the answer -- it changes with the fleet
+ * -- so it lives in settings rather than in a constant somebody has to deploy.
+ */
+export const BookingLimits = z.object({
+  /** Parcels at one address, counting quantities. */
+  maxParcelsPerDrop: z.number().int().min(1).max(200),
+  /** Different kinds of parcel at one address, i.e. lines on the form. */
+  maxParcelLinesPerDrop: z.number().int().min(1).max(20),
+  /** Everything at one address, added up. Null when the only limit is per package type. */
+  maxWeightKgPerDrop: z.number().positive().max(5_000).nullable(),
+});
+export type BookingLimits = z.infer<typeof BookingLimits>;
+
 export const CatalogResponse = z.object({
   serviceLevels: z.array(ServiceLevel),
   packageTypes: z.array(PackageType),
   vatBps: Bps,
   currency: z.literal("ZAR"),
+  /** Published with the catalog because the booking form has to enforce them as you type. */
+  bookingLimits: BookingLimits,
 });
 export type CatalogResponse = z.infer<typeof CatalogResponse>;
 
@@ -129,6 +148,7 @@ export const SettingKey = z.enum([
   "company.vat_bps",
   "company.timezone",
   "booking.same_day_cutoff_minutes",
+  "booking.limits",
   "scheduling.policy",
   "settlement.rules",
   "treasury.policy",

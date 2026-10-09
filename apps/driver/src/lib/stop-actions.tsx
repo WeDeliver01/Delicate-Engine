@@ -45,6 +45,8 @@ export function StopActions({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const phone = stop.contact?.phone ?? null;
+  /** The number that saves the stop when the first one rings out. */
+  const altPhone = stop.contact?.altPhone ?? null;
 
   /**
    * Ask the engine to send it, and send it ourselves if the engine cannot.
@@ -97,6 +99,15 @@ export function StopActions({
           style={{ flex: 1 }}
         />
       </View>
+      {altPhone && (
+        <View style={{ marginTop: 10 }}>
+          <Button
+            label="Call the other number"
+            variant="secondary"
+            onPress={() => void Linking.openURL(telUrl(altPhone))}
+          />
+        </View>
+      )}
 
       {stop.shipmentId && (
         <>

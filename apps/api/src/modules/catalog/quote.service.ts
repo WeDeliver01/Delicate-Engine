@@ -74,23 +74,46 @@ export class QuoteService {
 
   /** Full quote for an account: persisted, bookable for 24h. */
   async create(accountId: string, input: QuoteRequest): Promise<Quote> {
-    const [rateCard, serviceLevel, vatBps, depot] = await Promise.all([
+    const [rateCard, serviceLevel, vatBps, depot, limits] = await Promise.all([
       this.catalog.rateCardFor(accountId),
       this.catalog.serviceLevelByCode(input.serviceLevelCode),
       this.settings.vatBps(),
       this.settings.get("company.depot_address"),
+      this.settings.get("booking.limits"),
     ]);
     const packageTypeIds = input.drops.flatMap((d) => d.parcels.map((p) => p.packageTypeId));
     const packageTypeMap = await this.catalog.packageTypesByIds([...new Set(packageTypeIds)]);
 
     const parcels = new Map<string, { packageType: PackageType; quantity: number }>();
-    for (const d of input.drops) {
+    input.drops.forEach((d, i) => {
+      /*
+        What one driver can take to one address, as the operator has set it. Checked here
+        rather than in the schema because it is a fleet decision that changes without a
+        deploy, and checked at all because the booking form is not the only way in.
+      */
+      const count = d.parcels.reduce((n, p) => n + p.quantity, 0);
+      if (count > limits.maxParcelsPerDrop) {
+        throw AppError.validation([
+          {
+            path: ["drops", i, "parcels"],
+            message: `one delivery can carry ${limits.maxParcelsPerDrop} parcels; this one has ${count}`,
+          },
+        ]);
+      }
+      if (d.parcels.length > limits.maxParcelLinesPerDrop) {
+        throw AppError.validation([
+          {
+            path: ["drops", i, "parcels"],
+            message: `one delivery can carry ${limits.maxParcelLinesPerDrop} different kinds of parcel`,
+          },
+        ]);
+      }
       for (const p of d.parcels) {
         const pt = packageTypeMap.get(p.packageTypeId)!;
         if (p.weightKg != null && pt.maxWeightKg != null && p.weightKg > pt.maxWeightKg) {
           throw AppError.validation([
             {
-              path: ["drops", "parcels", "weightKg"],
+              path: ["drops", i, "parcels", "weightKg"],
               message: `${pt.name} is limited to ${pt.maxWeightKg} kg`,
             },
           ]);
@@ -99,7 +122,26 @@ export class QuoteService {
         cur.quantity += p.quantity;
         parcels.set(pt.id, cur);
       }
-    }
+      /*
+        Weighed on what we are told, falling back to what the package type says it holds: a
+        customer who leaves the weight blank is not thereby exempt from the van.
+      */
+      if (limits.maxWeightKgPerDrop != null) {
+        const kg = d.parcels.reduce((total, p) => {
+          const pt = packageTypeMap.get(p.packageTypeId)!;
+          const each = p.weightKg ?? pt.maxWeightKg ?? 0;
+          return total + each * p.quantity;
+        }, 0);
+        if (kg > limits.maxWeightKgPerDrop) {
+          throw AppError.validation([
+            {
+              path: ["drops", i, "parcels"],
+              message: `one delivery can carry ${limits.maxWeightKgPerDrop} kg; this one comes to ${Math.round(kg)} kg`,
+            },
+          ]);
+        }
+      }
+    });
 
     const legsKm = await this.geo.routeLegsKm(
       loop(

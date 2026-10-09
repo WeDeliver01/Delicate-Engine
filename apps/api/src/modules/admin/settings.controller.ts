@@ -4,6 +4,7 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   AdminCopySettings,
+  BookingLimits,
   CompanyTaxProfile,
   OperationsSettings,
   SettlementRules,
@@ -49,6 +50,7 @@ export class AdminSettingsController {
       slots,
       waybillTerms,
       adminCopy,
+      bookingLimits,
     ] = await Promise.all([
       this.settings.get("company.tax_profile"),
       this.settings.get("company.vat_registered"),
@@ -60,6 +62,7 @@ export class AdminSettingsController {
       this.settings.get("scheduling.policy"),
       this.settings.get("company.waybill_terms"),
       this.settings.get("notifications.admin_copy"),
+      this.settings.get("booking.limits"),
     ]);
     return {
       company,
@@ -69,6 +72,7 @@ export class AdminSettingsController {
       operations: { depotAddress, timezone, sameDayCutoffMinutes },
       settlement,
       slots,
+      bookingLimits,
       readiness: await this.readiness(company, registered),
     };
   }
@@ -120,6 +124,14 @@ export class AdminSettingsController {
   @PlatformRoles("super_admin")
   async settlementRules(@Body(SettlementRules) body: SettlementRules) {
     await this.settings.set("settlement.rules", body);
+    return body;
+  }
+
+  /** What one driver may be asked to take to one address. */
+  @Put("booking-limits")
+  @PlatformRoles("super_admin")
+  async bookingLimits(@Body(BookingLimits) body: BookingLimits) {
+    await this.settings.set("booking.limits", body);
     return body;
   }
 

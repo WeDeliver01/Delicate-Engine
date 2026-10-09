@@ -7,6 +7,15 @@ import { CustomerQuoteBreakdown, QuoteOptions, QuoteParcel } from "../pricing.js
 export const Contact = z.object({
   name: z.string().min(2).max(120),
   phone: z.string().min(6).max(24),
+  /**
+   * Somebody else to try.
+   *
+   * A driver standing at a gate with a cake and an unanswered phone is the most expensive
+   * minute in the job. The second number is the one that saves it — the office line, the
+   * husband, the neighbour holding the key — so it is asked for once, here, and carried
+   * everywhere the first number goes.
+   */
+  altPhone: z.string().min(6).max(24).nullable().default(null),
   email: z.string().email().nullable().default(null),
 });
 export type Contact = z.infer<typeof Contact>;

@@ -31,7 +31,7 @@ export class CatalogService {
   ) {}
 
   async publicCatalog(): Promise<CatalogResponse> {
-    const [sl, pt, vatBps] = await Promise.all([
+    const [sl, pt, vatBps, bookingLimits] = await Promise.all([
       this.dbs.db.query.serviceLevels.findMany({
         where: eq(serviceLevels.active, true),
         orderBy: asc(serviceLevels.sortOrder),
@@ -41,12 +41,14 @@ export class CatalogService {
         orderBy: asc(packageTypes.sortOrder),
       }),
       this.settings.vatBps(),
+      this.settings.get("booking.limits"),
     ]);
     return {
       serviceLevels: sl.map(toServiceLevel),
       packageTypes: pt.map(toPackageType),
       vatBps,
       currency: "ZAR",
+      bookingLimits,
     };
   }
 

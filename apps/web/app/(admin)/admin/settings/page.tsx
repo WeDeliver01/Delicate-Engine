@@ -6,6 +6,7 @@ import type {
   CompanyTaxProfile,
   OperationsSettings,
   SettingsBundle,
+  BookingLimits,
   SettlementRules,
   VatSettings,
 } from "@delicate/contracts";
@@ -67,6 +68,12 @@ export default function AdminSettings() {
     onSuccess: saved_("Operations"),
     onError,
   });
+  const bookingLimits = useMutation({
+    mutationFn: (body: BookingLimits) =>
+      api("/v1/admin/settings/booking-limits", { method: "PUT", json: body }),
+    onSuccess: saved_("What one delivery can carry"),
+    onError,
+  });
   const settlement = useMutation({
     mutationFn: (body: SettlementRules) =>
       api("/v1/admin/settings/settlement-rules", { method: "PUT", json: body }),
@@ -110,6 +117,11 @@ export default function AdminSettings() {
         initial={s.data.operations}
         disabled={!canWrite || ops.isPending}
         onSave={(v) => ops.mutate(v)}
+      />
+      <BookingLimitsCard
+        initial={s.data.bookingLimits}
+        disabled={!canWrite || bookingLimits.isPending}
+        onSave={(v) => bookingLimits.mutate(v)}
       />
       <SettlementCard
         initial={s.data.settlement}
@@ -365,6 +377,59 @@ function OperationsCard({
           value={v.sameDayCutoffMinutes}
           onChange={(x) => setV({ ...v, sameDayCutoffMinutes: x })}
           hint={clock(v.sameDayCutoffMinutes)}
+        />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * What one driver may be asked to take to one address.
+ *
+ * A fleet question, not a software one, and it changes when the vehicles do — so it is here
+ * rather than in a constant. The booking form reads the same numbers and stops a customer
+ * before they have filled in a form the engine was always going to refuse.
+ */
+function BookingLimitsCard({
+  initial,
+  disabled,
+  onSave,
+}: {
+  initial: BookingLimits;
+  disabled: boolean;
+  onSave: (v: BookingLimits) => void;
+}) {
+  const [v, setV] = useState(initial);
+  useEffect(() => setV(initial), [initial]);
+  return (
+    <Card
+      title="What one delivery can carry"
+      hint="Applies to each address on a booking, from the moment you save. Bookings already made are untouched."
+      disabled={disabled}
+      onSave={() => onSave(v)}
+    >
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Num
+          label="Parcels per delivery"
+          value={v.maxParcelsPerDrop}
+          onChange={(x) => setV({ ...v, maxParcelsPerDrop: x })}
+          hint="Counting quantities: six cupcake boxes is six."
+        />
+        <Num
+          label="Different parcels per delivery"
+          value={v.maxParcelLinesPerDrop}
+          onChange={(x) => setV({ ...v, maxParcelLinesPerDrop: x })}
+          hint="Lines on the booking form, whatever the quantities."
+        />
+        <Num
+          label="Kilograms per delivery"
+          value={v.maxWeightKgPerDrop ?? 0}
+          onChange={(x) => setV({ ...v, maxWeightKgPerDrop: x > 0 ? x : null })}
+          hint={
+            v.maxWeightKgPerDrop == null
+              ? "0 means no weight limit beyond each package type's own."
+              : "Unweighed parcels count as what their package type holds."
+          }
         />
       </div>
     </Card>

@@ -301,6 +301,7 @@ export default function ShipmentDetailPage({ params }: { params: Promise<{ id: s
               <Row label="Service">{s.serviceLevelCode}</Row>
               <Row label="Recipient">{s.recipient.name}</Row>
               <Row label="Phone">{s.recipient.phone}</Row>
+              {s.recipient.altPhone && <Row label="Alternative number">{s.recipient.altPhone}</Row>}
               <Row label="Instructions">{s.instructions ?? "—"}</Row>
               <Row label="Parcels">{s.parcels.length}</Row>
             </dl>

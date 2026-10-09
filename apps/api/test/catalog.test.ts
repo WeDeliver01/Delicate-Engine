@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { quotes, users } from "@delicate/db";
 import type { CatalogResponse, EstimateResponse, Quote } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
+import { SettingsService } from "../src/infra/settings.service.js";
 
 const DEPOT_TO_MENLYN = { lat: -25.7826, lng: 28.2755 };
 const CENTURION = { lat: -25.8603, lng: 28.1894 };
@@ -23,10 +24,14 @@ describe("catalog & quotes", () => {
   let h: Harness;
   let owner: string;
   let accountId: string;
+  let settings: SettingsService;
+  let cakeId: string;
+  let cupcakesId: string;
 
   beforeAll(async () => {
     h = await createHarness();
     owner = await h.tokenFor(USERS.alice);
+    settings = h.app.get(SettingsService);
   });
   afterAll(() => h.close());
   beforeEach(async () => {
@@ -37,6 +42,9 @@ describe("catalog & quotes", () => {
       .set("Authorization", `Bearer ${owner}`)
       .send({ name: "Honey Bee", type: "business", organization: { name: "Honey Bee Bakers" } });
     accountId = res.body.id;
+    const catalog = (await h.http().get("/v1/public/catalog")).body as CatalogResponse;
+    cakeId = catalog.packageTypes.find((p) => p.code === "cake_single")!.id;
+    cupcakesId = catalog.packageTypes.find((p) => p.code === "cupcakes")!.id;
   });
 
   it("serves the public catalog with VAT", async () => {
@@ -222,6 +230,54 @@ describe("catalog & quotes", () => {
     expect(quote.breakdown.totalCents).toBeGreaterThan(0);
     expect(quote.request.drops[0]!.recipient).toBeNull();
     expect(quote.request.drops[0]!.parcels).toEqual([]);
+  });
+
+  /*
+    What one driver can take to one address. The booking form shows the same numbers and
+    stops people before they fill a form in, but the form is not the only way in, so the
+    limit lives here as well.
+  */
+  describe("what one delivery can carry", () => {
+    const withParcels = (parcels: unknown[]) =>
+      h
+        .http()
+        .post("/v1/account/quotes")
+        .set("Authorization", `Bearer ${owner}`)
+        .set("X-Account-Id", accountId)
+        .send({
+          serviceLevelCode: "standard",
+          collection: { address: addr("Honey Bee, Menlyn", DEPOT_TO_MENLYN) },
+          drops: [{ address: addr("12 Oak St, Centurion", CENTURION), parcels }],
+        });
+
+    it("prices several parcels at one address", async () => {
+      const res = await withParcels([
+        { packageTypeId: cakeId, quantity: 2, weightKg: 2 },
+        { packageTypeId: cupcakesId, quantity: 1, weightKg: 1 },
+      ]);
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect((res.body as Quote).request.drops[0]!.parcels).toHaveLength(2);
+    });
+
+    it("refuses more parcels than the operator allows", async () => {
+      const limits = await settings.get("booking.limits");
+      const res = await withParcels([
+        { packageTypeId: cakeId, quantity: limits.maxParcelsPerDrop + 1, weightKg: 1 },
+      ]);
+      expect(res.status).toBe(422);
+      expect(res.body.details[0].message).toContain("parcels");
+    });
+
+    it("refuses more weight than the operator allows, counting what it is told", async () => {
+      await settings.set("booking.limits", {
+        maxParcelsPerDrop: 50,
+        maxParcelLinesPerDrop: 8,
+        maxWeightKgPerDrop: 10,
+      });
+      const res = await withParcels([{ packageTypeId: cakeId, quantity: 3, weightKg: 8 }]);
+      expect(res.status).toBe(422);
+      expect(res.body.details[0].message).toContain("kg");
+    });
   });
 
   it("charges more for a Saturday than a Tuesday when a surcharge is set", async () => {
