@@ -12,6 +12,7 @@ import {
 import { Link, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DriverDay, DriverStop, Shift, StopTally } from "@delicate/contracts";
+import { SHIPMENT_STATUS_LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "../src/lib/api";
 import { signOut } from "../src/lib/auth";
 import {
@@ -79,16 +80,6 @@ export default function Today() {
   }, [outstanding, day.isSuccess]);
   const invalidate = () => qc.invalidateQueries();
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
-
-  const collect = useMutation({
-    mutationFn: async (bookingId: string) =>
-      api("/v1/driver/collect", {
-        method: "POST",
-        json: { bookingId, location: await currentPosition() },
-      }),
-    onSuccess: invalidate,
-    onError,
-  });
 
   const logOdometer = useMutation({
     mutationFn: async () =>
@@ -202,8 +193,6 @@ export default function Today() {
               <StopCard
                 key={`${stop.kind}-${stop.shipmentId ?? stop.bookingId}-${i}`}
                 stop={stop}
-                onCollect={() => collect.mutate(stop.bookingId)}
-                busy={collect.isPending}
               />
             ))
           )}
@@ -332,17 +321,15 @@ function Tabs({
   );
 }
 
-function StopCard({
-  stop,
-  onCollect,
-  busy,
-}: {
-  stop: DriverStop;
-  onCollect: () => void;
-  busy: boolean;
-}) {
+function StopCard({ stop }: { stop: DriverStop }) {
   const isCollection = stop.kind === "collection";
   const tone = stop.status === "delivered" ? "good" : stop.status === "failed" ? "bad" : "neutral";
+  // One tap opens the stop, whichever kind it is. The actions that used to be on this card
+  // — collect, navigate, ring the contact — are all on the stop itself now, which is where a
+  // driver standing at the gate is already looking.
+  const href = isCollection
+    ? ({ pathname: "/pickup/[id]", params: { id: stop.bookingId } } as const)
+    : ({ pathname: "/stop/[id]", params: { id: stop.shipmentId! } } as const);
   return (
     <Card style={stop.done ? { opacity: 0.6 } : undefined}>
       <View style={s.row}>
@@ -350,7 +337,9 @@ function StopCard({
           label={
             isCollection
               ? `Collect · ${stop.shipments.length} parcel${stop.shipments.length === 1 ? "" : "s"}`
-              : "Deliver"
+              : stop.status
+                ? SHIPMENT_STATUS_LABELS[stop.status]
+                : "Deliver"
           }
           tone={isCollection ? (stop.done ? "good" : "warn") : tone}
         />
@@ -377,10 +366,8 @@ function StopCard({
                 ? "Attempted — dispatch will reassign it."
                 : "Delivered."}
           </Text>
-        ) : isCollection ? (
-          <Button label="Collected everything" onPress={onCollect} busy={busy} />
-        ) : stop.status === "collected" || stop.status === "in_transit" ? (
-          <Link href={{ pathname: "/stop/[id]", params: { id: stop.shipmentId! } }} asChild>
+        ) : (
+          <Link href={href} asChild>
             <Pressable>
               <View
                 style={{
@@ -393,13 +380,11 @@ function StopCard({
                 }}
               >
                 <Text style={{ color: C.white, fontWeight: "600", fontSize: 15 }}>
-                  Deliver this drop
+                  {isCollection ? "Open this collection" : "Open this drop"}
                 </Text>
               </View>
             </Pressable>
           </Link>
-        ) : (
-          <Text style={{ color: C.muted }}>Collect from the pickup first.</Text>
         )}
       </View>
     </Card>

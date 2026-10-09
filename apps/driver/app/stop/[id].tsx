@@ -3,9 +3,12 @@ import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } fro
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DriverDay } from "@delicate/contracts";
+import { SHIPMENT_STATUS_LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "../../src/lib/api";
 import { currentPosition } from "../../src/lib/location";
 import { CameraCapture } from "../../src/lib/capture";
+import { StopActions } from "../../src/lib/stop-actions";
+import { StatusControl } from "../../src/lib/status-control";
 import { Badge, Button, C, Card, ErrorNote, Loading, s } from "../../src/lib/ui";
 
 const REASONS = [
@@ -98,7 +101,10 @@ export default function StopScreen() {
 
         <Card>
           <View style={s.row}>
-            <Badge label={stop.status ?? "drop"} />
+            <Badge
+              label={stop.status ? SHIPMENT_STATUS_LABELS[stop.status] : "Drop"}
+              tone={stop.status === "out_for_delivery" ? "warn" : "neutral"}
+            />
             <Text style={[s.mono, { fontSize: 12 }]}>{stop.waybill}</Text>
           </View>
           <Text style={[s.h2, { marginTop: 8 }]}>{stop.contact?.name}</Text>
@@ -113,6 +119,9 @@ export default function StopScreen() {
             {stop.parcels.map((p) => `${p.quantity} x ${p.description ?? "parcel"}`).join(", ")}
           </Text>
         </Card>
+
+        <StopActions stop={stop} target="recipient" />
+        <StatusControl stop={stop} />
 
         {!failing ? (
           <Card>
