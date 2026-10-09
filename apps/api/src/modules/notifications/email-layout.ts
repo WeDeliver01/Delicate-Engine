@@ -46,6 +46,8 @@ export interface EmailLayoutInput {
   webUrl: string;
   /** What is actually being delivered, one row per parcel. Rendered as a table. */
   consignment?: ConsignmentRow[] | null;
+  /** Proof that it arrived: the photograph, who signed, and where it was left. */
+  proof?: ProofBlock | null;
   /**
    * The button, when the caller knows it better than the link can say.
    *
@@ -70,6 +72,22 @@ export interface ConsignmentRow {
   /** "1 x Xsmall Cake Box", already counted and named. */
   contents: string;
   weight: string | null;
+}
+
+/**
+ * What a delivered email shows as proof.
+ *
+ * The photograph arrives as an inline attachment and is referenced by `photoCid`, which is the
+ * only form that renders in both Gmail and Outlook. Where it was left is a link rather than a
+ * picture of a map, for the reasons in `mapsUrl`.
+ */
+export interface ProofBlock {
+  receivedBy: string;
+  /** Already formatted for the reader's eyes, in local time. */
+  capturedAt: string;
+  photoCid: string | null;
+  mapUrl: string | null;
+  note: string | null;
 }
 
 export function renderEmailHtml(input: EmailLayoutInput): string {
@@ -133,6 +151,8 @@ export function renderEmailHtml(input: EmailLayoutInput): string {
     </td></tr>
 
     ${consignmentTable(input.consignment ?? null)}
+
+    ${proofBlock(input.proof ?? null, SANS)}
 
     ${cta ? ctaButton(cta) : ""}
 
@@ -299,6 +319,62 @@ function labelled(r: ConsignmentRow, cell: string): string {
 }
 
 /** The same facts as text, for the plain-text part of the message. */
+/**
+ * The proof of delivery, as a card.
+ *
+ * The photograph is given a width and no height so it scales on a phone, and an `alt` that
+ * says what it is — a reader with images switched off still learns a photo was taken, which is
+ * the part that matters in a dispute.
+ */
+function proofBlock(proof: ProofBlock | null, sans: string): string {
+  if (!proof) return "";
+  const photo = proof.photoCid
+    ? `<tr><td style="padding:0 0 14px 0;">
+         <img src="cid:${esc(proof.photoCid)}" width="480" alt="Photograph taken at the door on delivery" style="display:block; width:100%; max-width:480px; height:auto; border-radius:12px;" />
+       </td></tr>`
+    : "";
+  const map = proof.mapUrl
+    ? `<p style="margin:10px 0 0 0; font-family:${sans}; font-size:14px; line-height:1.6;">
+         <a href="${esc(proof.mapUrl)}" style="color:${BRAND.pink}; text-decoration:underline;">See where it was delivered</a>
+       </p>`
+    : "";
+  const note = proof.note
+    ? `<p style="margin:10px 0 0 0; font-family:${sans}; font-size:14px; line-height:1.6; color:${BRAND.muted};">${esc(proof.note)}</p>`
+    : "";
+
+  return `<tr><td class="pad" style="padding:8px 40px 20px 40px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${BRAND.surface}; border:1px solid ${BRAND.line}; border-radius:14px;">
+      <tr><td style="padding:20px 20px 20px 20px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+          ${photo}
+          <tr><td>
+            <p style="margin:0; font-family:${sans}; font-size:12px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:${BRAND.muted};">Proof of delivery</p>
+            <p style="margin:8px 0 0 0; font-family:${sans}; font-size:15px; line-height:1.6; color:${BRAND.ink};">
+              Received by ${esc(proof.receivedBy)} at ${esc(proof.capturedAt)}.
+            </p>
+            ${note}
+            ${map}
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>`;
+}
+
+/** The same proof for the plain-text part, appended as the consignment table is. */
+export function proofText(proof: ProofBlock | null): string {
+  if (!proof) return "";
+  const lines = [
+    "",
+    "Proof of delivery",
+    `Received by ${proof.receivedBy} at ${proof.capturedAt}.`,
+  ];
+  if (proof.note) lines.push(proof.note);
+  if (proof.photoCid) lines.push("A photograph taken at the door is attached.");
+  if (proof.mapUrl) lines.push(`Where it was delivered: ${proof.mapUrl}`);
+  return lines.join("\n") + "\n";
+}
+
 export function consignmentText(rows: ConsignmentRow[] | null): string {
   if (!rows || rows.length === 0) return "";
   const block = rows

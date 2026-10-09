@@ -15,6 +15,11 @@ import { createHarness, USERS, type Harness } from "./harness.js";
 import { WalletService } from "../src/modules/wallet/wallet.service.js";
 import { NotificationService } from "../src/modules/notifications/notification.service.js";
 import { Clock } from "../src/infra/clock.js";
+import {
+  NOTIFICATION_TRANSPORTS,
+  type NotificationTransport,
+  type OutboundMessage,
+} from "../src/modules/notifications/transports/transport.js";
 
 const MENLYN = { lat: -25.7826, lng: 28.2755 };
 const CENTURION = { lat: -25.8603, lng: 28.1894 };
@@ -109,7 +114,7 @@ describe("notifications", () => {
     (await h.http().get("/v1/admin/notifications?limit=100").set(asStaff())).body as Notification[];
   const rawRows = () => h.db.db.select().from(notificationsTable);
 
-  async function book(): Promise<Booking> {
+  async function book(recipientEmail: string | null = null): Promise<Booking> {
     const q = (
       await h
         .http()
@@ -125,7 +130,7 @@ describe("notifications", () => {
           drops: [
             {
               address: addr("12 Oak St, Centurion", CENTURION, "Centurion"),
-              recipient: { name: "Jane", phone: "0821234567", email: null },
+              recipient: { name: "Jane", phone: "0821234567", email: recipientEmail },
               instructions: null,
               parcels: [
                 { packageTypeId: cakeId, quantity: 1, weightKg: null, description: "Cake" },
@@ -228,8 +233,143 @@ describe("notifications", () => {
 
     rows = await sent();
     const delivered = rows.filter((n) => n.kind === "shipment.delivered");
-    expect(delivered.map((d) => d.audience).sort()).toEqual(["customer", "recipient"]);
+    // The recipient's email row is written even though this recipient gave no address —
+    // suppressed with its reason, which is the record that we had no way to reach them.
+    expect(delivered.map((d) => `${d.audience}/${d.channel}`).sort()).toEqual([
+      "customer/email",
+      "recipient/email",
+      "recipient/sms",
+    ]);
     expect(delivered.find((d) => d.audience === "customer")!.body).toContain("signed for by Jane");
+  });
+
+  /**
+   * Drive one parcel from booking to delivered, with the proof captured at the door.
+   *
+   * `location` is passed because a phone that refused the location permission is the ordinary
+   * case and the email still has to go out; the tests that care give one.
+   */
+  async function deliverOne(recipientEmail: string | null, location: typeof CENTURION | null) {
+    const b = await book(recipientEmail);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+      .set(asStaff())
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/driver/collect")
+      .set(asDriver())
+      .send({ bookingId: b.id, location: MENLYN })
+      .expect(201);
+    await h
+      .http()
+      .post("/v1/driver/deliver")
+      .set(asDriver())
+      .send({
+        shipmentId: b.shipments[0]!.id,
+        receivedBy: "Jane",
+        photoDataUrl: PNG,
+        actualKm: 14,
+        location,
+        note: "handed over at the front desk",
+      })
+      .expect(201);
+    for (let i = 0; i < 4; i++) await h.dispatcher.tick();
+    return b;
+  }
+
+  it("emails the proof of delivery to the recipient as well, when they gave an address", async () => {
+    await deliverOne("jane@example.local", CENTURION);
+
+    const delivered = (await rawRows()).filter((r) => r.kind === "shipment.delivered");
+    const addressed = delivered.map((d) => `${d.audience}/${d.channel}`).sort();
+    expect(addressed).toEqual(["customer/email", "recipient/email", "recipient/sms"]);
+
+    // Per channel, so the mail goes to the inbox and the text to the mobile. One address for
+    // both would have handed a phone number to the mail host.
+    const email = delivered.find((d) => d.audience === "recipient" && d.channel === "email")!;
+    const sms = delivered.find((d) => d.audience === "recipient" && d.channel === "sms")!;
+    expect(email.toAddress).toBe("jane@example.local");
+    expect(sms.toAddress).toBe("0821234567");
+    expect(email.body).toContain("received by Jane");
+    expect(email.body).not.toMatch(/\{\{|\}\}/);
+
+    // What the layout needs to show the proof, stamped at the time it happened.
+    const proof = (email.payload as { proof: Record<string, unknown> }).proof;
+    expect(proof).toMatchObject({
+      receivedBy: "Jane",
+      at: CENTURION,
+      note: "handed over at the front desk",
+    });
+    expect(proof.photoFileId).toBeTruthy();
+  });
+
+  it("sends the recipient the text alone when they gave no email address", async () => {
+    await deliverOne(null, CENTURION);
+
+    const delivered = (await rawRows()).filter(
+      (r) => r.kind === "shipment.delivered" && r.audience === "recipient",
+    );
+    const email = delivered.find((d) => d.channel === "email")!;
+    // Written down, not discarded: a suppression with a reason is the record that we had no
+    // way to reach them. Nobody is made to hand over an email to receive a parcel.
+    expect(email.status).toBe("suppressed");
+    expect(email.detail).toContain("No email address on file");
+    expect(delivered.find((d) => d.channel === "sms")!.toAddress).toBe("0821234567");
+  });
+
+  it("attaches the photograph inline and links the place, rather than embedding either", async () => {
+    // A recording transport in place of SMTP, which is not configured here. Swapped into the
+    // injected array so the dispatcher's own lookup finds it.
+    const transports = h.app.get<NotificationTransport[]>(NOTIFICATION_TRANSPORTS);
+    const captured: OutboundMessage[] = [];
+    const index = transports.findIndex((t) => t.channel === "email");
+    const real = transports[index]!;
+    transports[index] = {
+      channel: "email",
+      provider: "recorder",
+      status: () => ({ configured: true, detail: null }),
+      send: async (message: OutboundMessage) => {
+        captured.push(message);
+        return { providerMessageId: "recorded" };
+      },
+    };
+    try {
+      await deliverOne("jane@example.local", CENTURION);
+      await service.dispatchDue(50);
+    } finally {
+      transports[index] = real;
+    }
+
+    const toRecipient = captured.find((m) => m.to === "jane@example.local")!;
+    expect(toRecipient).toBeTruthy();
+
+    // `cid:` and not `data:`: Gmail and Outlook both strip a data URI, so the inline
+    // attachment is the only form that renders for everyone.
+    expect(toRecipient.html).toContain('src="cid:pod"');
+    expect(toRecipient.html).not.toContain("data:image");
+    const photo = toRecipient.attachments?.find((a) => a.cid === "pod")!;
+    expect(photo).toBeTruthy();
+    expect(photo.contentType).toBe("image/png");
+    expect(photo.content.length).toBeGreaterThan(0);
+
+    // A link to a map, not a picture of one: a static map costs an API call per email.
+    const mapUrl = `query=${CENTURION.lat},${CENTURION.lng}`;
+    expect(toRecipient.html).toContain(mapUrl);
+    // The text part carries the same facts for a client that will not render HTML.
+    expect(toRecipient.body).toContain("Proof of delivery");
+    expect(toRecipient.body).toContain("A photograph taken at the door is attached.");
+    expect(toRecipient.body).toContain(mapUrl);
+
+    // The customer's copy gets its own attachment rather than a link back to ours. Matched on
+    // the subject, because every other email of this run also went to that address.
+    const toCustomer = captured.find(
+      (m) => m.to === "orders@honeybee.local" && m.subject?.endsWith("delivered"),
+    )!;
+    expect(toCustomer, captured.map((m) => m.subject).join(" | ")).toBeTruthy();
+    expect(toCustomer.attachments?.some((a) => a.cid === "pod")).toBe(true);
+    expect(toCustomer.html).toContain('src="cid:pod"');
   });
 
   it("never messages the same person twice for the same event", async () => {

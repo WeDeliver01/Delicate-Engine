@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   consignmentText,
+  proofText,
   renderEmailHtml,
   type ConsignmentRow,
+  type ProofBlock,
 } from "../src/modules/notifications/email-layout.js";
 
 const COMPANY = {
@@ -226,6 +228,65 @@ If you did not, ignore this. {{ .NewEmail }}`,
       expect(out()).toContain("{{ .NewEmail }}");
       expect(out()).not.toContain("&#123;");
       expect(out()).not.toContain("&quot; .Confirmation");
+    });
+  });
+
+  describe("proof of delivery", () => {
+    const PROOF: ProofBlock = {
+      receivedBy: "Jane Mokoena",
+      capturedAt: "24 September 2026 at 14:05",
+      photoCid: "pod",
+      mapUrl: "https://www.google.com/maps/search/?api=1&query=-25.8603,28.1894",
+      note: "left at the front desk",
+    };
+    const out = (proof: ProofBlock | null) =>
+      renderEmailHtml({
+        heading: "DC-260924-00001 delivered",
+        body: "Hi Honey Bee,\n\nIt arrived. The proof is below.",
+        company: COMPANY,
+        webUrl: WEB,
+        proof,
+      });
+
+    it("references the photograph as an inline attachment, never a data URI", () => {
+      // Gmail and Outlook both strip a data: image, so cid is the only form that renders
+      // everywhere; a hosted link would be a new public surface for someone's doorstep.
+      expect(out(PROOF)).toContain('src="cid:pod"');
+      expect(out(PROOF)).not.toContain("data:image");
+    });
+
+    it("links the place rather than embedding a map image", () => {
+      const rendered = out(PROOF);
+      expect(rendered).toContain("query=-25.8603,28.1894");
+      expect(rendered).toContain("See where it was delivered");
+      // A static map would be an API call and a quota for every message sent.
+      expect(rendered).not.toContain("staticmap");
+    });
+
+    it("still says who signed when there is no photo and no location", () => {
+      const bare = out({ ...PROOF, photoCid: null, mapUrl: null, note: null });
+      expect(bare).toContain("Received by Jane Mokoena");
+      expect(bare).not.toContain("cid:");
+      expect(bare).not.toContain("See where it was delivered");
+    });
+
+    it("escapes what came from a driver's keyboard", () => {
+      const nasty = out({ ...PROOF, receivedBy: "<script>alert(1)</script>" });
+      expect(nasty).not.toContain("<script>");
+      expect(nasty).toContain("&lt;script&gt;");
+    });
+
+    it("adds nothing at all without a proof", () => {
+      expect(out(null)).not.toContain("Proof of delivery");
+      expect(proofText(null)).toBe("");
+    });
+
+    it("carries the same facts in the text part", () => {
+      const text = proofText(PROOF);
+      expect(text).toContain("Received by Jane Mokoena at 24 September 2026 at 14:05.");
+      expect(text).toContain("A photograph taken at the door is attached.");
+      expect(text).toContain(PROOF.mapUrl!);
+      expect(text).toContain("left at the front desk");
     });
   });
 

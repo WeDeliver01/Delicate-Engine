@@ -35,6 +35,22 @@ export interface OutboundMessage {
    * mail is also going, and ignored by channels that have no such concept.
    */
   bcc?: string | null;
+  /** Files travelling with the message. Email only; other channels ignore them. */
+  attachments?: OutboundAttachment[];
+}
+
+/**
+ * A file on an email.
+ *
+ * `cid` makes it an inline image the HTML can reference as `src="cid:<cid>"`. That is the only
+ * way a photograph renders everywhere: Gmail and Outlook both strip a `data:` URI, and a link
+ * to a hosted image would be a new public surface for pictures of people's doorsteps.
+ */
+export interface OutboundAttachment {
+  filename: string;
+  contentType: string;
+  content: Buffer;
+  cid?: string;
 }
 
 export interface SendResult {

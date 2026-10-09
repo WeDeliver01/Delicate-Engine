@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { mapsUrl } from "@delicate/contracts";
 import type {
   AdminCopySettings,
+  LatLng,
   Notification,
   NotificationAudience,
   NotificationChannel,
@@ -14,6 +16,7 @@ import type {
   UpdateTemplateRequest,
 } from "@delicate/contracts";
 import {
+  files,
   notificationPreferences,
   notificationTemplates,
   notifications,
@@ -21,12 +24,47 @@ import {
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
-import { consignmentText, renderEmailHtml, type ConsignmentRow } from "./email-layout.js";
+import {
+  consignmentText,
+  proofText,
+  renderEmailHtml,
+  type ConsignmentRow,
+  type ProofBlock,
+} from "./email-layout.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { Clock } from "../../infra/clock.js";
 import { AppError } from "../../common/errors.js";
 import { TEMPLATE_SEEDS, render } from "./templates.js";
-import { NOTIFICATION_TRANSPORTS, type NotificationTransport } from "./transports/transport.js";
+import {
+  NOTIFICATION_TRANSPORTS,
+  type NotificationTransport,
+  type OutboundAttachment,
+} from "./transports/transport.js";
+
+/**
+ * The slice of a notification's payload that describes a proof of delivery.
+ *
+ * Written by the handler that enqueues the message, because it has to say what was true when
+ * the parcel landed rather than what the shipment looks like by the time the mail host answers.
+ * The photograph is the one exception: only its id is stored, and the bytes are read at send.
+ */
+interface ProofPayload {
+  proof?: {
+    receivedBy: string;
+    capturedAt: string;
+    photoFileId: string | null;
+    at: LatLng | null;
+    note: string | null;
+  } | null;
+}
+
+/** An image's file extension, for a name a reader can save. */
+function extensionFor(mime: string): string {
+  if (mime === "image/png") return ".png";
+  if (mime === "image/webp") return ".webp";
+  if (mime === "image/heic") return ".heic";
+  return ".jpg";
+}
 
 /** The sort of thing that stopped a message, for a caller that has to tell them apart. */
 export type SuppressedBy = "template" | "address" | "preference" | "transport";
@@ -61,8 +99,15 @@ export interface EnqueuedMessage {
 export interface EnqueueInput {
   kind: NotificationKind;
   audience: NotificationAudience;
-  /** Where to send it. A null address suppresses the message rather than failing. */
-  to: string | null;
+  /**
+   * Where to send it. A null address suppresses the message rather than failing.
+   *
+   * A string addresses every channel this kind has a template for, which is right when there
+   * is one way to reach someone. A map addresses them per channel, for the recipient who gave
+   * both a mobile and an email: the text is the nudge, the email is the record, and sending a
+   * phone number to a mail host is not a message either of them wanted.
+   */
+  to: string | null | Partial<Record<NotificationChannel, string | null>>;
   payload: Record<string, unknown>;
   accountId?: string | null;
   shipmentId?: string | null;
@@ -157,7 +202,8 @@ export class NotificationService {
 
     const written: EnqueuedMessage[] = [];
     for (const template of chosen) {
-      const suppression = this.suppressionReason(template, input, prefs);
+      const to = addressFor(input.to, template.channel);
+      const suppression = this.suppressionReason(template, to, prefs);
       const body = render(template.body, payload);
       const subject = template.subject ? render(template.subject, payload) : null;
 
@@ -170,7 +216,7 @@ export class NotificationService {
           status: suppression ? "suppressed" : "queued",
           accountId: input.accountId ?? null,
           shipmentId: input.shipmentId ?? null,
-          toAddress: input.to ?? "",
+          toAddress: to ?? "",
           subject,
           body,
           payload,
@@ -188,7 +234,7 @@ export class NotificationService {
         id: row?.id ?? null,
         channel: template.channel,
         audience: template.audience,
-        to: input.to ?? null,
+        to,
         subject,
         body,
         suppressedBecause: suppression?.detail ?? null,
@@ -239,11 +285,11 @@ export class NotificationService {
    */
   private suppressionReason(
     template: typeof notificationTemplates.$inferSelect,
-    input: EnqueueInput,
+    to: string | null,
     prefs: NotificationPreferences | null,
   ): { by: SuppressedBy; detail: string } | null {
     if (!template.enabled) return { by: "template", detail: "This template is switched off." };
-    if (!input.to) {
+    if (!to) {
       return {
         by: "address",
         detail:
@@ -337,12 +383,21 @@ export class NotificationService {
         // moved on by the time a retry sends: the message must say what was true when the
         // thing happened, not when the mail host finally answered.
         const consignment = (row.payload as { consignment?: ConsignmentRow[] }).consignment ?? null;
+        // The photograph is fetched now rather than carried on the row: a few hundred
+        // kilobytes of base64 in a jsonb column would be paid for on every read of every
+        // message, and the file is immutable, so a retry attaches the same bytes anyway.
+        const proof =
+          row.channel === "email" ? await this.proofFor(row.payload as ProofPayload) : null;
         const result = await transport.send({
           to: row.toAddress,
           subject: row.subject,
-          // The parcels follow the words in the text part, as they do in the HTML.
-          body: row.channel === "email" ? row.body + consignmentText(consignment) : row.body,
+          // The parcels and the proof follow the words in the text part, as they do in the HTML.
+          body:
+            row.channel === "email"
+              ? row.body + consignmentText(consignment) + proofText(proof?.block ?? null)
+              : row.body,
           fromName,
+          attachments: proof?.attachments,
           // Built here rather than stored on the row, so restyling the layout changes every
           // message from the next send onwards -- including ones already queued -- instead
           // of baking the design of the day into the database forever.
@@ -361,6 +416,7 @@ export class NotificationService {
                   },
                   webUrl: this.webUrl,
                   consignment,
+                  proof: proof?.block ?? null,
                 })
               : null,
           bcc: this.adminCopyFor(row.kind, row.channel, row.toAddress, adminCopy),
@@ -391,6 +447,50 @@ export class NotificationService {
       }
     }
     return claimed.length;
+  }
+
+  /**
+   * The proof of delivery for a message that carries one, with the photograph attached.
+   *
+   * Everything here is optional on purpose. A parcel can be delivered with a signature and no
+   * photo, with neither, or with the phone's location refused — and in every one of those
+   * cases the email still has to go out saying what we do know. A missing file is not a reason
+   * to fail a delivery notification.
+   */
+  private async proofFor(
+    payload: ProofPayload,
+  ): Promise<{ block: ProofBlock; attachments: OutboundAttachment[] } | null> {
+    const p = payload.proof;
+    if (!p) return null;
+
+    const attachments: OutboundAttachment[] = [];
+    let photoCid: string | null = null;
+    if (p.photoFileId) {
+      const [file] = await this.dbs.db
+        .select({ mime: files.mime, bytes: files.bytes })
+        .from(files)
+        .where(eq(files.id, p.photoFileId));
+      if (file) {
+        photoCid = "pod";
+        attachments.push({
+          filename: `proof-of-delivery${extensionFor(file.mime)}`,
+          contentType: file.mime,
+          content: Buffer.from(file.bytes),
+          cid: photoCid,
+        });
+      }
+    }
+
+    return {
+      block: {
+        receivedBy: p.receivedBy,
+        capturedAt: p.capturedAt,
+        photoCid,
+        mapUrl: p.at ? mapsUrl(p.at) : null,
+        note: p.note ?? null,
+      },
+      attachments,
+    };
   }
 
   /** Re-queue something that failed, after fixing whatever broke. Audited. */
@@ -591,6 +691,12 @@ export class NotificationService {
       return merged;
     });
   }
+}
+
+/** The address for one channel, from either form of `EnqueueInput.to`. */
+function addressFor(to: EnqueueInput["to"], channel: NotificationChannel): string | null {
+  if (to == null) return null;
+  return typeof to === "string" ? to : (to[channel] ?? null);
 }
 
 /** Addresses are redacted on the way out: an admin list is not a reason to leak contact details. */

@@ -8,6 +8,7 @@ import {
   drivers,
   memberships,
   packageTypes,
+  proofsOfDelivery,
   shipments,
   users,
   wallets,
@@ -247,6 +248,14 @@ export class NotificationModule implements OnModuleInit {
       });
     });
 
+    /**
+     * Delivered: both parties get the proof.
+     *
+     * The photograph and where it was left go in the email, to the customer who paid for the
+     * job and to the recipient when we have an address for them. An email address is optional
+     * at booking, so plenty of recipients get the text alone — nobody is made to hand over an
+     * email to receive their parcel.
+     */
     this.registry.register("delivery.completed", async (e) => {
       await this.dbs.transaction(async (tx) => {
         // The recipient's copy links to the delivery note. Issuing the token here as well as
@@ -260,6 +269,7 @@ export class NotificationModule implements OnModuleInit {
           // In Johannesburg, not the container's UTC: this is a time the recipient reads
           // and checks against when the parcel actually turned up.
           deliveredAt: formatOperatingDateTime(e.occurredAt),
+          proof: await this.proofOf(tx, e.payload.shipmentId),
         };
         await this.notifications.enqueue(tx, {
           kind: "shipment.delivered",
@@ -273,7 +283,9 @@ export class NotificationModule implements OnModuleInit {
         await this.notifications.enqueue(tx, {
           kind: "shipment.delivered",
           audience: "recipient",
-          to: ctx.recipientPhone,
+          // Per channel: the text to their mobile, the proof to their inbox. One address for
+          // both would have sent a phone number to a mail host.
+          to: { sms: ctx.recipientPhone, email: ctx.recipientEmail },
           accountId: ctx.accountId,
           shipmentId: e.payload.shipmentId,
           dedupeKey: `shipment:${e.payload.shipmentId}:delivered-recipient`,
@@ -644,12 +656,13 @@ export class NotificationModule implements OnModuleInit {
     if (!shipment) return null;
     const account = await this.account(tx, shipment.accountId);
     const address = shipment.deliveryAddress as { suburb?: string | null; city?: string | null };
-    const recipient = shipment.recipient as { name?: string; phone?: string };
+    const recipient = shipment.recipient as { name?: string; phone?: string; email?: string };
     const liveUrl = opts?.live ? await this.trackingTokens.linkFor(tx, shipmentId) : "";
     return {
       accountId: shipment.accountId,
       accountEmail: account.email,
       recipientPhone: recipient.phone ?? null,
+      recipientEmail: recipient.email ?? null,
       payload: {
         customerName: account.name,
         recipientName: recipient.name ?? "there",
@@ -658,6 +671,31 @@ export class NotificationModule implements OnModuleInit {
         trackUrl: `${this.webUrl()}/track?waybill=${shipment.waybill}`,
         liveUrl,
       },
+    };
+  }
+
+  /**
+   * What was captured at the door, in the shape the mail layout wants.
+   *
+   * Only the photograph's id travels on the message; the bytes are read when it is sent. Null
+   * when there is no proof row at all, which happens on a delivery marked from the console.
+   */
+  private async proofOf(tx: DbExecutor, shipmentId: string) {
+    const [pod] = await tx
+      .select()
+      .from(proofsOfDelivery)
+      .where(eq(proofsOfDelivery.shipmentId, shipmentId));
+    if (!pod) return null;
+    const at = pod.location as { lat?: number; lng?: number } | null;
+    return {
+      receivedBy: pod.receivedBy,
+      capturedAt: formatOperatingDateTime(pod.capturedAt),
+      photoFileId: pod.photoFileId,
+      at:
+        at && typeof at.lat === "number" && typeof at.lng === "number"
+          ? { lat: at.lat, lng: at.lng }
+          : null,
+      note: pod.note,
     };
   }
 

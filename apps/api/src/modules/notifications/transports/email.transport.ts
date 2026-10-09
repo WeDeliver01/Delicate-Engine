@@ -44,6 +44,12 @@ export class EmailTransport implements NotificationTransport {
       subject: message.subject ?? message.fromName,
       text: message.body,
       html: message.html ?? undefined,
+      attachments: message.attachments?.map((a) => ({
+        filename: a.filename,
+        contentType: a.contentType,
+        content: a.content,
+        cid: a.cid,
+      })),
     });
     return { providerMessageId: info.messageId ?? null };
   }
