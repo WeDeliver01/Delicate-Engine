@@ -127,6 +127,24 @@ export class AssignmentService {
         where: and(eq(assignments.shipmentId, shipmentId), eq(assignments.active, true)),
       });
       if (existing) return toAssignment(existing);
+
+      /*
+        The main driver first, if there is one.
+
+        A small fleet does not want a scoring function choosing for it: one person is out all
+        day doing the work, and the dispatcher moves a stop off them when there is a reason
+        to. Load is not checked here on purpose -- being over capacity is the signal to
+        reassign, and a shipment that silently went to somebody else instead is a decision
+        nobody made and nobody can see.
+      */
+      const main = await tx.query.drivers.findFirst({
+        where: and(eq(drivers.isMain, true), eq(drivers.status, "active")),
+      });
+      if (main) {
+        return this.assign(tx, shipmentId, main.id, "auto", "auto: main driver");
+      }
+
+      // No main driver named: nearest with room, as before.
       const [best] = await this.candidates(shipmentId, tx);
       if (!best) {
         this.logger.warn({ shipmentId }, "no driver available; left for dispatcher");

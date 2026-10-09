@@ -225,6 +225,13 @@
       "when": 1791548019117,
       "tag": "0031_fair_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791566467378,
+      "tag": "0032_steep_silhouette",
+      "breakpoints": true
     }
   ]
 }

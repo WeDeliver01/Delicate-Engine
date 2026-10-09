@@ -14,6 +14,7 @@ import {
   uuid,
   customType,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createdAt, id, timestamps } from "./_shared.js";
 import { users } from "./identity.js";
 
@@ -53,9 +54,23 @@ export const drivers = pgTable(
     fuelCardRef: text("fuel_card_ref"),
     dailyStopCapacity: integer("daily_stop_capacity").notNull().default(25),
     homeBase: jsonb("home_base"),
+    /**
+     * The driver everything goes to unless somebody says otherwise.
+     *
+     * A small fleet does not want a scoring function choosing for it: one person is out all
+     * day doing the work and the dispatcher moves a stop off them when there is a reason to.
+     * At most one at a time, which the index below enforces rather than trusting the code.
+     */
+    isMain: boolean("is_main").notNull().default(false),
     ...timestamps(),
   },
-  (t) => [uniqueIndex("drivers_email_uq").on(t.email), uniqueIndex("drivers_user_uq").on(t.userId)],
+  (t) => [
+    uniqueIndex("drivers_email_uq").on(t.email),
+    uniqueIndex("drivers_user_uq").on(t.userId),
+    uniqueIndex("drivers_main_uq")
+      .on(t.isMain)
+      .where(sql`${t.isMain} = true`),
+  ],
 );
 
 export const shifts = pgTable(

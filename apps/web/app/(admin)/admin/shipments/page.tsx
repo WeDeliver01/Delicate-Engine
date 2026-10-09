@@ -13,6 +13,7 @@ import {
   type ShipmentFilters,
 } from "@/components/shipments/filter-bar";
 import { ShipmentTable, type ShipmentRow } from "@/components/shipments/shipment-table";
+import { useMe } from "@/components/use-me";
 
 /**
  * The operations board.
@@ -22,6 +23,10 @@ import { ShipmentTable, type ShipmentRow } from "@/components/shipments/shipment
  * about what is going wrong, so the page opens on today rather than on the last month.
  */
 export default function AdminShipmentsPage() {
+  const me = useMe();
+  // Who may move a parcel to another driver: the two roles that run the day.
+  const role = me.data?.user.platformRole;
+  const canAssign = role === "super_admin" || role === "dispatcher";
   const [filters, setFilters] = useState<ShipmentFilters>({
     ...EMPTY_FILTERS,
     period: { key: "today", from: null, to: null },
@@ -119,6 +124,7 @@ export default function AdminShipmentsPage() {
         loading={list.isLoading}
         hrefBase="/admin/shipments"
         showAccount
+        canAssign={canAssign}
         emptyMessage="Nothing matches. Widen the period or clear a filter."
       />
     </div>

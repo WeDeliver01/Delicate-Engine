@@ -213,6 +213,67 @@ describe("fleet, dispatch & settlement", () => {
     ).toHaveLength(0);
   });
 
+  /*
+    A small fleet does not want a scoring function choosing for it: one person is out all day
+    doing the work, and the dispatcher moves a stop off them when there is a reason to.
+  */
+  describe("the main driver", () => {
+    it("takes new work, whoever is nearer", async () => {
+      // Somebody closer to the collection, so the scoring would not pick our main driver.
+      const nearby = (
+        await h.http().post("/v1/admin/fleet/drivers").set(asDispatcher()).send({
+          email: "nearby@delicatecourier.local",
+          fullName: "Nearby N",
+          phone: "0830000001",
+          homeBase: MENLYN,
+        })
+      ).body as Driver;
+      for (const id of [driver.id, nearby.id]) {
+        await h
+          .http()
+          .post("/v1/admin/fleet/shifts")
+          .set(asDispatcher())
+          .send({ driverId: id, date: TODAY });
+      }
+
+      await h
+        .http()
+        .put("/v1/admin/fleet/drivers/main")
+        .set(asDispatcher())
+        .send({ driverId: driver.id })
+        .expect(200);
+
+      const b = await book("standard");
+      const auto = await h
+        .http()
+        .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/auto-assign`)
+        .set(asDispatcher());
+      expect(auto.status).toBe(201);
+      expect(auto.body.driverId).toBe(driver.id);
+    });
+
+    it("is one person at a time, and can be nobody", async () => {
+      const other = (
+        await h.http().post("/v1/admin/fleet/drivers").set(asDispatcher()).send({
+          email: "other@delicatecourier.local",
+          fullName: "Other O",
+          phone: "0830000002",
+        })
+      ).body as Driver;
+
+      const set = (driverId: string | null) =>
+        h.http().put("/v1/admin/fleet/drivers/main").set(asDispatcher()).send({ driverId });
+
+      await set(driver.id).expect(200);
+      const after = (await set(other.id).expect(200)).body as Driver[];
+      // Naming a second stands the first one down in the same breath.
+      expect(after.filter((d) => d.isMain).map((d) => d.id)).toEqual([other.id]);
+
+      const none = (await set(null).expect(200)).body as Driver[];
+      expect(none.some((d) => d.isMain)).toBe(false);
+    });
+  });
+
   it("driver works a two-drop booking end to end; each drop settles; the wallet is charged once; the books balance", async () => {
     const b = await book("on_demand", 2);
     await h

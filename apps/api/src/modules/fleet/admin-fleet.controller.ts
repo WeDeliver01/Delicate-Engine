@@ -23,6 +23,8 @@ import { LedgerService } from "../ledger/ledger.service.js";
 
 const IdParam = z.object({ id: Uuid });
 
+const MainDriverRequest = z.object({ driverId: Uuid.nullable() });
+
 @ApiTags("admin")
 @ApiBearerAuth()
 @Controller("v1/admin/fleet")
@@ -38,6 +40,18 @@ export class AdminFleetController {
   createDriver(@Body(UpsertDriverRequest) body: UpsertDriverRequest) {
     return this.fleet.upsertDriver(null, body);
   }
+  /**
+   * Name the driver new work goes to by default, or clear it with null. Nothing already
+   * assigned moves: this decides what happens next.
+   *
+   * Declared above `drivers/:id` so the literal path is matched first and "main" is never
+   * read as somebody's id.
+   */
+  @Put("drivers/main")
+  setMainDriver(@Body(MainDriverRequest) body: { driverId: string | null }) {
+    return this.fleet.setMainDriver(body.driverId);
+  }
+
   @Put("drivers/:id")
   updateDriver(
     @Params(IdParam) p: { id: string },

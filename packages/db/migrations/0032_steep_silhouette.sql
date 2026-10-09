@@ -1,0 +1,2 @@
+ALTER TABLE "drivers" ADD COLUMN "is_main" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "drivers_main_uq" ON "drivers" USING btree ("is_main") WHERE "drivers"."is_main" = true;

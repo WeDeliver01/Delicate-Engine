@@ -192,7 +192,7 @@ describe("invoices, credit notes and statements", () => {
     // the supplier identity is snapshotted onto the document
     expect(inv.supplier.vatNumber).toBe("4123456789");
     expect(inv.billTo.legalName).toBe("Honey Bee Bakers");
-    expect(inv.lines.every((l) => l.waybill?.startsWith("DC-"))).toBe(true);
+    expect(inv.lines.every((l) => /^[A-Z2-9]{6}$/.test(l.waybill ?? ""))).toBe(true);
   });
 
   it("does not double-invoice when booking.charged is redelivered", async () => {

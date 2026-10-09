@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Shipment } from "@delicate/contracts";
+import { DriverCell } from "./driver-cell";
 import { StatusBadge } from "@/components/booking/status-badge";
 
 export interface ShipmentRow extends Shipment {
@@ -28,12 +29,15 @@ export function ShipmentTable({
   hrefBase,
   showAccount,
   emptyMessage = "Nothing matches these filters.",
+  canAssign = false,
 }: {
   rows: ShipmentRow[];
   loading?: boolean;
   hrefBase: string;
   showAccount?: boolean;
   emptyMessage?: string;
+  /** Staff who may move a parcel to another driver get a picker instead of a name. */
+  canAssign?: boolean;
 }) {
   if (loading) {
     return (
@@ -112,7 +116,9 @@ export function ShipmentTable({
                   </span>
                 )}
               </td>
-              <td className="whitespace-nowrap text-[#6B6661]">{s.driver?.name ?? "—"}</td>
+              <td className="whitespace-nowrap text-[#6B6661]">
+                <DriverCell shipmentId={s.id} driver={s.driver} canAssign={canAssign} />
+              </td>
               <td>
                 <StatusBadge status={s.status} />
               </td>

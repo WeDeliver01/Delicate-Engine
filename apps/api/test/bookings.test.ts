@@ -136,10 +136,11 @@ describe("bookings & shipments", () => {
     expect(b.reference).toMatch(/^BK-\d{6}-\d{4}$/);
     expect(b.totalCents).toBe(q.breakdown.totalCents);
     expect(b.shipments).toHaveLength(2);
-    expect(b.shipments.map((s) => s.waybill)).toEqual([
-      expect.stringMatching(/^DC-\d{6}-00001$/),
-      expect.stringMatching(/^DC-\d{6}-00002$/),
-    ]);
+    // Six random characters each, and never the same one twice. No sequence to assert:
+    // that was the point of changing them.
+    const waybills = b.shipments.map((s) => s.waybill);
+    expect(waybills.every((w) => /^[A-Z2-9]{6}$/.test(w))).toBe(true);
+    expect(new Set(waybills).size).toBe(2);
     expect(b.shipments.every((s) => s.status === "booked" && s.slotDate === SLOT.date)).toBe(true);
 
     expect(await summary()).toMatchObject({

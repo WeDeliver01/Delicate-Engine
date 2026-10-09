@@ -68,6 +68,13 @@ export const Driver = z.object({
   dailyStopCapacity: z.number().int().min(1).max(200),
   /** Where the driver starts the day; defaults to the depot. */
   homeBase: LatLng.nullable(),
+  /**
+   * Everything is assigned to this one unless somebody says otherwise.
+   *
+   * At most one driver at a time, enforced by the database rather than by whoever is
+   * clicking. Naming a new one stands the old one down in the same breath.
+   */
+  isMain: z.boolean().default(false),
   createdAt: z.string().datetime(),
 });
 export type Driver = z.infer<typeof Driver>;
@@ -79,6 +86,7 @@ export const UpsertDriverRequest = Driver.omit({ id: true, userId: true, created
     fuelCardRef: true,
     dailyStopCapacity: true,
     homeBase: true,
+    isMain: true,
   },
 );
 export type UpsertDriverRequest = z.infer<typeof UpsertDriverRequest>;

@@ -108,6 +108,39 @@ export class FleetService {
     });
   }
 
+  /**
+   * Name the driver everything goes to, or stand the current one down.
+   *
+   * Two statements, one transaction: the database allows exactly one main driver, so naming
+   * a second without clearing the first is a unique violation rather than a quiet overwrite.
+   * Shipments already assigned stay where they are -- this changes what happens next, not
+   * what was already decided.
+   */
+  async setMainDriver(driverId: string | null): Promise<Driver[]> {
+    await this.dbs.transaction(async (tx) => {
+      const before = await tx.query.drivers.findFirst({ where: eq(drivers.isMain, true) });
+      if (before?.id === driverId) return;
+      if (before) {
+        await tx.update(drivers).set({ isMain: false }).where(eq(drivers.id, before.id));
+      }
+      if (driverId) {
+        const driver = await tx.query.drivers.findFirst({
+          where: and(eq(drivers.id, driverId), eq(drivers.status, "active")),
+        });
+        if (!driver) throw AppError.notFound("active driver");
+        await tx.update(drivers).set({ isMain: true }).where(eq(drivers.id, driverId));
+      }
+      await this.audit.record(tx, {
+        action: "driver.set_main",
+        entityType: "driver",
+        entityId: driverId ?? before?.id ?? "none",
+        before: before ? { id: before.id, fullName: before.fullName } : null,
+        after: { mainDriverId: driverId },
+      });
+    });
+    return this.listDrivers();
+  }
+
   async listVehicles(): Promise<Vehicle[]> {
     const rows = await this.dbs.db.select().from(vehicles).orderBy(asc(vehicles.registration));
     return rows.map(toVehicle);
@@ -458,6 +491,7 @@ export function toDriver(r: typeof drivers.$inferSelect): Driver {
     fuelCardRef: r.fuelCardRef,
     dailyStopCapacity: r.dailyStopCapacity,
     homeBase: r.homeBase as LatLng | null,
+    isMain: r.isMain,
     createdAt: r.createdAt.toISOString(),
   };
 }

@@ -48,6 +48,13 @@ export default function AdminDrivers() {
     onSuccess: invalidate,
     onError,
   });
+  /** Who new work goes to. Null means nobody, and the engine goes back to choosing. */
+  const setMain = useMutation({
+    mutationFn: (driverId: string | null) =>
+      api("/v1/admin/fleet/drivers/main", { method: "PUT", json: { driverId } }),
+    onSuccess: invalidate,
+    onError,
+  });
   const schedule = useMutation({
     mutationFn: (driverId: string) =>
       api("/v1/admin/fleet/shifts", { method: "POST", json: { driverId, date: today } }),
@@ -85,11 +92,27 @@ export default function AdminDrivers() {
       {error && <p className="alert-error">{error}</p>}
 
       <section className="panel">
-        <h1 className="panel-head section-title">Drivers</h1>
+        <div className="panel-head flex flex-wrap items-center justify-between gap-2">
+          <h1 className="section-title">Drivers</h1>
+          {drivers.data?.some((d) => d.isMain) && (
+            <button
+              type="button"
+              onClick={() => setMain.mutate(null)}
+              className="link-quiet text-xs"
+            >
+              Nobody takes new work by default
+            </button>
+          )}
+        </div>
+        <p className="px-5 pb-2 text-xs text-muted">
+          Every new shipment is assigned to the main driver, and anyone can be moved off it from the
+          shipment list. With nobody set, the engine picks the nearest driver with room.
+        </p>
         <table className="w-full text-left text-sm">
           <thead className="label-mini">
             <tr>
               <th className="px-5 py-2">Driver</th>
+              <th className="px-5 py-2">Main</th>
               <th className="px-5 py-2">Contact</th>
               <th className="px-5 py-2">Vehicle</th>
               <th className="px-5 py-2">Capacity</th>
@@ -108,6 +131,21 @@ export default function AdminDrivers() {
                     <div className="text-xs text-muted">
                       {dr.userId ? "app linked" : "not signed in yet"}
                     </div>
+                  </td>
+                  {/* New work goes to whoever is ticked here. One at a time, so ticking
+                      somebody else unticks the current one. */}
+                  <td className="px-5 py-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs">
+                      <input
+                        type="radio"
+                        name="main-driver"
+                        checked={dr.isMain}
+                        disabled={dr.status !== "active" || setMain.isPending}
+                        onChange={() => setMain.mutate(dr.id)}
+                        className="accent-[#E84A8A]"
+                      />
+                      {dr.isMain ? "takes new work" : ""}
+                    </label>
                   </td>
                   <td className="px-5 py-2">
                     {dr.phone}
