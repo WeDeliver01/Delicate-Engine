@@ -8,6 +8,7 @@ import {
   Pagination,
   PaymentProviderName,
   Uuid,
+  AccountTransactionRequest,
   WalletAdjustmentRequest,
 } from "@delicate/contracts";
 import {
@@ -142,6 +143,21 @@ export class AdminWalletController {
   @Get("accounts/:id/wallet/verify")
   verify(@Params(z.object({ id: Uuid })) p: { id: string }) {
     return this.wallet.verify(p.id);
+  }
+
+  /**
+   * A movement made by hand: an EFT that arrived, a refund paid out, a debt given up on.
+   *
+   * Super admin and finance, because it moves a customer's money and the books with it, and
+   * audited like everything else that does.
+   */
+  @Post("accounts/:id/transactions")
+  @PlatformRoles("super_admin", "finance")
+  transaction(
+    @Params(z.object({ id: Uuid })) p: { id: string },
+    @Body(AccountTransactionRequest) body: AccountTransactionRequest,
+  ) {
+    return this.wallet.recordTransaction(p.id, body);
   }
 
   @Post("accounts/:id/wallet/adjust")

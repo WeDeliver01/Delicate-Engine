@@ -1,12 +1,17 @@
 import { Injectable } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
-import type {
-  CreditTermsRequest,
-  WalletEntry,
-  WalletEntryKind,
-  WalletHold,
-  WalletSummary,
+import {
+  ACCOUNT_TRANSACTIONS,
+  type AccountTransactionRequest,
+  type AccountTransactionType,
+  type CreditTermsRequest,
+  type JournalKind,
+  type LedgerAccount,
+  type WalletEntry,
+  type WalletEntryKind,
+  type WalletHold,
+  type WalletSummary,
 } from "@delicate/contracts";
 import { accounts, walletEntries, walletHolds, wallets, type DbExecutor } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
@@ -15,6 +20,69 @@ import { OutboxService } from "../../infra/outbox.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
 import { LedgerService, cr, dr } from "../ledger/ledger.service.js";
+
+/**
+ * Where each hand-made movement lands, in the wallet and in the books.
+ *
+ * The direction lives in the contract, next to the words the console shows, so the two can
+ * never drift. What is here is the accounting: which entry it is in the customer's running
+ * total, and which account the other side of it comes out of.
+ *
+ *  - Cash in or out of our bank is CASH_CLEARING, the same place a top-up lands, because it
+ *    is the same event: money moving between us and them.
+ *  - Goodwill is LOYALTY_EXPENSE. It costs the business, not the customer, and a campaign
+ *    that cost nothing in the books is a campaign nobody can measure.
+ *  - A debt given up on is an operating cost, with the write-off named in the memo.
+ *  - Everything else is ADJUSTMENTS, which exists for exactly this: finance correcting
+ *    finance.
+ */
+const TRANSACTIONS: Record<
+  AccountTransactionType,
+  { walletKind: WalletEntryKind; journalKind: JournalKind; counterAccount: LedgerAccount }
+> = {
+  payment: { walletKind: "topup", journalKind: "topup", counterAccount: "CASH_CLEARING" },
+  payment_reversal: {
+    walletKind: "adjustment",
+    journalKind: "reversal",
+    counterAccount: "CASH_CLEARING",
+  },
+  refund: { walletKind: "refund", journalKind: "reversal", counterAccount: "CASH_CLEARING" },
+  refund_reversal: {
+    walletKind: "refund",
+    journalKind: "reversal",
+    counterAccount: "CASH_CLEARING",
+  },
+  admin_credit: {
+    walletKind: "adjustment",
+    journalKind: "adjustment",
+    counterAccount: "ADJUSTMENTS",
+  },
+  admin_debit: {
+    walletKind: "adjustment",
+    journalKind: "adjustment",
+    counterAccount: "ADJUSTMENTS",
+  },
+  promotional_credit: {
+    walletKind: "cashback",
+    journalKind: "cashback",
+    counterAccount: "LOYALTY_EXPENSE",
+  },
+  balance_adjustment_credit: {
+    walletKind: "adjustment",
+    journalKind: "adjustment",
+    counterAccount: "ADJUSTMENTS",
+  },
+  balance_adjustment_debit: {
+    walletKind: "adjustment",
+    journalKind: "adjustment",
+    counterAccount: "ADJUSTMENTS",
+  },
+  bad_debt_write_off: {
+    walletKind: "adjustment",
+    journalKind: "adjustment",
+    counterAccount: "OPERATING_EXPENSE",
+  },
+};
 
 export interface MovementInput {
   accountId: string;
@@ -313,6 +381,74 @@ export class WalletService {
         "wallet.adjusted",
         { accountId, entryId: entry.id, amountCents, reason },
         { dedupeKey: `wallet:adjust:${entry.id}` },
+      );
+      return entry;
+    });
+  }
+
+  /**
+   * A movement finance makes by hand: a payment that came by EFT, a refund paid out, a debt
+   * written off.
+   *
+   * One wallet entry and one balanced journal in the same transaction, so the balance and the
+   * books cannot end up disagreeing about what happened. The amount arrives positive and the
+   * type decides the direction, because a debit typed as a negative number is how somebody
+   * credits an account they meant to charge.
+   */
+  async recordTransaction(
+    accountId: string,
+    input: AccountTransactionRequest,
+  ): Promise<WalletEntry> {
+    const spec = TRANSACTIONS[input.type];
+    const { label, direction } = ACCOUNT_TRANSACTIONS[input.type];
+    const signed = direction === "credit" ? input.amountCents : -input.amountCents;
+    const description = [label, input.waybill, input.description].filter(Boolean).join(" · ");
+
+    return this.dbs.transaction(async (tx) => {
+      await this.ensure(tx, accountId);
+      const entry = await this.post(tx, {
+        accountId,
+        amountCents: signed,
+        kind: spec.walletKind,
+        reference: input.waybill ?? null,
+        description,
+        idempotencyKey: `txn:${requestContext.get()?.requestId ?? crypto.randomUUID()}`,
+      });
+      /*
+        The customer's wallet is a liability: money we hold that is theirs. Crediting it means
+        we owe them more, so the other side is wherever the money came from -- our bank for a
+        payment, our own pocket for goodwill or a write-off.
+      */
+      const owner = { type: "account", id: accountId } as const;
+      await this.ledger.post(tx, {
+        kind: spec.journalKind,
+        refType: "wallet_entry",
+        refId: entry.id,
+        description,
+        idempotencyKey: `txn:${entry.id}`,
+        lines:
+          direction === "credit"
+            ? [
+                dr(spec.counterAccount, input.amountCents, undefined, input.waybill ?? null),
+                cr("CUSTOMER_PREPAID_LIABILITY", input.amountCents, owner, input.waybill ?? null),
+              ]
+            : [
+                dr("CUSTOMER_PREPAID_LIABILITY", input.amountCents, owner, input.waybill ?? null),
+                cr(spec.counterAccount, input.amountCents, undefined, input.waybill ?? null),
+              ],
+      });
+      await this.audit.record(tx, {
+        action: `wallet.${input.type}`,
+        entityType: "wallet",
+        entityId: accountId,
+        after: { ...input, entryId: entry.id, balanceAfterCents: entry.balanceAfterCents },
+      });
+      // The customer is told, through the same path as every other wallet movement.
+      await this.outbox.emit(
+        tx,
+        "wallet.adjusted",
+        { accountId, entryId: entry.id, amountCents: signed, reason: description },
+        { dedupeKey: `wallet:txn:${entry.id}` },
       );
       return entry;
     });

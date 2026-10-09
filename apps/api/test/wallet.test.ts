@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { outboxMessages, users, walletEntries } from "@delicate/db";
+import { eq, sql } from "drizzle-orm";
+import { journalLines, outboxMessages, users, walletEntries } from "@delicate/db";
 import type { CreateTopUpResponse, WalletSummary } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
 import { WalletService } from "../src/modules/wallet/wallet.service.js";
@@ -329,5 +329,81 @@ describe("wallet & top-ups", () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe("provider_unavailable");
     expect(Array.isArray(res.body.details.available)).toBe(true);
+  });
+
+  /**
+   * The movements finance makes by hand. Ten of them, and the only thing that stops one
+   * being typed in the wrong direction is that the direction belongs to the type rather
+   * than to whoever is typing.
+   */
+  describe("transactions made by hand", () => {
+    const post = (body: Record<string, unknown>) =>
+      h
+        .http()
+        .post(`/v1/admin/accounts/${accountId}/transactions`)
+        .set("Authorization", `Bearer ${finance}`)
+        .send(body);
+
+    it("moves the balance the way the type says, never the way the number does", async () => {
+      await post({ type: "payment", amountCents: 100_00 }).expect(201);
+      expect((await summary()).balanceCents).toBe(100_00);
+
+      // A debit, typed positive like every other amount.
+      await post({ type: "admin_debit", amountCents: 30_00 }).expect(201);
+      expect((await summary()).balanceCents).toBe(70_00);
+
+      await post({ type: "refund", amountCents: 20_00 }).expect(201);
+      expect((await summary()).balanceCents).toBe(50_00);
+
+      await post({ type: "promotional_credit", amountCents: 5_00 }).expect(201);
+      expect((await summary()).balanceCents).toBe(55_00);
+    });
+
+    it("refuses a negative amount rather than quietly flipping it", async () => {
+      const res = await post({ type: "admin_credit", amountCents: -100 });
+      expect(res.status).toBe(422);
+    });
+
+    it("writes a balanced journal for every one of them", async () => {
+      const types = [
+        "payment",
+        "payment_reversal",
+        "refund",
+        "refund_reversal",
+        "admin_credit",
+        "admin_debit",
+        "promotional_credit",
+        "balance_adjustment_credit",
+        "balance_adjustment_debit",
+        "bad_debt_write_off",
+      ];
+      for (const type of types) {
+        const res = await post({ type, amountCents: 10_00, waybill: "DCW-1", description: type });
+        expect(res.status, `${type}: ${JSON.stringify(res.body)}`).toBe(201);
+      }
+      // Invariant #3: every journal sums to zero, whatever it was for.
+      const rows = await h.db.db
+        .select({
+          journalId: journalLines.journalId,
+          total: sql<number>`sum(${journalLines.amountCents})`,
+        })
+        .from(journalLines)
+        .groupBy(journalLines.journalId);
+      for (const row of rows) expect(Number(row.total)).toBe(0);
+    });
+
+    it("says what it was, on the entry the customer can see", async () => {
+      await post({
+        type: "bad_debt_write_off",
+        amountCents: 42_00,
+        waybill: "DCW-77",
+        description: "uncollectable after three attempts",
+      }).expect(201);
+      const entries = (await h.http().get("/v1/account/wallet/entries?limit=1").set(asOwner()))
+        .body as { items: { description: string; reference: string | null }[] };
+      expect(entries.items[0]!.description).toContain("Bad debt write-off");
+      expect(entries.items[0]!.description).toContain("uncollectable");
+      expect(entries.items[0]!.reference).toBe("DCW-77");
+    });
   });
 });

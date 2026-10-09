@@ -7,6 +7,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { setActiveAccountId } from "@/lib/session";
 import { useMe } from "@/components/use-me";
 import { dateTime, rands } from "@/lib/money";
+import { AddTransaction } from "@/components/admin/add-transaction";
 
 /** Finance view of one account: wallet, ledger, credit terms, adjustments. All audited. */
 export default function AdminAccountPage({ params }: { params: Promise<{ id: string }> }) {
@@ -103,6 +104,14 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
       )}
       <div className="space-y-6 lg:col-span-2">
         <section className="panel p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="section-title">Money on this account</h2>
+            <AddTransaction
+              accountId={id}
+              balanceCents={wallet.data?.balanceCents ?? 0}
+              onDone={invalidate}
+            />
+          </div>
           <p className="font-mono text-xs text-muted">{id}</p>
           {wallet.data && (
             <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -219,7 +228,9 @@ export default function AdminAccountPage({ params }: { params: Promise<{ id: str
         <section className="panel p-5">
           <h2 className="section-title">Manual adjustment</h2>
           <p className="mt-1 text-xs text-muted">
-            Positive credits, negative debits. Audited with your name and reason.
+            The blunt instrument: positive credits, negative debits, with a reason. Prefer a
+            transaction above, which says what kind of movement it was and books it to the right
+            place.
           </p>
           <input
             type="number"
