@@ -1,10 +1,11 @@
-import { Controller, Delete, Get, HttpCode, Patch, Post } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Inject, Patch, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiHeader, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
   AccountRole,
   AddMemberRequest,
   CreateAccountRequest,
+  CredentialAction,
   UpdateAccountRequest,
   UpdateOrganizationRequest,
   UpdateProfileRequest,
@@ -20,6 +21,7 @@ import {
 import { isStaff, requireUser, type Principal } from "../../auth/principal.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { IdentityService } from "./identity.service.js";
+import { ENV, type Env } from "../../config/env.js";
 
 const MeQuery = z.object({ actingAs: Uuid.optional() });
 type MeQuery = z.infer<typeof MeQuery>;
@@ -133,7 +135,10 @@ const AccountMemberParams = z.object({ id: Uuid, userId: Uuid });
 @Controller("v1/admin/accounts")
 @PlatformRoles("super_admin", "finance", "dispatcher")
 export class AdminAccountsController {
-  constructor(private readonly identity: IdentityService) {}
+  constructor(
+    private readonly identity: IdentityService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   @Get(":id")
   detail(@Params(AccountParams) p: z.infer<typeof AccountParams>) {
@@ -180,6 +185,27 @@ export class AdminAccountsController {
     @Body(ChangeRoleBody) body: z.infer<typeof ChangeRoleBody>,
   ) {
     return this.identity.changeMemberRole(p.id, p.userId, body.role);
+  }
+
+  /**
+   * Somebody's sign-in: a reset link, a corrected address, a door closed, or a password set
+   * by hand for a customer who cannot receive email.
+   *
+   * Super admin only. Setting a password means staff can sign in as that customer and
+   * nothing would look unusual afterwards, which is exactly why it is one role, one audit
+   * row, and never the password itself in the record.
+   */
+  @Post(":id/members/:userId/credentials")
+  @PlatformRoles("super_admin")
+  credentials(
+    @Params(AccountMemberParams) p: z.infer<typeof AccountMemberParams>,
+    @Body(CredentialAction) body: CredentialAction,
+  ) {
+    return this.identity.credentialAction(
+      p.userId,
+      body,
+      `${this.env.WEB_PUBLIC_URL.replace(/\/$/, "")}/auth/callback?next=/auth/reset`,
+    );
   }
 
   @Delete(":id/members/:userId")

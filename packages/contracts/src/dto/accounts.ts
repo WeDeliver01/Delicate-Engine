@@ -131,3 +131,19 @@ export const UpdateOrganizationRequest = z.object({
   vatNumber: z.string().trim().max(20).nullable().optional(),
 });
 export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationRequest>;
+
+/**
+ * What staff may do to somebody's sign-in.
+ *
+ * Supabase owns credentials, so none of this touches our database; it is the console asking
+ * the identity provider on behalf of whoever is on the phone. Each one is audited, and a
+ * password set by hand is recorded as having happened without recording what it was.
+ */
+export const CredentialAction = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("send_reset") }),
+  z.object({ action: z.literal("set_email"), email: z.string().email() }),
+  /** Ten characters, because this one is typed by a person and read down a phone. */
+  z.object({ action: z.literal("set_password"), password: z.string().min(10).max(72) }),
+  z.object({ action: z.literal("block_sign_in"), blocked: z.boolean() }),
+]);
+export type CredentialAction = z.infer<typeof CredentialAction>;

@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type {
   Account,
   AdminAccountDetail,
+  CredentialAction,
   AccountMembership,
   AccountRole,
   AddMemberRequest,
@@ -20,6 +21,7 @@ import { OutboxService } from "../../infra/outbox.service.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { AppError } from "../../common/errors.js";
 import { WalletService } from "../wallet/wallet.service.js";
+import { SupabaseAdminService } from "./supabase-admin.service.js";
 import type { AuthenticatedUser } from "../../auth/principal.js";
 
 /**
@@ -33,6 +35,7 @@ export class IdentityService {
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
     private readonly wallet: WalletService,
+    private readonly supabase: SupabaseAdminService,
   ) {}
 
   async me(user: AuthenticatedUser, actingAsId_?: string | null): Promise<MeResponse> {
@@ -322,6 +325,57 @@ export class IdentityService {
       });
     });
     return this.adminDetail(accountId);
+  }
+
+  /**
+   * Act on somebody's sign-in: a reset link, a corrected address, a door closed, a password
+   * set by hand.
+   *
+   * The password is never stored, never logged and never written to the audit row — what is
+   * recorded is that a named person set one, when, and for whom. That is the fact anybody
+   * investigating later needs, and the only one it is safe to keep.
+   */
+  async credentialAction(
+    userId: string,
+    action: CredentialAction,
+    resetRedirectUrl: string,
+  ): Promise<{ done: true }> {
+    const user = await this.dbs.db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user) throw AppError.notFound("user");
+
+    switch (action.action) {
+      case "send_reset":
+        await this.supabase.sendPasswordReset(user.email, resetRedirectUrl);
+        break;
+      case "set_email":
+        await this.supabase.setEmail(userId, action.email);
+        break;
+      case "set_password":
+        await this.supabase.setPassword(userId, action.password);
+        break;
+      case "block_sign_in":
+        await this.supabase.setSignInBlocked(userId, action.blocked);
+        break;
+    }
+
+    /*
+      Our own copy of the address follows Supabase's, or the next time they sign in the
+      engine would match them on an address we no longer agree about.
+    */
+    await this.dbs.transaction(async (tx) => {
+      if (action.action === "set_email") {
+        await tx.update(users).set({ email: action.email }).where(eq(users.id, userId));
+      }
+      await this.audit.record(tx, {
+        action: `user.${action.action}`,
+        entityType: "user",
+        entityId: userId,
+        before: { email: user.email },
+        // Never the password itself. That a named person set one is the fact worth keeping.
+        after: action.action === "set_password" ? { passwordSet: true } : action,
+      });
+    });
+    return { done: true };
   }
 
   async listMembers(accountId: string): Promise<Member[]> {

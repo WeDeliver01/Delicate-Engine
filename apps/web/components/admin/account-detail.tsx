@@ -328,13 +328,16 @@ function Users({
               <option value="customer_staff">Staff</option>
             </select>
             {canWrite && (
-              <button
-                type="button"
-                onClick={() => remove.mutate(m.userId)}
-                className="text-xs text-muted transition-colors hover:text-[#C13B73]"
-              >
-                Remove
-              </button>
+              <>
+                <Credentials accountId={accountId} userId={m.userId} email={m.email} />
+                <button
+                  type="button"
+                  onClick={() => remove.mutate(m.userId)}
+                  className="text-xs text-muted transition-colors hover:text-[#C13B73]"
+                >
+                  Remove
+                </button>
+              </>
             )}
           </li>
         ))}
@@ -440,5 +443,147 @@ function Pick({
       </select>
       {hint && <span className="field-hint">{hint}</span>}
     </label>
+  );
+}
+
+/**
+ * Somebody's sign-in, for whoever is on the phone to them.
+ *
+ * A reset link is the normal path and the first thing offered: the customer sets their own
+ * password and nobody else ever knows it. Setting one by hand is behind a second click
+ * because it means staff can then sign in as that customer and nothing afterwards would look
+ * unusual — it is for the case where a customer genuinely cannot receive our email, and it
+ * is recorded as having happened.
+ */
+function Credentials({
+  accountId,
+  userId,
+  email,
+}: {
+  accountId: string;
+  userId: string;
+  email: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [newEmail, setNewEmail] = useState(email);
+  const [said, setSaid] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const act = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api(`/v1/admin/accounts/${accountId}/members/${userId}/credentials`, {
+        method: "POST",
+        json: body,
+      }),
+    onSuccess: (_d, body) => {
+      setError(null);
+      setPassword("");
+      setSaid(
+        body.action === "send_reset"
+          ? "Reset link sent."
+          : body.action === "set_password"
+            ? "Password set. Tell them, and ask them to change it."
+            : body.action === "set_email"
+              ? "Address changed."
+              : body.blocked
+                ? "Sign-in blocked."
+                : "Sign-in restored.",
+      );
+    },
+    onError: (e) => {
+      setSaid(null);
+      setError(e instanceof ApiRequestError ? e.message : String(e));
+    },
+  });
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="link-quiet shrink-0 text-xs">
+        Sign-in…
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full rounded-xl border border-line p-3 text-sm">
+      <div className="flex items-center justify-between">
+        <p className="font-medium text-ink">Sign-in for {email}</p>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close"
+          className="text-muted hover:text-ink"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => act.mutate({ action: "send_reset" })}
+          className="btn btn-secondary btn-sm"
+        >
+          Email them a reset link
+        </button>
+        <button
+          type="button"
+          onClick={() => act.mutate({ action: "block_sign_in", blocked: true })}
+          className="link-quiet text-xs"
+        >
+          Block sign-in
+        </button>
+        <button
+          type="button"
+          onClick={() => act.mutate({ action: "block_sign_in", blocked: false })}
+          className="link-quiet text-xs"
+        >
+          Restore
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          className="input px-2 py-1"
+          placeholder="their@email.co.za"
+        />
+        <button
+          type="button"
+          disabled={!newEmail.includes("@") || newEmail === email}
+          onClick={() => act.mutate({ action: "set_email", email: newEmail.trim() })}
+          className="btn btn-secondary btn-sm disabled:opacity-40"
+        >
+          Change address
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <input
+          type="text"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="input px-2 py-1 font-mono"
+          placeholder="A new password, at least 10 characters"
+        />
+        <button
+          type="button"
+          disabled={password.length < 10}
+          onClick={() => act.mutate({ action: "set_password", password })}
+          className="btn btn-secondary btn-sm disabled:opacity-40"
+        >
+          Set password
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        Only when they cannot receive email. You will be able to sign in as them, so it is recorded
+        against your name — the password itself is not kept anywhere.
+      </p>
+
+      {said && <p className="alert-success mt-3">{said}</p>}
+      {error && <p className="alert-error mt-3">{error}</p>}
+    </div>
   );
 }
