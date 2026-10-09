@@ -11,17 +11,27 @@ import {
 import { PlatformRoles, Public } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { SchedulingService } from "./scheduling.service.js";
+import { CatalogService } from "../catalog/catalog.service.js";
 
 /** Availability is public so the booking form can show it before sign-in. */
 @ApiTags("scheduling")
 @Controller("v1/public/slots")
 export class PublicSlotsController {
-  constructor(private readonly scheduling: SchedulingService) {}
+  constructor(
+    private readonly scheduling: SchedulingService,
+    private readonly catalog: CatalogService,
+  ) {}
 
   @Public()
   @Get("availability")
-  availability(@Query(AvailabilityQuery) q: AvailabilityQuery) {
-    return this.scheduling.availability(q.dateFrom, q.dateTo);
+  async availability(@Query(AvailabilityQuery) q: AvailabilityQuery) {
+    // Resolved here rather than taken as a flag: whether a service dispatches immediately is
+    // ours to know, and a client that could assert it would be offered slots the booking
+    // would then refuse.
+    const immediate = q.serviceLevel
+      ? !(await this.catalog.serviceLevelByCode(q.serviceLevel)).requiresSlot
+      : false;
+    return this.scheduling.availability(q.dateFrom, q.dateTo, { immediate });
   }
 
   /**

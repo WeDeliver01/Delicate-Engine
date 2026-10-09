@@ -114,9 +114,9 @@ export const SERVICE_LEVELS = [
     id: "ondemand",
     title: "On-Demand Delivery",
     description:
-      "For when time isn’t on your side, our same-day courier service ensures that your cake delivery and other perishable goods delivery are handled with urgency. We dispatch a driver immediately after your booking, guaranteeing that your items reach their destination within 90 minutes, fast and reliable. All collections and deliveries are completed on the same day of booking.",
+      "For when time isn’t on your side, our same-day courier service ensures that your cake delivery and other perishable goods delivery are handled with urgency. We dispatch a driver as soon as you book. All collections and deliveries are completed on the same day of booking.",
     features: [
-      "Dispatch within 30 minutes",
+      "A driver dispatched as soon as you book",
       "Live GPS tracking",
       "Priority handling",
       "Instant confirmation",

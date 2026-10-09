@@ -8,7 +8,6 @@ import type {
   Booking,
   CatalogResponse,
   Quote,
-  ServiceLevel,
   SlotAvailability,
   TimedWindow,
   WindowBandAvailability,
@@ -201,7 +200,8 @@ function Book() {
   }, [resumeSlotDate, resumeSlotWindow]);
 
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
-  const needsSlot = sl?.requiresSlot ?? true;
+  /** Scheduled in advance (Standard), or collected the same day it is booked (On-demand). */
+  const scheduled = sl?.requiresSlot ?? true;
   const windowDate = slot?.date ?? new Date().toISOString().slice(0, 10);
   const bands = useQuery({
     queryKey: ["window-bands", windowDate],
@@ -209,11 +209,29 @@ function Book() {
       api<WindowBandAvailability[]>(`/v1/public/slots/windows/${windowDate}`, { account: null }),
   });
 
+  /*
+    Both services pick a window; what differs is which days are on offer. The engine decides
+    that from the service level rather than taking our word for it — ask about an immediate
+    one and the only day it returns is today.
+  */
   const slots = useQuery({
-    queryKey: ["slots"],
-    queryFn: () => api<SlotAvailability[]>("/v1/public/slots/availability", { account: null }),
-    enabled: !!quote && needsSlot,
+    queryKey: ["slots", serviceLevel],
+    queryFn: () =>
+      api<SlotAvailability[]>(
+        `/v1/public/slots/availability?serviceLevel=${encodeURIComponent(serviceLevel)}`,
+        { account: null },
+      ),
+    enabled: !!quote,
   });
+
+  /*
+    Standard cannot be booked without one. On-demand asks for one too — the customer wants to
+    know roughly when, and dispatch wants the job counted against the day — but if nothing is
+    configured for today it goes without, because refusing a last-minute job over a window
+    nobody set up would be our problem, not the customer's.
+  */
+  const slotsOffered = (slots.data ?? []).length > 0;
+  const needsSlot = scheduled || slotsOffered;
 
   /**
    * Everything still missing, field by field.
@@ -401,8 +419,8 @@ function Book() {
       <section className="panel p-5">
         <h2 className="section-title">Choose your speed</h2>
         <p className="lede mt-1">
-          Every delivery we do is same-day. The difference is how much notice we have — and it sets
-          your price, so start here.
+          Every delivery we do is same-day. The only question is whether we fetch it today, or on a
+          day you set aside in advance.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {catalog.data?.serviceLevels.map((s) => {
@@ -423,19 +441,14 @@ function Book() {
                     clearQuote();
                   }}
                 />
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="text-[15px] font-semibold">{s.name}</span>
-                  {/* Read off the rate card rather than written here, so it cannot disagree
-                      with what the quote comes back with. */}
-                  <span className="text-xs text-muted">{priceEffect(s)}</span>
-                </span>
+                <span className="block text-[15px] font-semibold">{s.name}</span>
                 <span className="mt-1 block text-sm leading-snug text-[#6B6661]">
                   {s.description}
                 </span>
                 <span className="mt-2 block text-xs text-muted">
                   {s.requiresSlot
                     ? "You pick the day and the time slot."
-                    : "No slot to pick — we go as soon as you confirm."}
+                    : "You pick a window today, and we are on our way."}
                 </span>
               </label>
             );
@@ -765,10 +778,27 @@ function Book() {
                   </button>
                 </section>
 
-                {needsSlot && (
+                {(scheduled || slots.isLoading || slotsOffered) && (
                   <section className="panel p-5" id="delivery-slot">
-                    <h2 className="section-title">Delivery slot</h2>
-                    <SlotCalendar slots={slots.data ?? []} value={slot} onChange={setSlot} />
+                    <h2 className="section-title">
+                      {scheduled ? "Delivery slot" : "Today's collection window"}
+                    </h2>
+                    {!scheduled && (
+                      <p className="lede mt-1">
+                        On-demand is collected and delivered today, so today is the only day on
+                        offer. Need another day? Switch to Standard above.
+                      </p>
+                    )}
+                    <SlotCalendar
+                      slots={slots.data ?? []}
+                      value={slot}
+                      onChange={setSlot}
+                      emptyMessage={
+                        scheduled
+                          ? "No delivery dates are open at the moment."
+                          : "Nothing is left for today. Switch to Standard above to book a day ahead."
+                      }
+                    />
                   </section>
                 )}
 
@@ -900,23 +930,6 @@ function Check({
     </label>
   );
 }
-
-/**
- * What picking this service level does to the price, in the customer's terms.
- *
- * Taken from the rate card rather than written into the page: the multiplier and the
- * surcharge are both editable in the console, and a hard-coded "+50%" would go on saying so
- * long after somebody changed it.
- */
-function priceEffect(s: ServiceLevel): string {
-  const times = s.multiplierBps / 10_000;
-  const parts: string[] = [];
-  if (times !== 1) parts.push(`${trimZeros(times)}× the distance`);
-  if (s.surchargeCents > 0) parts.push(`${rands(s.surchargeCents)} more`);
-  return parts.length === 0 ? "Our standard rate" : parts.join(" + ");
-}
-
-const trimZeros = (n: number): string => String(Number(n.toFixed(2)));
 
 /**
  * Where the payment gateway should put the customer down: this booking, as they left it.

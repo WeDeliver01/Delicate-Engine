@@ -35,7 +35,7 @@ export default function QuotePage() {
                 <span aria-hidden className="material-symbols-outlined text-[#F4C430]">
                   schedule
                 </span>
-                Standard (booked a day ahead) or On-demand (within 90 minutes)
+                Standard (booked a day ahead) or On-demand (collected today)
               </li>
               <li className="flex gap-3">
                 <span aria-hidden className="material-symbols-outlined text-[#7C5CFF]">

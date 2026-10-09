@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { bookings, outboxMessages, users } from "@delicate/db";
+import { and, eq } from "drizzle-orm";
+import { bookings, deliverySlots, outboxMessages, users } from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -218,6 +218,52 @@ describe("bookings & shipments", () => {
       .from(bookings)
       .where(eq(bookings.status, "rejected_slot_unavailable"));
     expect(rejected).toHaveLength(1);
+  });
+
+  /*
+    On-demand is collected the day it is booked. It does not have to name a window, but the
+    portal does ask for one — the customer wants to know roughly when, and a job that takes a
+    driver should count against the day like every other one. Today, though, and only today:
+    next Tuesday at the on-demand price, with none of the notice the schedule is built on, is
+    not something we sell.
+  */
+  describe("on-demand and the day it is booked", () => {
+    const TODAY = "2026-09-23"; // the fixed clock, 09:00 SAST
+
+    it("takes today's window and counts it against the day", async () => {
+      await wallet.adjust(accountId, 200_000, "test funds");
+      const res = await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({
+          quoteId: (await quote("on_demand")).id,
+          // Closed to Standard — the lead time is a day — and open to this.
+          slot: { date: TODAY, windowKey: "morning" },
+        });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(res.body.slotDate).toBe(TODAY);
+      expect(res.body.slotWindowKey).toBe("morning");
+
+      const [row] = await h.db.db
+        .select()
+        .from(deliverySlots)
+        .where(and(eq(deliverySlots.date, TODAY), eq(deliverySlots.windowKey, "morning")));
+      expect(row!.bookedCount).toBe(1);
+    });
+
+    it("refuses any other day", async () => {
+      await wallet.adjust(accountId, 200_000, "test funds");
+      const res = await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({
+          quoteId: (await quote("on_demand")).id,
+          slot: { date: "2026-09-25", windowKey: "morning" },
+        });
+      expect(res.status).toBe(422);
+    });
   });
 
   it("cancellation releases the hold and the slot; not after collection", async () => {

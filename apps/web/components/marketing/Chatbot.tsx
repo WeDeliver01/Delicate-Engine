@@ -69,9 +69,9 @@ const faqs: FAQ[] = [
       "Standard Delivery is perfect for planned shipments. Book in advance to ensure your perishable goods arrive the same day within your selected time slot. Cost-effective and ideal for routine deliveries.",
   },
   {
-    keywords: ["on-demand", "ondemand", "express", "immediate", "90 minutes"],
+    keywords: ["on-demand", "ondemand", "express", "immediate", "today"],
     answer:
-      "On-Demand Delivery is for when time isn't on your side. We dispatch a driver within 30 minutes after booking, guaranteeing your items reach their destination within 90 minutes.",
+      "On-Demand Delivery is for when time isn't on your side. We dispatch a driver as soon as you book, and the parcel is collected and delivered the same day.",
   },
   {
     keywords: ["contact", "phone", "call", "support", "email"],

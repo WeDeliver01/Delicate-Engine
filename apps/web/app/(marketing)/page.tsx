@@ -334,8 +334,8 @@ export default function Home() {
               <div>
                 <h3 className="text-[20px] font-semibold">On-demand delivery</h3>
                 <p className="text-sm text-[#6B6661] mt-2 leading-relaxed">
-                  For when time is not on your side. We dispatch a driver immediately and reach the
-                  destination within 90 minutes of booking.
+                  For when time is not on your side. Book it now and we collect and deliver today,
+                  with a driver dispatched as soon as you book.
                 </p>
                 <a
                   href="/quote"

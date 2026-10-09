@@ -163,7 +163,7 @@ export const CATALOG_SEED = {
       code: "on_demand",
       name: "On-demand",
       description:
-        "Last minute. We collect and deliver today — a driver is dispatched as soon as you book and reaches the destination within 90 minutes.",
+        "Last minute. We collect and deliver today — a driver is dispatched as soon as you book.",
       multiplierBps: 15_000,
       surchargeCents: 5_000,
       requiresSlot: false,

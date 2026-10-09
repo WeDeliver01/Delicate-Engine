@@ -52,6 +52,50 @@ describe("scheduling & capacity", () => {
     ]);
   });
 
+  /*
+    A service that dispatches on the spot is not bound by the lead time the rest of the
+    schedule is built around — being bookable today is the whole point of it. What still
+    binds it is the day itself: there is no such thing as an on-demand delivery next Tuesday,
+    and a window that has finished is finished.
+  */
+  describe("a service that dispatches immediately", () => {
+    const forOnDemand = async () =>
+      (await h.http().get("/v1/public/slots/availability").query({ serviceLevel: "on_demand" }))
+        .body as SlotAvailability[];
+
+    it("offers today, and nothing but today", async () => {
+      const slots = await forOnDemand();
+      expect([...new Set(slots.map((s) => s.date))]).toEqual(["2026-09-23"]);
+      // The same windows are shut to Standard today, for lead time.
+      expect(slots.every((s) => s.bookable)).toBe(true);
+      expect(
+        (await avail("2026-09-23", "2026-09-23")).every((s) => s.closedReason === "lead_time"),
+      ).toBe(true);
+    });
+
+    it("keeps a window open while it is running and closes it once it has passed", async () => {
+      h.app.get(Clock).now = () => new Date("2026-09-23T11:00:00Z"); // 13:00 SAST
+      try {
+        const slots = await forOnDemand();
+        const by = (key: string) => slots.find((s) => s.windowKey === key)!;
+        // 08:00–12:00 is over.
+        expect(by("morning").closedReason).toBe("cutoff_passed");
+        // 12:00–16:00 is happening now, and a driver can leave now. Standard would have
+        // needed to book it two hours before it started.
+        expect(by("afternoon").bookable).toBe(true);
+      } finally {
+        h.app.get(Clock).now = () => NOW;
+      }
+    });
+
+    it("still respects a blackout, a closed window and a full one", async () => {
+      await svc.setSlot({ date: "2026-09-23", windowKey: "morning", closed: true });
+      const slots = await forOnDemand();
+      expect(slots.find((s) => s.windowKey === "morning")!.closedReason).toBe("closed");
+      expect(slots.find((s) => s.windowKey === "afternoon")!.bookable).toBe(true);
+    });
+  });
+
   it("reserve consumes capacity under lock, auto-closes when full, release reopens", async () => {
     const policy = await svc.policy();
     await svc.updatePolicy({ ...policy, defaultCapacity: 2 });

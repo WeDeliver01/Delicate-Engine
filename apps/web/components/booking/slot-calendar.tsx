@@ -20,10 +20,13 @@ export function SlotCalendar({
   slots,
   value,
   onChange,
+  emptyMessage = "No delivery dates are open at the moment.",
 }: {
   slots: SlotAvailability[];
   value: { date: string; windowKey: string } | null;
   onChange: (v: { date: string; windowKey: string } | null) => void;
+  /** What to say when there is nothing at all, which differs by service. */
+  emptyMessage?: string;
 }) {
   const byDate = useMemo(() => {
     const map = new Map<string, SlotAvailability[]>();
@@ -47,7 +50,7 @@ export function SlotCalendar({
   const shown = clampMonth(month ?? monthOf(selectedDay) ?? firstMonth, firstMonth, lastMonth);
 
   if (!shown || dates.length === 0) {
-    return <p className="mt-3 text-sm text-muted">No delivery dates are open at the moment.</p>;
+    return <p className="mt-3 text-sm text-muted">{emptyMessage}</p>;
   }
 
   /** Changing the day drops the window with it — the old one belonged to the old date. */
@@ -58,53 +61,59 @@ export function SlotCalendar({
 
   const windows = selectedDay ? (byDate.get(selectedDay) ?? []) : [];
 
+  // A month of greyed-out squares around one live day is a worse way of saying "today" than
+  // the word. On-demand offers exactly one date, so it gets the windows and nothing else.
+  const oneDayOnly = dates.length === 1;
+
   return (
     <div className="mt-3 space-y-4 text-sm">
-      <div className="rounded-xl border border-line p-3">
-        <div className="flex items-center justify-between">
-          <MonthStep
-            label="Previous month"
-            glyph="chevron_left"
-            to={addMonths(shown, -1)}
-            min={firstMonth}
-            max={lastMonth}
-            onPick={setMonth}
-          />
-          <p className="font-medium text-ink">{monthLabel(shown)}</p>
-          <MonthStep
-            label="Next month"
-            glyph="chevron_right"
-            to={addMonths(shown, 1)}
-            min={firstMonth}
-            max={lastMonth}
-            onPick={setMonth}
-          />
-        </div>
+      {!oneDayOnly && (
+        <div className="rounded-xl border border-line p-3">
+          <div className="flex items-center justify-between">
+            <MonthStep
+              label="Previous month"
+              glyph="chevron_left"
+              to={addMonths(shown, -1)}
+              min={firstMonth}
+              max={lastMonth}
+              onPick={setMonth}
+            />
+            <p className="font-medium text-ink">{monthLabel(shown)}</p>
+            <MonthStep
+              label="Next month"
+              glyph="chevron_right"
+              to={addMonths(shown, 1)}
+              min={firstMonth}
+              max={lastMonth}
+              onPick={setMonth}
+            />
+          </div>
 
-        {/* Monday first: the working week reads as a block and Sunday, which we are closed, sits
+          {/* Monday first: the working week reads as a block and Sunday, which we are closed, sits
             at the end rather than splitting it in two. */}
-        <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] uppercase tracking-wide text-muted">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-            <span key={d}>{d.slice(0, 1)}</span>
-          ))}
-        </div>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] uppercase tracking-wide text-muted">
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+              <span key={d}>{d.slice(0, 1)}</span>
+            ))}
+          </div>
 
-        <div className="mt-1 grid grid-cols-7 gap-1">
-          {cellsOf(shown).map((date, i) =>
-            date === null ? (
-              <span key={`pad-${i}`} />
-            ) : (
-              <DayCell
-                key={date}
-                date={date}
-                slots={byDate.get(date) ?? null}
-                selected={date === selectedDay}
-                onPick={pickDay}
-              />
-            ),
-          )}
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {cellsOf(shown).map((date, i) =>
+              date === null ? (
+                <span key={`pad-${i}`} />
+              ) : (
+                <DayCell
+                  key={date}
+                  date={date}
+                  slots={byDate.get(date) ?? null}
+                  selected={date === selectedDay}
+                  onPick={pickDay}
+                />
+              ),
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {selectedDay && (
         <div className="space-y-2">

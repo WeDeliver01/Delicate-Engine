@@ -45,8 +45,25 @@ export class SchedulingService {
     return toLocal(this.clock.now(), tz);
   }
 
-  async availability(dateFrom?: string, dateTo?: string): Promise<SlotAvailability[]> {
+  /**
+   * What is on offer, day by day and window by window.
+   *
+   * `immediate` is for a service that dispatches on the spot. The lead time everything else
+   * is scheduled around does not apply to it -- being bookable today is what it is for -- so
+   * the only day it offers is today, and a window stays open until it has passed rather than
+   * closing two hours before it starts. Everything else still holds: a blackout, a day we do
+   * not work, a window somebody closed by hand and a window that is full are all still shut.
+   */
+  async availability(
+    dateFrom?: string,
+    dateTo?: string,
+    opts: { immediate?: boolean } = {},
+  ): Promise<SlotAvailability[]> {
     const [policy, now] = await Promise.all([this.policy(), this.localNow()]);
+    if (opts.immediate) {
+      dateFrom = now.date;
+      dateTo = now.date;
+    }
     const from = dateFrom ?? now.date;
     const to = dateTo ?? addDays(now.date, policy.horizonDays);
     if (to < from)
@@ -83,6 +100,7 @@ export class SchedulingService {
           blackout: blackout.has(d),
           policy,
           now,
+          immediate: opts.immediate === true,
         });
         out.push({
           date: d,
@@ -102,7 +120,7 @@ export class SchedulingService {
   }
 
   /** Consume one space. Throws 409 `slot_unavailable` with the reason. */
-  async reserve(tx: DbExecutor, ref: SlotRef): Promise<void> {
+  async reserve(tx: DbExecutor, ref: SlotRef, opts: { immediate?: boolean } = {}): Promise<void> {
     const [policy, now] = await Promise.all([this.policy(), this.localNow()]);
     const window = policy.windows.find((w) => w.key === ref.windowKey);
     if (!window) throw AppError.notFound("slot window", { windowKey: ref.windowKey });
@@ -139,6 +157,7 @@ export class SchedulingService {
       blackout: !!blackout,
       policy,
       now,
+      immediate: opts.immediate === true,
     });
     if (reason)
       throw new AppError("slot_unavailable", `slot is not bookable (${reason})`, 409, {
@@ -425,16 +444,25 @@ export class SchedulingService {
 
 function closedReason(a: {
   date: string;
-  window: { startMinutes: number };
+  window: { startMinutes: number; endMinutes: number };
   row: { status: string } | undefined;
   remaining: number;
   blackout: boolean;
   policy: SlotPolicy;
   now: LocalNow;
+  /** A service that dispatches on the spot: see `availability`. */
+  immediate?: boolean;
 }): SlotAvailability["closedReason"] {
   if (a.blackout) return "blackout";
   if (a.row?.status === "closed_manual") return "closed";
   if (a.date < a.now.date) return "cutoff_passed";
+  if (a.immediate) {
+    // A driver leaves now, so what matters is whether the window is still running -- not
+    // whether we were given notice, which by definition we were not.
+    if (a.date > a.now.date) return "lead_time";
+    if (a.now.minutes >= a.window.endMinutes) return "cutoff_passed";
+    return a.remaining <= 0 ? "full" : null;
+  }
   if (daysBetween(a.now.date, a.date) < a.policy.minLeadDays) return "lead_time";
   if (a.date === a.now.date && a.now.minutes > a.window.startMinutes - a.policy.cutoffMinutesBefore)
     return "cutoff_passed";

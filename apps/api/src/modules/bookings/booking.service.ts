@@ -97,6 +97,24 @@ export class BookingService {
         { path: ["slot"], message: `${serviceLevel.name} deliveries need a delivery slot` },
       ]);
     }
+    /*
+      A service that dispatches on the spot may still name a window, and the portal always
+      does: the customer wants to know roughly when, and dispatch wants the job to count
+      against the day's capacity like every other one. But it can only ever be today. A
+      booking for next Tuesday at the on-demand price, with none of the notice the schedule
+      is built on, is not a thing we sell.
+    */
+    if (!serviceLevel.requiresSlot && input.slot) {
+      const today = (await this.scheduling.localNow()).date;
+      if (input.slot.date !== today) {
+        throw AppError.validation([
+          {
+            path: ["slot", "date"],
+            message: `${serviceLevel.name} deliveries are collected today`,
+          },
+        ]);
+      }
+    }
     // From the injected clock, because the quote's expiry was stamped from it too. Two
     // sources of "now" in one comparison is how a freshly priced quote ends up rejected as
     // expired.
@@ -128,12 +146,13 @@ export class BookingService {
     try {
       const bookingId = await this.dbs.transaction(async (tx) => {
         await this.quotes.markBooked(tx, quote.id); // row lock + single use
-        const slot = serviceLevel.requiresSlot ? input.slot! : null;
+        const slot = input.slot ?? null;
         // Lock order is fixed and must stay that way: quote, then slot, then the capacity bands
         // in ascending start minute, then the wallet. Two bookings racing for the last 09:00 and
         // 10:00 places would otherwise each hold one and wait for the other; one of them has to
         // lose cleanly instead of both hanging.
-        if (slot) await this.scheduling.reserve(tx, slot);
+        if (slot)
+          await this.scheduling.reserve(tx, slot, { immediate: !serviceLevel.requiresSlot });
         if (timedWindow?.collection || timedWindow?.delivery) {
           const windowDate = slot?.date ?? (await this.scheduling.localNow()).date;
           // Both windows in one call, so the bands are taken in a single ascending pass.

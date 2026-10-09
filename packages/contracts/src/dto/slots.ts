@@ -105,6 +105,15 @@ export type SlotAvailability = z.infer<typeof SlotAvailability>;
 export const AvailabilityQuery = z.object({
   dateFrom: IsoDate.optional(),
   dateTo: IsoDate.optional(),
+  /**
+   * Which service the customer is asking about.
+   *
+   * It changes the answer. A service that dispatches immediately is not bound by the lead
+   * time everything else is scheduled around — being able to book it today is the whole
+   * point of it — so for one of those the only day on offer is today, and a window is open
+   * until it has actually passed rather than two hours before it starts.
+   */
+  serviceLevel: z.string().min(2).max(32).optional(),
 });
 export type AvailabilityQuery = z.infer<typeof AvailabilityQuery>;
 
