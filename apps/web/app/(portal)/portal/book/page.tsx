@@ -263,8 +263,13 @@ function Book() {
     }
     drops.forEach((d, i) => {
       const where = drops.length > 1 ? `Drop ${i + 1}: ` : "";
+      // With several drops the message is "Drop 2: who is receiving this?"; with one there is
+      // no prefix, and a sentence has to start like one.
       const add = (field: string, message: string) =>
-        out.push({ field: `drop.${i}.${field}`, message: `${where}${message}` });
+        out.push({
+          field: `drop.${i}.${field}`,
+          message: where ? `${where}${message}` : message[0]!.toUpperCase() + message.slice(1),
+        });
       if (!d.address) add("address", "choose the delivery address from the list of suggestions.");
       if (d.name.trim().length < 2) add("name", "who is receiving this?");
       if (d.phone.trim().length < 6) add("phone", "add a phone number for the recipient.");
