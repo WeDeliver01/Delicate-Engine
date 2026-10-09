@@ -133,6 +133,22 @@ asks for the proof itself, and where it was dropped, to reach both.
   booking. No address means the SMS alone, as now — recipients are not made to supply an email
   to receive their parcel.
 
+**Built.** The photograph is read from `files` at send time rather than carried on the
+notification row: a few hundred kilobytes of base64 in a jsonb column would be paid for on
+every read of every message, and the file is immutable, so a retry attaches the same bytes.
+Everything else about the proof — who signed, when, where, the driver's note — is stamped on
+the row at enqueue, because the message has to say what was true when the parcel landed and
+not what the shipment looks like by the time the mail host answers.
+
+`EnqueueInput.to` now takes a map as well as a string, so the recipient's text goes to their
+mobile and their email to their inbox. One address for both would have handed a phone number
+to the mail host.
+
+The proof renders from the `proof` payload rather than from words in the template, so an
+operator rewriting the copy cannot delete the evidence, and the closing link stays the button.
+A recipient with no email still gets a suppressed row with its reason — the record that we had
+no way to reach them.
+
 ## 5a. Three things that were already broken
 
 Found while wiring the above, fixed with it:

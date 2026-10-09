@@ -183,6 +183,12 @@ Follow the van: {{liveUrl}}
 Track it: {{trackUrl}}`,
   },
   {
+    /*
+      The proof itself rides on this email -- the photograph as an inline attachment and a map
+      link to where it was left -- rendered by the layout from the `proof` payload rather than
+      written into the words here. Keeping it out of the body means the closing link stays the
+      button, and an operator editing this template cannot accidentally delete the evidence.
+    */
     kind: "shipment.delivered",
     channel: "email",
     audience: "customer",
@@ -191,7 +197,7 @@ Track it: {{trackUrl}}`,
 
 {{waybill}} was delivered to {{destination}} at {{deliveredAt}} and signed for by {{receivedBy}}.
 
-Proof of delivery is on your booking at {{trackUrl}}.
+The proof of delivery is below. It is also on your booking at {{trackUrl}}.
 
 — {{companyName}}`,
   },
@@ -201,6 +207,25 @@ Proof of delivery is on your booking at {{trackUrl}}.
     audience: "recipient",
     subject: null,
     body: `Your delivery from {{customerName}} has arrived. Thank you! Delivery note: {{liveUrl}} — {{companyName}}`,
+  },
+  {
+    /*
+      The recipient's copy, sent only where they gave an email address at booking -- plenty
+      did not, and they get the text alone. Addressed to the person who took delivery, so the
+      photograph of their own doorstep goes to them and nowhere else.
+    */
+    kind: "shipment.delivered",
+    channel: "email",
+    audience: "recipient",
+    subject: "Your delivery from {{customerName}} has arrived",
+    body: `Hi {{recipientName}},
+
+Your delivery from {{customerName}} arrived at {{deliveredAt}} and was received by {{receivedBy}}.
+
+Nothing further is needed from you. If something is not right, reply to this email or call us
+on the number below and we will look into it.
+
+— {{companyName}}`,
   },
   {
     kind: "shipment.failed",
