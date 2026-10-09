@@ -2,7 +2,9 @@ import { Injectable } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import type {
   CatalogResponse,
+  PackageCategory,
   PackageType,
+  UpsertPackageCategoryRequest,
   RateCard,
   ServiceLevel,
   UpsertPackageTypeRequest,
@@ -11,6 +13,7 @@ import type {
 } from "@delicate/contracts";
 import {
   accountRateCards,
+  packageCategories,
   packageTypes,
   rateCards,
   serviceLevels,
@@ -31,7 +34,7 @@ export class CatalogService {
   ) {}
 
   async publicCatalog(): Promise<CatalogResponse> {
-    const [sl, pt, vatBps, bookingLimits] = await Promise.all([
+    const [sl, pt, vatBps, bookingLimits, categories] = await Promise.all([
       this.dbs.db.query.serviceLevels.findMany({
         where: eq(serviceLevels.active, true),
         orderBy: asc(serviceLevels.sortOrder),
@@ -42,6 +45,7 @@ export class CatalogService {
       }),
       this.settings.vatBps(),
       this.settings.get("booking.limits"),
+      this.listPackageCategories(true),
     ]);
     return {
       serviceLevels: sl.map(toServiceLevel),
@@ -49,6 +53,7 @@ export class CatalogService {
       vatBps,
       currency: "ZAR",
       bookingLimits,
+      packageCategories: categories,
     };
   }
 
@@ -201,6 +206,62 @@ export class CatalogService {
     return rows.map(toPackageType);
   }
 
+  async listPackageCategories(activeOnly = false): Promise<PackageCategory[]> {
+    const rows = await this.dbs.db.query.packageCategories.findMany({
+      where: activeOnly ? eq(packageCategories.active, true) : undefined,
+      orderBy: asc(packageCategories.sortOrder),
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      sortOrder: r.sortOrder,
+      active: r.active,
+    }));
+  }
+
+  /**
+   * Add a category, rename one, or retire it.
+   *
+   * A package type carries the category's name rather than pointing at it, so a rename has
+   * to move both in one transaction or the types are orphaned under a heading that no longer
+   * exists. That is the whole reason this is a service method and not two lines in a
+   * controller.
+   */
+  async upsertPackageCategory(
+    id: string | null,
+    input: UpsertPackageCategoryRequest,
+  ): Promise<PackageCategory> {
+    return this.dbs.transaction(async (tx) => {
+      const before = id
+        ? await tx.query.packageCategories.findFirst({ where: eq(packageCategories.id, id) })
+        : null;
+      if (id && !before) throw AppError.notFound("package category");
+
+      const [row] = id
+        ? await tx
+            .update(packageCategories)
+            .set(input)
+            .where(eq(packageCategories.id, id))
+            .returning()
+        : await tx.insert(packageCategories).values(input).returning();
+
+      if (before && before.name !== row!.name) {
+        await tx
+          .update(packageTypes)
+          .set({ category: row!.name })
+          .where(eq(packageTypes.category, before.name));
+      }
+      await this.audit.record(tx, {
+        action: id ? "package_category.update" : "package_category.create",
+        entityType: "package_category",
+        entityId: row!.id,
+        before,
+        after: row,
+      });
+      return { id: row!.id, name: row!.name, sortOrder: row!.sortOrder, active: row!.active };
+    });
+  }
+
   async upsertPackageType(
     id: string | null,
     input: UpsertPackageTypeRequest,
@@ -251,6 +312,9 @@ export function toPackageType(r: typeof packageTypes.$inferSelect): PackageType 
     name: r.name,
     description: r.description,
     category: r.category,
+    lengthCm: r.lengthCm,
+    widthCm: r.widthCm,
+    heightCm: r.heightCm,
     maxWeightKg: r.maxWeightKg == null ? null : Number(r.maxWeightKg),
     surchargeCents: r.surchargeCents,
     sortOrder: r.sortOrder,

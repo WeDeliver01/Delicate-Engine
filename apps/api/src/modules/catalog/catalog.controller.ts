@@ -6,6 +6,7 @@ import {
   GeocodeRequest,
   QuoteRequest,
   RenameQuoteRequest,
+  UpsertPackageCategoryRequest,
   UpsertPackageTypeRequest,
   UpsertRateCardRequest,
   UpsertServiceLevelRequest,
@@ -147,6 +148,22 @@ export class AdminCatalogController {
     @Body(UpsertServiceLevelRequest) body: UpsertServiceLevelRequest,
   ) {
     return this.catalog.upsertServiceLevel(p.id, body);
+  }
+
+  @Get("package-categories")
+  packageCategories() {
+    return this.catalog.listPackageCategories();
+  }
+  @Post("package-categories")
+  createPackageCategory(@Body(UpsertPackageCategoryRequest) body: UpsertPackageCategoryRequest) {
+    return this.catalog.upsertPackageCategory(null, body);
+  }
+  @Put("package-categories/:id")
+  updatePackageCategory(
+    @Params(IdParam) p: { id: string },
+    @Body(UpsertPackageCategoryRequest) body: UpsertPackageCategoryRequest,
+  ) {
+    return this.catalog.upsertPackageCategory(p.id, body);
   }
 
   @Get("package-types")

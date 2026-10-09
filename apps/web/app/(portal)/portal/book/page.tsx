@@ -219,6 +219,21 @@ function Book() {
 
   const limits = catalog.data?.bookingLimits ?? null;
   const packageTypes = useMemo(() => catalog.data?.packageTypes ?? [], [catalog.data]);
+  /*
+    Forty boxes in one flat dropdown is a list nobody reads to the end. Grouped under the
+    operator's own headings it is a list you can scan, and the order is theirs: the
+    categories as they sorted them, then anything whose category has since been retired.
+  */
+  const packageGroups = useMemo(() => {
+    const order = catalog.data?.packageCategories ?? [];
+    const groups = new Map<string, PackageType[]>();
+    for (const pt of packageTypes) {
+      groups.set(pt.category, [...(groups.get(pt.category) ?? []), pt]);
+    }
+    const named = order.filter((c) => groups.has(c.name)).map((c) => c.name);
+    const rest = [...groups.keys()].filter((n) => !named.includes(n)).sort();
+    return [...named, ...rest].map((name) => ({ name, items: groups.get(name)! }));
+  }, [catalog.data, packageTypes]);
   const sl = catalog.data?.serviceLevels.find((s) => s.code === serviceLevel);
   /** Scheduled in advance (Standard), or collected the same day it is booked (On-demand). */
   const scheduled = sl?.requiresSlot ?? true;
@@ -770,11 +785,14 @@ function Book() {
                         className={`input ${problemAt(`drop.${i}.parcel.${j}`) ? "input-invalid" : ""}`}
                       >
                         <option value="">Select…</option>
-                        {packageTypes.map((pt) => (
-                          <option key={pt.id} value={pt.id}>
-                            {pt.name}
-                            {pt.maxWeightKg ? ` (≤ ${pt.maxWeightKg} kg)` : ""}
-                          </option>
+                        {packageGroups.map((group) => (
+                          <optgroup key={group.name} label={group.name}>
+                            {group.items.map((pt) => (
+                              <option key={pt.id} value={pt.id}>
+                                {packageLabel(pt)}
+                              </option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                       <input
@@ -1070,6 +1088,17 @@ function Check({
       <span>{label}</span>
     </label>
   );
+}
+
+/** The box, said the way somebody choosing one needs to hear it. */
+function packageLabel(pt: PackageType): string {
+  const size =
+    pt.lengthCm && pt.widthCm && pt.heightCm
+      ? `${pt.lengthCm}×${pt.widthCm}×${pt.heightCm} cm`
+      : null;
+  const weight = pt.maxWeightKg ? `≤ ${pt.maxWeightKg} kg` : null;
+  const detail = [size, weight].filter(Boolean).join(", ");
+  return detail ? `${pt.name} (${detail})` : pt.name;
 }
 
 /**

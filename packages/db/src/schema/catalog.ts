@@ -45,6 +45,26 @@ export const serviceLevels = pgTable(
   (t) => [uniqueIndex("service_levels_code_uq").on(t.code)],
 );
 
+/**
+ * What sort of thing is in the box: a cheesecake, a tier cake, macarons.
+ *
+ * A managed list rather than free text on each package type, because the operator adds to it
+ * as the business does and because thirty box sizes in one flat dropdown is a list nobody
+ * reads. The package type still carries the name, so renaming one is a rename in both places
+ * -- done in a single transaction by the catalog service.
+ */
+export const packageCategories = pgTable(
+  "package_categories",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    ...timestamps(),
+  },
+  (t) => [uniqueIndex("package_categories_name_uq").on(t.name)],
+);
+
 export const packageTypes = pgTable(
   "package_types",
   {
@@ -54,6 +74,17 @@ export const packageTypes = pgTable(
     description: text("description"),
     category: text("category").notNull().default("other"),
     maxWeightKg: numeric("max_weight_kg", { precision: 8, scale: 2 }),
+    /**
+     * The box, in whole centimetres.
+     *
+     * Not used for pricing yet -- the rate card is distance and weight -- but it is what a
+     * dispatcher needs to know whether three of these and a wedding cake fit in one car, and
+     * it is on the packaging list the business already keeps, so it belongs with the rest of
+     * the package type rather than in somebody's spreadsheet.
+     */
+    lengthCm: integer("length_cm"),
+    widthCm: integer("width_cm"),
+    heightCm: integer("height_cm"),
     surchargeCents: integer("surcharge_cents").notNull().default(0),
     sortOrder: integer("sort_order").notNull().default(0),
     active: boolean("active").notNull().default(true),

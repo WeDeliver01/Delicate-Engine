@@ -25,13 +25,37 @@ export const ServiceLevel = z.object({
 });
 export type ServiceLevel = z.infer<typeof ServiceLevel>;
 
+/** The operator's own way of sorting the packaging list. Managed in the console. */
+export const PackageCategory = z.object({
+  id: Uuid,
+  name: z.string().trim().min(2).max(40),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
+});
+export type PackageCategory = z.infer<typeof PackageCategory>;
+
+export const UpsertPackageCategoryRequest = PackageCategory.omit({ id: true }).partial({
+  sortOrder: true,
+  active: true,
+});
+export type UpsertPackageCategoryRequest = z.infer<typeof UpsertPackageCategoryRequest>;
+
 export const PackageType = z.object({
   id: Uuid,
   code: z.string().min(2).max(32),
   name: z.string().min(2).max(80),
   description: z.string().max(400).nullable(),
-  category: z.string().max(40), // e.g. "cake", "cupcakes", "flowers", "gift", "food", "other"
+  category: z.string().max(40),
   maxWeightKg: z.number().positive().nullable(),
+  /**
+   * The box, in whole centimetres.
+   *
+   * Nothing prices on it yet; it is what tells a dispatcher whether the day's work fits in
+   * the car, and it is on the packaging list the business already keeps.
+   */
+  lengthCm: z.number().int().positive().max(500).nullable().default(null),
+  widthCm: z.number().int().positive().max(500).nullable().default(null),
+  heightCm: z.number().int().positive().max(500).nullable().default(null),
   /** Handling surcharge per parcel, in cents. */
   surchargeCents: NonNegativeCents,
   sortOrder: z.number().int(),
@@ -111,6 +135,9 @@ export const UpsertPackageTypeRequest = PackageType.omit({ id: true }).partial({
   sortOrder: true,
   description: true,
   maxWeightKg: true,
+  lengthCm: true,
+  widthCm: true,
+  heightCm: true,
 });
 export type UpsertPackageTypeRequest = z.infer<typeof UpsertPackageTypeRequest>;
 
@@ -138,6 +165,8 @@ export const CatalogResponse = z.object({
   currency: z.literal("ZAR"),
   /** Published with the catalog because the booking form has to enforce them as you type. */
   bookingLimits: BookingLimits,
+  /** So the booking form can group a long packaging list into something readable. */
+  packageCategories: z.array(PackageCategory),
 });
 export type CatalogResponse = z.infer<typeof CatalogResponse>;
 
