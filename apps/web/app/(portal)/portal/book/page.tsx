@@ -18,6 +18,7 @@ import { api, ApiRequestError } from "@/lib/api";
 import { rands } from "@/lib/money";
 import { AddressInput } from "@/components/booking/address-input";
 import { Breakdown } from "@/components/booking/breakdown";
+import { SlotCalendar } from "@/components/booking/slot-calendar";
 import { useCollectionPoint } from "@/components/booking/use-collection-point";
 
 type Drop = {
@@ -615,7 +616,7 @@ function Book() {
                 {needsSlot && (
                   <section className="panel p-5">
                     <h2 className="section-title">Delivery slot</h2>
-                    <SlotPicker slots={slots.data ?? []} value={slot} onChange={setSlot} />
+                    <SlotCalendar slots={slots.data ?? []} value={slot} onChange={setSlot} />
                   </section>
                 )}
 
@@ -649,70 +650,6 @@ function Book() {
             {error && <p className="alert-error">{error}</p>}
           </div>
         </aside>
-      </div>
-    </div>
-  );
-}
-
-function SlotPicker({
-  slots,
-  value,
-  onChange,
-}: {
-  slots: SlotAvailability[];
-  value: { date: string; windowKey: string } | null;
-  onChange: (v: { date: string; windowKey: string }) => void;
-}) {
-  const days = [...new Set(slots.map((s) => s.date))];
-  const [day, setDay] = useState<string | null>(null);
-  const activeDay =
-    day ?? days.find((d) => slots.some((s) => s.date === d && s.bookable)) ?? days[0] ?? null;
-  return (
-    <div className="mt-3 space-y-3 text-sm">
-      <div className="flex flex-wrap gap-1.5">
-        {days.map((d) => {
-          const any = slots.some((s) => s.date === d && s.bookable);
-          return (
-            <button
-              key={d}
-              type="button"
-              disabled={!any}
-              onClick={() => setDay(d)}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-40 ${
-                activeDay === d ? "border-ink bg-ink text-white" : "border-[#DAD6CF]"
-              }`}
-            >
-              {new Date(`${d}T00:00:00`).toLocaleDateString("en-ZA", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-              })}
-            </button>
-          );
-        })}
-      </div>
-      <div className="space-y-2">
-        {slots
-          .filter((s) => s.date === activeDay)
-          .map((s) => {
-            const selected = value?.date === s.date && value?.windowKey === s.windowKey;
-            return (
-              <button
-                key={s.windowKey}
-                type="button"
-                disabled={!s.bookable}
-                onClick={() => onChange({ date: s.date, windowKey: s.windowKey })}
-                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition-colors disabled:opacity-40 ${
-                  selected ? "border-ink bg-[#FAFAF9]" : "border-line"
-                }`}
-              >
-                <span>{s.label}</span>
-                <span className="text-xs text-muted">
-                  {s.bookable ? `${s.remaining} left` : s.closedReason?.replace("_", " ")}
-                </span>
-              </button>
-            );
-          })}
       </div>
     </div>
   );
