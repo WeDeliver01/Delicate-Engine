@@ -183,6 +183,13 @@
       "when": 1791492130051,
       "tag": "0025_walk_in_account",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791519018815,
+      "tag": "0026_shipment_tracking_tokens",
+      "breakpoints": true
     }
   ]
 }
