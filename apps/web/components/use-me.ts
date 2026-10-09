@@ -2,11 +2,21 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import type { MeResponse } from "@delicate/contracts";
+import type { AccountMembership, MeResponse } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { getActiveAccountId, setActiveAccountId, subscribeActiveAccount } from "@/lib/session";
 
 const getServerSnapshot = () => null;
+
+/**
+ * The account the screen is about.
+ *
+ * Usually one of the user's own, and then it is a full membership. When staff have stepped
+ * into a customer there is no membership behind it — that is the entire point — and all that
+ * is known is the id and the name, so everything else is optional and a page that needs one
+ * of those fields has to cope with not having it.
+ */
+export type ActiveAccount = Partial<AccountMembership> & { id: string; name: string };
 
 /**
  * The signed-in user, their accounts, and the active account. The active id lives in a shared
@@ -53,6 +63,12 @@ export function useMe() {
     [qc],
   );
 
-  const activeAccount = query.data?.accounts.find((a) => a.id === activeId) ?? null;
+  /*
+    Staff reaching into a customer are working inside an account that is not in their list,
+    and every page in the portal gates on this. Returning null for them left the whole portal
+    blank behind the banner saying which account they were in.
+  */
+  const own = query.data?.accounts.find((a) => a.id === activeId) ?? null;
+  const activeAccount: ActiveAccount | null = own ?? query.data?.actingAs ?? null;
   return { ...query, activeAccount, switchAccount };
 }

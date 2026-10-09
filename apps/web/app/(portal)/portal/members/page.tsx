@@ -39,6 +39,8 @@ export default function MembersPage() {
   });
 
   if (!account) return null;
+  // Staff who stepped in have no role here, so the page is read-only for them. Granting
+  // somebody access to a customer's account is the customer's decision to make, not ours.
   const isOwner = account.role === "customer_owner";
 
   return (
