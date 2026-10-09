@@ -579,7 +579,7 @@ describe("service access", () => {
         .get(`/v1/service/shipments/${shipmentId}/waybill`)
         .set(asService(withLabels.secret));
       expect(ok.status).toBe(200);
-      expect(ok.body.waybill).toMatch(/^DC-/);
+      expect(ok.body.waybill).toMatch(/^[A-Z2-9]{6}$/);
 
       const without = await newClient({ slug: "no-labels", scopes: ["bookings:read"] });
       const denied = await h

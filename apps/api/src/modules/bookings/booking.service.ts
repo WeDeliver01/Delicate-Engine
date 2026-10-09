@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { randomBytes } from "node:crypto";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import {
   SHIPMENT_TRANSITIONS,
@@ -249,6 +250,8 @@ export class BookingService {
           .returning();
 
         const created: { shipmentId: string; waybill: string }[] = [];
+        /** Waybills handed out in this booking but not yet in the table. */
+        const claimed = new Set<string>();
         for (const [i, drop] of req.drops.entries()) {
           // A quote needs only an address; a shipment needs somebody to hand the parcel to.
           // Whoever the quote named wins, and the booking fills the rest — this is the point
@@ -263,7 +266,7 @@ export class BookingService {
             );
           }
           const instructions = drop.instructions ?? input.drops?.[i]?.instructions ?? null;
-          const waybill = await this.nextWaybill(tx);
+          const waybill = await this.nextWaybill(tx, claimed);
           const [s] = await tx
             .insert(shipments)
             .values({
@@ -698,8 +701,20 @@ export class BookingService {
   }
 
   async track(waybill: string): Promise<TrackingView> {
+    /*
+      Forgiving about how it was typed, because it was read off a label or down a phone. Case
+      and spacing first, and then the one substitution that trips people up: a waybill has no
+      O or I in it, so a 0 or a 1 in a six-character code is somebody's hand, not the code.
+      Tried second, never first, because the old day-numbered waybills are full of real zeros.
+    */
+    const typed = waybill.trim().toUpperCase();
+    const candidates = [typed];
+    const tidy = typed.replace(/[\s-]/g, "");
+    if (tidy !== typed) candidates.push(tidy);
+    if (/^[A-Z0-9]{6}$/.test(tidy)) candidates.push(tidy.replace(/0/g, "O").replace(/1/g, "I"));
+
     const row = await this.dbs.db.query.shipments.findFirst({
-      where: eq(shipments.waybill, waybill.trim().toUpperCase()),
+      where: inArray(shipments.waybill, candidates),
     });
     if (!row) throw AppError.notFound("shipment", { waybill });
     const [events, sl, policy] = await Promise.all([
@@ -728,11 +743,34 @@ export class BookingService {
 
   // ── identifiers ─────────────────────────────────────────────────────────────
 
-  /** Waybill: DC-YYMMDD-NNNNN, gap-free per local day. Row-locked counter. */
-  async nextWaybill(tx: DbExecutor): Promise<string> {
-    const day = await this.localDay();
-    const n = await this.bump(tx, `WB:${day}`);
-    return `DC-${day}-${String(n).padStart(5, "0")}`;
+  /**
+   * Waybill: six characters, random, e.g. W9RT4H.
+   *
+   * It used to count up per day -- DC-261009-00001 -- which is three facts nobody is owed:
+   * what day we booked it, how many we had done by then, and, from two waybills a week
+   * apart, roughly what we do in a week. A competitor reads that off an invoice. It is also
+   * long enough that nobody reads it down a phone without losing their place.
+   *
+   * The alphabet is the one top-up references already use: no I, L, O, 0 or 1, because this
+   * number is read aloud and copied by hand. A billion combinations, a unique index behind
+   * it, and a few attempts: the only way past this is a clash eight times running, which
+   * means something is wrong that a ninth attempt would not fix.
+   */
+  async nextWaybill(tx: DbExecutor, taken: Set<string> = new Set()): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidate = randomWaybill();
+      if (taken.has(candidate)) continue;
+      const clash = await tx.query.shipments.findFirst({
+        where: eq(shipments.waybill, candidate),
+        columns: { id: true },
+      });
+      if (clash) continue;
+      // Claimed for the rest of this booking: its drops are inserted one after another and
+      // none of them is in the table yet to be found by the query above.
+      taken.add(candidate);
+      return candidate;
+    }
+    throw new AppError("waybill_unavailable", "could not allocate a waybill", 503);
   }
 
   private async nextReference(tx: DbExecutor, prefix: string): Promise<string> {
@@ -755,6 +793,20 @@ export class BookingService {
     const tz = await this.settings.get("company.timezone");
     return toLocal(new Date(), tz).date.replace(/-/g, "").slice(2);
   }
+}
+
+/**
+ * Six characters from an alphabet with nothing confusable in it.
+ *
+ * No I or L next to a 1, no O next to a 0, because the people reading this out are standing
+ * at a door with a cake in one hand.
+ */
+function randomWaybill(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  // 256 divides by 32 exactly, so every character is equally likely.
+  for (const b of randomBytes(6)) out += alphabet[b % alphabet.length];
+  return out;
 }
 
 export function toShipment(

@@ -266,6 +266,68 @@ describe("bookings & shipments", () => {
     });
   });
 
+  /*
+    A waybill is read down a phone and copied off a label, so it is six characters with
+    nothing confusable in them -- and random, because a number that counts up tells anyone
+    holding two of them how much work we did in between.
+  */
+  describe("waybills", () => {
+    it("is six characters with nothing confusable in it", async () => {
+      await wallet.adjust(accountId, 1_000_000, "funds");
+      const b = (
+        await h
+          .http()
+          .post("/v1/account/bookings")
+          .set(asOwner())
+          .send({ quoteId: (await quote()).id, slot: SLOT })
+      ).body as Booking;
+      // No I, L, O, 0 or 1: the characters people get wrong when reading one out.
+      expect(b.shipments[0]!.waybill).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+    });
+
+    it("gives every drop on one booking a different one", async () => {
+      await wallet.adjust(accountId, 1_000_000, "funds");
+      const q = await quote("standard", 2);
+      const b = (
+        await h
+          .http()
+          .post("/v1/account/bookings")
+          .set(asOwner())
+          .send({ quoteId: q.id, slot: SLOT })
+      ).body as Booking;
+      const waybills = b.shipments.map((s) => s.waybill);
+      expect(waybills).toHaveLength(2);
+      // Two drops on one booking are inserted one after another, so neither is in the table
+      // when the other's number is checked. They still have to differ.
+      expect(new Set(waybills).size).toBe(2);
+    });
+
+    it("finds one however it was typed", async () => {
+      await wallet.adjust(accountId, 1_000_000, "funds");
+      const b = (
+        await h
+          .http()
+          .post("/v1/account/bookings")
+          .set(asOwner())
+          .send({ quoteId: (await quote()).id, slot: SLOT })
+      ).body as Booking;
+      const waybill = b.shipments[0]!.waybill;
+
+      for (const typed of [
+        waybill.toLowerCase(),
+        `  ${waybill}  `,
+        `${waybill.slice(0, 3)} ${waybill.slice(3)}`,
+        // The one substitution worth forgiving: there is no O or I in a waybill, so a zero
+        // or a one in a six-character code came from somebody's hand.
+        waybill.replace(/O/g, "0").replace(/I/g, "1"),
+      ]) {
+        const res = await h.http().get(`/v1/public/track/${encodeURIComponent(typed)}`);
+        expect(res.status, typed).toBe(200);
+        expect(res.body.waybill).toBe(waybill);
+      }
+    });
+  });
+
   it("cancellation releases the hold and the slot; not after collection", async () => {
     await wallet.adjust(accountId, 100_000, "test funds");
     const b = (

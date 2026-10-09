@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { TrackingView } from "@delicate/contracts";
 import { SHIPMENT_STATUS_LABELS as LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
@@ -12,14 +12,15 @@ export default function TrackForm({ initial = "" }: { initial?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function track(e?: React.FormEvent) {
-    e?.preventDefault();
+  const lookUp = useCallback(async (number: string) => {
+    const trimmed = number.trim();
+    if (!trimmed) return;
     setBusy(true);
     setError(null);
     setView(null);
     try {
       setView(
-        await api<TrackingView>(`/v1/public/track/${encodeURIComponent(waybill.trim())}`, {
+        await api<TrackingView>(`/v1/public/track/${encodeURIComponent(trimmed)}`, {
           account: null,
         }),
       );
@@ -32,6 +33,23 @@ export default function TrackForm({ initial = "" }: { initial?: string }) {
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  /*
+    A link that carries the waybill has already asked the question.
+
+    Every notification we send links here with the number in it, and the page put it in the
+    box and waited to be asked again -- so "Track your delivery" landed on a form that said
+    "where is my delivery?" and showed nothing. Somebody who clicked a tracking link has
+    tracked.
+  */
+  useEffect(() => {
+    if (initial.trim()) void lookUp(initial);
+  }, [initial, lookUp]);
+
+  async function track(e?: React.FormEvent) {
+    e?.preventDefault();
+    await lookUp(waybill);
   }
 
   return (
@@ -40,7 +58,7 @@ export default function TrackForm({ initial = "" }: { initial?: string }) {
         <input
           value={waybill}
           onChange={(e) => setWaybill(e.target.value)}
-          placeholder="e.g. DC-260920-00042"
+          placeholder="e.g. W9RT4H"
           required
           className="flex-1 rounded-2xl border border-[#DAD6CF] px-5 py-3 font-mono text-[14px] focus:outline-none focus:border-[#0A0A0A]"
         />
