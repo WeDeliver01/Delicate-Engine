@@ -76,7 +76,25 @@ export const RateCard = z.object({
   fuelSurchargeBps: Bps,
   minFeeCents: NonNegativeCents,
   /** Charged for every drop after the first on a multi-drop booking. */
+  /**
+   * A flat handling charge for each delivery after the first, on top of its kilometres.
+   *
+   * A stop costs driver time whether it is down the road or across town -- finding the
+   * place, parking, getting someone to the door -- and that is what this is. Set it to zero
+   * for pricing on distance alone.
+   */
   extraDropFeeCents: NonNegativeCents,
+  /**
+   * How much of its own distance a batched drop is charged, in basis points.
+   *
+   * Every delivery is priced on the road kilometres from the collection to its door, exactly
+   * like the first one. But the second drop on a booking is not a second job: the van is
+   * already loaded and already out, and the only new cost is the detour. So its kilometres
+   * are charged at a fraction -- 6000 is 60% -- and the customer gets the saving that
+   * batching actually produces. 10000 charges a batched drop like a separate trip; 0 makes
+   * extra drops free of distance and leaves only the flat fee.
+   */
+  extraDropKmFactorBps: z.number().int().min(0).max(10_000),
   /** Options: liability cover as % of declared value (bps) with a minimum; the rest flat. */
   liabilityCoverBps: Bps,
   liabilityCoverMinCents: NonNegativeCents,

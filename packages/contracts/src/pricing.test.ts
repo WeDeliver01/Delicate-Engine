@@ -18,6 +18,7 @@ const card: RateCard = {
   fuelSurchargeBps: 450,
   minFeeCents: 15_000,
   extraDropFeeCents: 4_500,
+  extraDropKmFactorBps: 6_000,
   liabilityCoverBps: 250,
   liabilityCoverMinCents: 2_500,
   earlyCollectionFeeCents: 6_000,
@@ -82,6 +83,83 @@ const base: PricingInput = {
   },
   vatBps: 1_500,
 };
+
+/**
+ * Every delivery is priced on the road kilometres from the collection to its own door. The
+ * second one on a booking is not a second job -- the van is loaded and already out -- so its
+ * kilometres are charged at a fraction. These pin down that the discount is real, that it is
+ * the operator's number and not a constant in here, and that a single drop is unaffected.
+ */
+describe("pricing a batch of drops", () => {
+  const billable = { overheadKm: 10, dropKm: [20, 20] };
+
+  it("charges a batched drop a share of its own distance", () => {
+    const q = priceQuote({ ...base, dropCount: 2, legsKm: [5, 20, 18, 5], billable });
+    // 10 overhead + 20 full + 20 x 60% = 42 km
+    expect(q.cogsCents).toBe(roundTo(42 * 170));
+    // What was driven is still recorded; the gap between the two is the discount.
+    expect(q.distanceKm).toBe(48);
+  });
+
+  it("is the operator's fraction, not ours", () => {
+    const dearer = priceQuote({
+      ...base,
+      dropCount: 2,
+      legsKm: [5, 20, 18, 5],
+      billable,
+      rateCard: { ...card, extraDropKmFactorBps: 10_000 },
+    });
+    // Charged like a separate trip: 10 + 20 + 20.
+    expect(dearer.cogsCents).toBe(roundTo(50 * 170));
+
+    const free = priceQuote({
+      ...base,
+      dropCount: 2,
+      legsKm: [5, 20, 18, 5],
+      billable,
+      rateCard: { ...card, extraDropKmFactorBps: 0 },
+    });
+    expect(free.cogsCents).toBe(roundTo(30 * 170));
+  });
+
+  it("charges a far second drop more than a near one", () => {
+    // The whole point. A flat fee charged the same for both.
+    const near = priceQuote({
+      ...base,
+      dropCount: 2,
+      legsKm: [5, 20, 2, 5],
+      billable: { overheadKm: 10, dropKm: [20, 2] },
+    });
+    const far = priceQuote({
+      ...base,
+      dropCount: 2,
+      legsKm: [5, 20, 40, 5],
+      billable: { overheadKm: 10, dropKm: [20, 40] },
+    });
+    expect(far.cogsCents).toBeGreaterThan(near.cogsCents);
+  });
+
+  it("leaves a single drop exactly where it was", () => {
+    // The loop and the per-drop measurement are the same journey when there is one drop, so
+    // the change must not move a single-drop price by a cent.
+    const loopOnly = priceQuote({ ...base, legsKm: [8.2, 12.5, 9.3] });
+    const perDrop = priceQuote({
+      ...base,
+      legsKm: [8.2, 12.5, 9.3],
+      billable: { overheadKm: 8.2 + 9.3, dropKm: [12.5] },
+    });
+    expect(perDrop.totalCents).toBe(loopOnly.totalCents);
+    expect(perDrop.cogsCents).toBe(loopOnly.cogsCents);
+  });
+
+  it("still charges the flat handling fee per stop", () => {
+    // Distance is not the only cost of a stop: finding it, parking, getting to the door.
+    const q = priceQuote({ ...base, dropCount: 2, legsKm: [5, 20, 18, 5], billable });
+    expect(q.lines.find((l) => l.code === "extra_drops")?.amountCents).toBe(4_500);
+  });
+});
+
+const roundTo = (n: number) => Math.round(n);
 
 describe("priceQuote", () => {
   it("prices a 30 km standard loop from cogs and margin, lines summing to the total", () => {

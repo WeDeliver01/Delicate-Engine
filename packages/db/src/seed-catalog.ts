@@ -146,6 +146,7 @@ export const CATALOG_SEED = {
     fuelSurchargeBps: 450,
     minFeeCents: 15_000,
     extraDropFeeCents: 4_500,
+    extraDropKmFactorBps: 6_000,
     liabilityCoverBps: 250,
     liabilityCoverMinCents: 2_500,
     earlyCollectionFeeCents: 6_000,

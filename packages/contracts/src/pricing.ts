@@ -81,6 +81,19 @@ export interface PricingInput {
   /** Road kilometres for each leg of the loop, in order. Must have at least 2 legs. */
   legsKm: number[];
   dropCount: number;
+  /**
+   * Billable distance, drop by drop.
+   *
+   * Without it the whole loop is one number and every delivery after the first is a flat
+   * fee, which charges the same for a drop down the road as for one across town. With it
+   * each delivery is priced on the road kilometres from the collection to its own door --
+   * the second and later ones at `extraDropKmFactorBps` of theirs, because the van is
+   * already out and the only new cost is the detour.
+   *
+   * `overheadKm` is the part of the trip that happens once however many drops there are:
+   * getting to the collection and getting home again. Charged once, at full rate.
+   */
+  billable?: { overheadKm: number; dropKm: number[] };
   rateCard: RateCard;
   serviceLevel: ServiceLevel;
   parcels: { packageType: PackageType; quantity: number }[];
@@ -170,10 +183,29 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   if (input.legsKm.length < 2) throw new Error("a loop needs at least two legs");
   if (input.dropCount < 1) throw new Error("at least one drop is required");
 
-  const legsKm = input.legsKm.map((km) => Math.round(km * 100) / 100);
-  const distanceKm = Math.round(legsKm.reduce((a, b) => a + b, 0) * 100) / 100;
+  const round2 = (km: number) => Math.round(km * 100) / 100;
+  const legsKm = input.legsKm.map(round2);
 
-  const cogsCents = roundCents(distanceKm * rateCard.costPerKmCents);
+  /*
+    What the customer is charged kilometres for. Either the plain loop -- one number, every
+    drop after the first a flat fee -- or, when the caller has measured each drop, the
+    overhead once plus each drop's own distance, with the batched ones discounted.
+  */
+  const billableKm = input.billable
+    ? round2(
+        input.billable.overheadKm +
+          input.billable.dropKm.reduce(
+            (total, km, i) => total + km * (i === 0 ? 1 : rateCard.extraDropKmFactorBps / 10_000),
+            0,
+          ),
+      )
+    : round2(legsKm.reduce((a, b) => a + b, 0));
+  // What was actually driven, which is what the cost of the day is measured against. The
+  // same number as the billable one for a single drop, and more than it for a batch -- the
+  // difference is the discount, and it belongs on the record rather than in a comment.
+  const distanceKm = round2(legsKm.reduce((a, b) => a + b, 0));
+
+  const cogsCents = roundCents(billableKm * rateCard.costPerKmCents);
   const marginFraction = Math.min(rateCard.marginBps, 9_900) / 10_000;
   let baseCents = roundCents(cogsCents / (1 - marginFraction));
   baseCents = applyBps(baseCents, serviceLevel.multiplierBps) + serviceLevel.surchargeCents;
@@ -193,6 +225,9 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   if (fuelCents > 0) lines.push({ code: "fuel", label: "Fuel surcharge", amountCents: fuelCents });
 
   const extraDrops = input.dropCount - 1;
+  // On top of their kilometres, which are already in the line above: a stop costs driver
+  // time whether it is down the road or across town. Zero on a rate card that prices on
+  // distance alone.
   if (extraDrops > 0 && rateCard.extraDropFeeCents > 0) {
     lines.push({
       code: "extra_drops",

@@ -105,6 +105,8 @@ export const rateCards = pgTable(
     fuelSurchargeBps: integer("fuel_surcharge_bps").notNull().default(0),
     minFeeCents: integer("min_fee_cents").notNull().default(0),
     extraDropFeeCents: integer("extra_drop_fee_cents").notNull().default(0),
+    /** What share of its own kilometres a drop after the first is charged. 6000 = 60%. */
+    extraDropKmFactorBps: integer("extra_drop_km_factor_bps").notNull().default(6_000),
     liabilityCoverBps: integer("liability_cover_bps").notNull().default(0),
     liabilityCoverMinCents: integer("liability_cover_min_cents").notNull().default(0),
     earlyCollectionFeeCents: integer("early_collection_fee_cents").notNull().default(0),

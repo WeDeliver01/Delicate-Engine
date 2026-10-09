@@ -46,7 +46,7 @@ export class QuoteService {
       this.catalog.packageTypesByCodes(input.packageTypeCodes),
     ]);
     const legsKm = await this.geo.routeLegsKm(
-      loop(
+      routePoints(
         depot.location,
         input.collection.location,
         input.drops.map((d) => d.location),
@@ -54,6 +54,7 @@ export class QuoteService {
     );
     const breakdown = priceQuote({
       legsKm,
+      billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
       rateCard,
       serviceLevel,
@@ -144,7 +145,7 @@ export class QuoteService {
     });
 
     const legsKm = await this.geo.routeLegsKm(
-      loop(
+      routePoints(
         depot.location,
         input.collection.address.location,
         input.drops.map((d) => d.address.location),
@@ -152,6 +153,7 @@ export class QuoteService {
     );
     const breakdown = priceQuote({
       legsKm,
+      billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
       rateCard,
       serviceLevel,
@@ -283,8 +285,38 @@ export class QuoteService {
 }
 
 /** depot → collection → drops… → depot */
-function loop(depot: LatLng, collection: LatLng, drops: LatLng[]): LatLng[] {
-  return [depot, collection, ...drops, depot];
+/**
+ * The points to measure, and how to read the answer back.
+ *
+ * Two different distances come out of one routing call. What the van drives is the loop:
+ * depot, collection, every drop in turn, home. What the customer is charged is each drop's
+ * own road distance from the collection, because "it is only ten minutes further on" is a
+ * fact about our route and not about their delivery.
+ *
+ * So the points go out and back through the collection -- depot, collection, drop, collection,
+ * drop, ..., depot -- and the legs that matter are read off by position. For a single drop
+ * this is exactly the old loop and exactly the old price; the return legs only exist, and are
+ * only paid for, when there is more than one drop.
+ */
+function routePoints(depot: LatLng, collection: LatLng, drops: LatLng[]): LatLng[] {
+  const out: LatLng[] = [depot];
+  drops.forEach((drop) => out.push(collection, drop));
+  out.push(depot);
+  return out;
+}
+
+interface BillableDistance {
+  overheadKm: number;
+  dropKm: number[];
+}
+
+/** Pull the billable parts out of the legs `routePoints` asked for. */
+function billableFrom(legsKm: number[], dropCount: number): BillableDistance {
+  // depot -> collection, and the last drop -> depot. Once, however many drops there are.
+  const overheadKm = (legsKm[0] ?? 0) + (legsKm[legsKm.length - 1] ?? 0);
+  const dropKm: number[] = [];
+  for (let i = 0; i < dropCount; i++) dropKm.push(legsKm[1 + 2 * i] ?? 0);
+  return { overheadKm, dropKm };
 }
 
 export function toQuote(r: typeof quotes.$inferSelect): Quote {

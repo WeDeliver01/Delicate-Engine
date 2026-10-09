@@ -1,0 +1,1 @@
+ALTER TABLE "rate_cards" ADD COLUMN "extra_drop_km_factor_bps" integer DEFAULT 6000 NOT NULL;
