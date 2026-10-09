@@ -71,6 +71,19 @@ for required in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY; do
   It is baked into the browser bundle at build time, so sign-in would fail and setting it
   afterwards would not help without rebuilding. Fill it in first."
 done
+# Every tracking link the engine sends is built from WEB_PUBLIC_URL, and it defaults to
+# localhost when unset. A recipient's "follow your delivery" link is an SMS that has already
+# been paid for by the time anyone notices it points at a machine they do not have.
+case "${WEB_PUBLIC_URL:-}" in
+  "") die "WEB_PUBLIC_URL is empty in $ENV_FILE.
+  Tracking links in emails and texts are built from it, and it falls back to
+  http://localhost:3000 — so every recipient would be sent a link to their own machine.
+  Set WEB_PUBLIC_URL=https://$DEV_HOST." ;;
+  *"$DEV_HOST"*) ;;
+  *) die "WEB_PUBLIC_URL ($WEB_PUBLIC_URL) does not mention $DEV_HOST. Tracking links sent to
+  customers and recipients would point somewhere else. Set WEB_PUBLIC_URL=https://$DEV_HOST." ;;
+esac
+
 # The hostname the engine believes it lives at is also compiled in, by way of CORS. A mismatch
 # here is a browser console full of CORS errors and a login that goes nowhere.
 case "${CORS_ORIGINS:-}" in
@@ -81,6 +94,7 @@ esac
 echo "  host      $DEV_HOST"
 echo "  database  container postgres"
 echo "  auth      ${SUPABASE_URL}"
+echo "  links     ${WEB_PUBLIC_URL}/live/... in customer messages"
 if [[ "$EDGE" == "1" ]]; then
   echo "  edge      Caddy on 80/443"
   # Refuse rather than race: something already on the edge is probably another site.
