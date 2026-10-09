@@ -37,3 +37,4 @@ apps/driver/.expo/
 apps/driver/.expo-export/
 apps/driver/android/
 apps/driver/ios/
+apps/api/supabase-emails/
