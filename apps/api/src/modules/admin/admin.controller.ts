@@ -1,6 +1,6 @@
 import { Controller, Get, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { OutboxStatus, Pagination, Uuid } from "@delicate/contracts";
 import { accounts, auditLog, organizations, outboxMessages, wallets } from "@delicate/db";
@@ -12,6 +12,11 @@ import { DbService } from "../../infra/db.module.js";
 
 const OutboxQuery = Pagination.extend({
   status: OutboxStatus.optional(),
+});
+
+/** The account list, narrowed by name. Ops booking for a customer know the name, not the id. */
+const AccountsQuery = Pagination.extend({
+  q: z.string().trim().min(1).max(120).optional(),
 });
 
 /**
@@ -29,9 +34,12 @@ export class AdminController {
   ) {}
 
   @Get("accounts")
-  async accounts(@Query(Pagination) q: Pagination) {
+  async accounts(@Query(AccountsQuery) q: z.infer<typeof AccountsQuery>) {
     const { db } = this.dbs;
     const cursorDate = q.cursor ? new Date(q.cursor) : null;
+    // Matched against the organization too: half of these are "Woolworths — Menlyn" to the
+    // customer and "Menlyn" to us.
+    const term = q.q ? `%${escapeLike(q.q)}%` : null;
     const rows = await db
       .select({
         id: accounts.id,
@@ -49,7 +57,12 @@ export class AdminController {
       .from(accounts)
       .leftJoin(organizations, eq(organizations.id, accounts.organizationId))
       .leftJoin(wallets, eq(wallets.accountId, accounts.id))
-      .where(cursorDate ? lt(accounts.createdAt, cursorDate) : undefined)
+      .where(
+        and(
+          cursorDate ? lt(accounts.createdAt, cursorDate) : undefined,
+          term ? or(ilike(accounts.name, term), ilike(organizations.name, term)) : undefined,
+        ),
+      )
       .orderBy(desc(accounts.createdAt))
       .limit(q.limit + 1);
     return page(rows, q.limit);
@@ -132,6 +145,11 @@ export class AdminController {
       return row;
     });
   }
+}
+
+/** `%` and `_` are wildcards to ILIKE. A customer with one in their name did not mean that. */
+function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => "\\" + c);
 }
 
 function page<T extends { createdAt: Date }>(rows: T[], limit: number) {

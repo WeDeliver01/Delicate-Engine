@@ -82,3 +82,16 @@ export const Member = z.object({
   createdAt: z.string().datetime(),
 });
 export type Member = z.infer<typeof Member>;
+
+/**
+ * The house account walk-in work is booked under.
+ *
+ * Somebody phones, or arrives at the door, with a cake and an address. They have no account
+ * and there is no time to make them one, but the delivery still has to belong somewhere: a
+ * booking charges a wallet, and a wallet hangs off an account. So one account exists for all
+ * of them, created by migration with this fixed id so that every environment has the same one.
+ *
+ * Who the delivery is actually for goes in the booking's customer reference. The alternative
+ * -- an account per walk-in -- leaves a trail of single-use accounts nobody ever closes.
+ */
+export const WALK_IN_ACCOUNT_ID = "00000000-0000-4000-8000-000000000001";

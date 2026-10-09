@@ -77,6 +77,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   if (needsOnboarding && pathname !== ONBOARDING) return <Centered>Setting you up…</Centered>;
 
   const { user, accounts } = me.data;
+  // Whoever's account this is -- one of theirs, or the customer staff stepped into.
   const active = me.activeAccount;
 
   return (

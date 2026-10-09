@@ -115,7 +115,9 @@ export default function PortalHome() {
           <h1 className="page-title mt-1">Today</h1>
           <p className="lede mt-1">
             {d ? prettyDate(d.today.date) : "…"} ·{" "}
-            {account.type === "business" ? "Business" : "Personal"} account
+            {/* No type when staff have stepped in: there is no membership to read it off. */}
+            {account.type ? `${account.type === "business" ? "Business" : "Personal"} ` : ""}
+            account
           </p>
         </div>
         <Link href="/portal/book" className="btn btn-primary">
