@@ -2,6 +2,9 @@ import { Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   AccountExternalRef,
+  CreateWebhookSubscriptionRequest,
+  WebhookSubscription,
+  WebhookSubscriptionWithSecret,
   CreateServiceClientRequest,
   LinkAccountExternalRefRequest,
   ServiceClient,
@@ -9,12 +12,19 @@ import type {
   ServiceScope,
   UpdateServiceClientRequest,
 } from "@delicate/contracts";
-import { accountExternalRefs, accounts, serviceClientAccounts, serviceClients } from "@delicate/db";
+import {
+  accountExternalRefs,
+  accounts,
+  serviceClientAccounts,
+  serviceClients,
+  webhookSubscriptions,
+} from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { AppError } from "../../common/errors.js";
 import { requestContext } from "../../common/request-context.js";
 import { generateCredential } from "../../auth/service-credential.js";
+import { WebhookSender } from "./webhook-sender.service.js";
 
 /**
  * Issuing and withdrawing machine access.
@@ -274,6 +284,82 @@ export class ServiceAccessService {
     return { items: rows.map(toExternalRef) };
   }
 
+  // ── webhook subscriptions ───────────────────────────────────────────────────
+
+  async createSubscription(
+    input: CreateWebhookSubscriptionRequest,
+  ): Promise<WebhookSubscriptionWithSecret> {
+    await this.require(input.serviceClientId);
+    const secret = WebhookSender.newSecret();
+
+    const row = await this.dbs.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(webhookSubscriptions)
+        .values({
+          serviceClientId: input.serviceClientId,
+          url: input.url,
+          secret,
+          eventTypes: input.eventTypes,
+        })
+        .returning();
+      await this.audit.record(tx, {
+        action: "webhook_subscription.create",
+        entityType: "service_client",
+        entityId: input.serviceClientId,
+        after: { url: input.url, eventTypes: input.eventTypes },
+      });
+      return created!;
+    });
+
+    return { ...toSubscription(row), secret };
+  }
+
+  async listSubscriptions(serviceClientId?: string): Promise<{ items: WebhookSubscription[] }> {
+    const rows = await this.dbs.db
+      .select()
+      .from(webhookSubscriptions)
+      .where(
+        serviceClientId ? eq(webhookSubscriptions.serviceClientId, serviceClientId) : undefined,
+      )
+      .orderBy(desc(webhookSubscriptions.createdAt));
+    return { items: rows.map(toSubscription) };
+  }
+
+  /** Switch one back on after whatever broke it has been fixed. */
+  async enableSubscription(id: string): Promise<WebhookSubscription> {
+    return this.dbs.transaction(async (tx) => {
+      const [row] = await tx
+        .update(webhookSubscriptions)
+        .set({ status: "active", consecutiveFailures: 0, lastFailureReason: null })
+        .where(eq(webhookSubscriptions.id, id))
+        .returning();
+      if (!row) throw AppError.notFound("webhook subscription");
+      await this.audit.record(tx, {
+        action: "webhook_subscription.enable",
+        entityType: "service_client",
+        entityId: row.serviceClientId,
+        after: { url: row.url },
+      });
+      return toSubscription(row);
+    });
+  }
+
+  async deleteSubscription(id: string): Promise<void> {
+    await this.dbs.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(webhookSubscriptions)
+        .where(eq(webhookSubscriptions.id, id))
+        .returning();
+      if (!row) throw AppError.notFound("webhook subscription");
+      await this.audit.record(tx, {
+        action: "webhook_subscription.delete",
+        entityType: "service_client",
+        entityId: row.serviceClientId,
+        before: { url: row.url },
+      });
+    });
+  }
+
   // ── internals ───────────────────────────────────────────────────────────────
 
   private async require(id: string): Promise<ServiceClient> {
@@ -318,6 +404,22 @@ function toServiceClient(
     accountIds,
     lastUsedAt: r.lastUsedAt?.toISOString() ?? null,
     revokedAt: r.revokedAt?.toISOString() ?? null,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
+function toSubscription(r: typeof webhookSubscriptions.$inferSelect): WebhookSubscription {
+  return {
+    id: r.id,
+    serviceClientId: r.serviceClientId,
+    url: r.url,
+    eventTypes: r.eventTypes,
+    status: r.status,
+    lastDeliveredAt: r.lastDeliveredAt?.toISOString() ?? null,
+    lastFailedAt: r.lastFailedAt?.toISOString() ?? null,
+    lastFailureReason: r.lastFailureReason,
+    consecutiveFailures: r.consecutiveFailures,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };

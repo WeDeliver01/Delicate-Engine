@@ -232,6 +232,13 @@
       "when": 1791566467378,
       "tag": "0032_steep_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791633946054,
+      "tag": "0033_plain_eternals",
+      "breakpoints": true
     }
   ]
 }

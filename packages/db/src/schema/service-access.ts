@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -96,8 +97,56 @@ export const accountExternalRefs = pgTable(
   ],
 );
 
+export const webhookSubscriptionStatusEnum = pgEnum("webhook_subscription_status", [
+  "active",
+  "disabled",
+]);
+
+/**
+ * Where to tell another system that something happened.
+ *
+ * Until now every event the engine raised stayed inside it: the outbox fed our own handlers,
+ * and the only thing that reached a person was an email or an SMS. A system that books on a
+ * customer's behalf needs the other half of that — a parcel can be collected, delivered and
+ * signed for, and the merchant's own order would sit untouched forever.
+ *
+ * The secret is per subscription, not per client: a subscription is a URL, and whoever
+ * operates that URL needs to verify what arrives at it without being handed the credential
+ * that books deliveries.
+ */
+export const webhookSubscriptions = pgTable(
+  "webhook_subscriptions",
+  {
+    id: id(),
+    serviceClientId: uuid("service_client_id")
+      .notNull()
+      .references(() => serviceClients.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    /** Signing key for the delivery. Shown once, like any other secret we issue. */
+    secret: text("secret").notNull(),
+    /** Event types this subscription wants. Empty means every type we deliver. */
+    eventTypes: text("event_types").array().notNull().default([]),
+    status: webhookSubscriptionStatusEnum("status").notNull().default("active"),
+    lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true, mode: "date" }),
+    lastFailedAt: timestamp("last_failed_at", { withTimezone: true, mode: "date" }),
+    lastFailureReason: text("last_failure_reason"),
+    /** Consecutive failures. Reset on success; a climbing number is worth noticing. */
+    consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+    ...timestamps(),
+  },
+  (t) => [index("webhook_subscriptions_client_idx").on(t.serviceClientId, t.status)],
+);
+
 export const serviceClientsRelations = relations(serviceClients, ({ many }) => ({
   accounts: many(serviceClientAccounts),
+  webhooks: many(webhookSubscriptions),
+}));
+
+export const webhookSubscriptionsRelations = relations(webhookSubscriptions, ({ one }) => ({
+  serviceClient: one(serviceClients, {
+    fields: [webhookSubscriptions.serviceClientId],
+    references: [serviceClients.id],
+  }),
 }));
 
 export const serviceClientAccountsRelations = relations(serviceClientAccounts, ({ one }) => ({

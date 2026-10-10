@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
   CreateServiceClientRequest,
+  CreateWebhookSubscriptionRequest,
   LinkAccountExternalRefRequest,
   UpdateServiceClientRequest,
   Uuid,
@@ -82,6 +83,43 @@ export class AdminAccountExternalRefsController {
   @Delete(":id")
   async unlink(@Params(IdParam) p: { id: string }) {
     await this.svc.unlinkExternalRef(p.id);
+    return { ok: true };
+  }
+}
+
+/**
+ * Where the engine tells another system that something happened.
+ *
+ * super_admin only, like issuing a credential: a subscription sends customer names and
+ * addresses to a URL, and choosing that URL is the same weight of decision as choosing who may
+ * book against a wallet.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/webhook-subscriptions")
+@PlatformRoles("super_admin")
+export class AdminWebhookSubscriptionsController {
+  constructor(private readonly svc: ServiceAccessService) {}
+
+  @Get()
+  list(@Query(z.object({ serviceClientId: Uuid.optional() })) q: { serviceClientId?: string }) {
+    return this.svc.listSubscriptions(q.serviceClientId);
+  }
+
+  /** The response carries the signing secret. It is not readable afterwards. */
+  @Post()
+  create(@Body(CreateWebhookSubscriptionRequest) body: CreateWebhookSubscriptionRequest) {
+    return this.svc.createSubscription(body);
+  }
+
+  @Post(":id/enable")
+  enable(@Params(IdParam) p: { id: string }) {
+    return this.svc.enableSubscription(p.id);
+  }
+
+  @Delete(":id")
+  async remove(@Params(IdParam) p: { id: string }) {
+    await this.svc.deleteSubscription(p.id);
     return { ok: true };
   }
 }

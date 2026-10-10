@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { auditLog, bookings, quotes, users } from "@delicate/db";
 import type {
@@ -587,6 +588,115 @@ describe("service access", () => {
         .get(`/v1/service/shipments/${shipmentId}/waybill`)
         .set(asService(without.secret));
       expect(denied.status).toBe(403);
+    });
+  });
+
+  describe("telling another system what happened", () => {
+    /** Stands in for the merchant's own endpoint, and records what arrived at it. */
+    function receiver(respondWith = 200) {
+      const calls: { body: string; headers: Record<string, string> }[] = [];
+      const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+        calls.push({
+          body: String(init.body),
+          headers: init.headers as Record<string, string>,
+        });
+        return new Response("", { status: respondWith });
+      });
+      vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock as unknown as typeof fetch);
+      return calls;
+    }
+
+    async function subscribe(serviceClientId: string, eventTypes: string[] = []) {
+      const res = await h
+        .http()
+        .post("/v1/admin/webhook-subscriptions")
+        .set(asAdmin())
+        .send({ serviceClientId, url: "https://merchant.example/hooks/delicate", eventTypes });
+      expect(res.status).toBe(201);
+      return res.body as { id: string; secret: string };
+    }
+
+    /** Book, then move the shipment on, then let the outbox run. */
+    async function bookAndAdvance(secret: string, to = "collected") {
+      const made = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(secret))
+        .send(bookingBody())
+        .expect(201);
+      const shipmentId = (made.body as ServiceBookingResponse).booking.shipments[0]!.id;
+
+      await h
+        .http()
+        .patch(`/v1/admin/shipments/${shipmentId}/status`)
+        .set(asAdmin())
+        .send({ status: to });
+
+      await h.dispatcher.tick();
+      return shipmentId;
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it("posts a signed delivery when a shipment moves", async () => {
+      const client = await newClient();
+      const subscription = await subscribe(client.id);
+      const calls = receiver();
+
+      const shipmentId = await bookAndAdvance(client.secret);
+
+      const call = calls.find((c) => c.body.includes("shipment.status_changed"));
+      expect(call).toBeTruthy();
+
+      const body = JSON.parse(call!.body);
+      expect(body.type).toBe("shipment.status_changed");
+      expect(body.data.shipmentId).toBe(shipmentId);
+      expect(body.data.to).toBe("collected");
+      expect(body.accountId).toBe(accountId);
+      expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
+
+      // Signed over the exact bytes, so the receiver can verify what it actually got.
+      const expected = createHmac("sha256", subscription.secret)
+        .update(call!.body)
+        .digest("base64");
+      expect(call!.headers["x-delicate-signature"]).toBe(expected);
+      expect(call!.headers["x-delicate-delivery"]).toBe(body.id);
+      expect(call!.headers["x-delicate-event"]).toBe("shipment.status_changed");
+    });
+
+    it("sends nothing to a subscription that did not ask for this event", async () => {
+      const client = await newClient();
+      await subscribe(client.id, ["delivery.completed"]);
+      const calls = receiver();
+
+      await bookAndAdvance(client.secret);
+
+      expect(calls.filter((c) => c.body.includes("shipment.status_changed"))).toHaveLength(0);
+    });
+
+    it("records the failure when a receiver refuses, and keeps the subscription", async () => {
+      const client = await newClient();
+      await subscribe(client.id);
+      receiver(500);
+
+      await bookAndAdvance(client.secret);
+
+      const listed = await h.http().get("/v1/admin/webhook-subscriptions").set(asAdmin());
+      const subscription = listed.body.items[0];
+      expect(subscription.consecutiveFailures).toBeGreaterThan(0);
+      expect(subscription.lastFailureReason).toContain("500");
+      // One bad delivery is a bad moment, not a reason to stop telling them anything.
+      expect(subscription.status).toBe("active");
+    });
+
+    it("never leaks the signing secret back out of the admin list", async () => {
+      const client = await newClient();
+      const created = await subscribe(client.id);
+      const listed = await h.http().get("/v1/admin/webhook-subscriptions").set(asAdmin());
+
+      expect(created.secret).toMatch(/^whsec_/);
+      expect(listed.body.items[0]).not.toHaveProperty("secret");
+      expect(JSON.stringify(listed.body)).not.toContain(created.secret);
     });
   });
 

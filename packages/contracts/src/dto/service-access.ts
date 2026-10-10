@@ -111,6 +111,60 @@ export const LinkAccountExternalRefRequest = z.object({
 });
 export type LinkAccountExternalRefRequest = z.infer<typeof LinkAccountExternalRefRequest>;
 
+export const WebhookSubscriptionStatus = z.enum(["active", "disabled"]);
+export type WebhookSubscriptionStatus = z.infer<typeof WebhookSubscriptionStatus>;
+
+/**
+ * Where the engine tells another system that something happened.
+ *
+ * Delivery is at-least-once and unordered: the receiver is expected to be idempotent and to
+ * trust its own records over the arrival order. Every delivery carries a unique id and an
+ * HMAC signature over the exact body, so a receiver can both verify and de-duplicate.
+ */
+export const WebhookSubscription = z.object({
+  id: Uuid,
+  serviceClientId: Uuid,
+  url: z.string().url(),
+  /** Event types wanted. Empty means every type the engine delivers. */
+  eventTypes: z.array(z.string()),
+  status: WebhookSubscriptionStatus,
+  lastDeliveredAt: z.string().datetime().nullable(),
+  lastFailedAt: z.string().datetime().nullable(),
+  lastFailureReason: z.string().nullable(),
+  consecutiveFailures: z.number().int(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type WebhookSubscription = z.infer<typeof WebhookSubscription>;
+
+/** The only response carrying the signing secret; it is not readable afterwards. */
+export const WebhookSubscriptionWithSecret = WebhookSubscription.extend({
+  secret: z.string(),
+});
+export type WebhookSubscriptionWithSecret = z.infer<typeof WebhookSubscriptionWithSecret>;
+
+export const CreateWebhookSubscriptionRequest = z.object({
+  serviceClientId: Uuid,
+  /**
+   * HTTPS only outside development. A status update names a customer and an address, and
+   * putting that on the open internet unencrypted is not a choice a subscription should offer.
+   */
+  url: z.string().url(),
+  eventTypes: z.array(z.string()).default([]),
+});
+export type CreateWebhookSubscriptionRequest = z.infer<typeof CreateWebhookSubscriptionRequest>;
+
+/** What a receiver is sent. The envelope is stable; `data` varies by `type`. */
+export const WebhookDelivery = z.object({
+  /** Unique per attempt-group, so a receiver can discard a repeat. */
+  id: Uuid,
+  type: z.string(),
+  occurredAt: z.string().datetime(),
+  accountId: Uuid.nullable(),
+  data: z.record(z.unknown()),
+});
+export type WebhookDelivery = z.infer<typeof WebhookDelivery>;
+
 /**
  * Book in one call.
  *

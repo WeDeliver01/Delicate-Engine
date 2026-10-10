@@ -70,6 +70,7 @@ const TRUNCATE = [
   "settings",
   "account_external_refs",
   "service_client_accounts",
+  "webhook_subscriptions",
   "service_clients",
   "memberships",
   "accounts",
