@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import type {
+  ClockShiftRequest,
   Driver,
   DriverPosition,
   FuelLog,
@@ -213,11 +214,111 @@ export class FleetService {
   }
 
   /**
+   * Clock on. One button, nothing to fill in.
+   *
+   * Idempotent: a driver who presses it twice, or whose phone retried, gets the same open shift
+   * back and no second event. `startedAt` is kept from the first start of the day, so a driver
+   * who clocks off after the morning run and back on for the afternoon has one shift with a gap
+   * in it rather than a start time that walks forward.
+   *
+   * Returns null when dispatch has not rostered them for today. Opening a shift nobody
+   * scheduled would put a driver on the board that dispatch never put there, and the app says
+   * so rather than pretending the press worked.
+   */
+  async openShift(driver: Driver, input: ClockShiftRequest): Promise<Shift | null> {
+    const date = await this.localDate();
+    return this.dbs.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(shifts)
+        .where(and(eq(shifts.driverId, driver.id), eq(shifts.date, date)))
+        .for("update");
+      if (!row) return null;
+      if (row.status === "open") return toShift(row);
+
+      const reopened = row.startedAt != null;
+      const [updated] = await tx
+        .update(shifts)
+        .set({
+          status: "open",
+          startedAt: row.startedAt ?? this.clock.now(),
+          // Cleared, because the shift is running again and an end time in the past would read
+          // as though it were still over.
+          endedAt: null,
+        })
+        .where(eq(shifts.id, row.id))
+        .returning();
+
+      if (input.location)
+        await this.recordPosition(tx, driver.id, updated!.id, {
+          location: input.location,
+          accuracyM: null,
+          speedKmh: null,
+          recordedAt: this.clock.now().toISOString(),
+        });
+
+      await this.outbox.emit(
+        tx,
+        "shift.opened",
+        { shiftId: updated!.id, driverId: driver.id, date, reopened },
+        // The count is in the key: clocking on for the afternoon is a second real event, and a
+        // key without it would be swallowed as a duplicate of the morning.
+        { dedupeKey: `shift:${updated!.id}:opened:${reopened ? "again" : "first"}` },
+      );
+      return toShift(updated!);
+    });
+  }
+
+  /**
+   * Clock off. Also one button, and also idempotent.
+   *
+   * Nothing is required to close a shift either — a driver who never logged their mileage still
+   * gets to go home, and the odometer pair simply has the holes it honestly has.
+   */
+  async closeShift(driver: Driver, input: ClockShiftRequest): Promise<Shift | null> {
+    const date = await this.localDate();
+    return this.dbs.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(shifts)
+        .where(and(eq(shifts.driverId, driver.id), eq(shifts.date, date)))
+        .for("update");
+      if (!row) return null;
+      if (row.status !== "open") return toShift(row);
+
+      const endedAt = this.clock.now();
+      const [updated] = await tx
+        .update(shifts)
+        .set({ status: "closed", endedAt })
+        .where(eq(shifts.id, row.id))
+        .returning();
+
+      if (input.location)
+        await this.recordPosition(tx, driver.id, updated!.id, {
+          location: input.location,
+          accuracyM: null,
+          speedKmh: null,
+          recordedAt: endedAt.toISOString(),
+        });
+
+      await this.outbox.emit(
+        tx,
+        "shift.closed",
+        { shiftId: updated!.id, driverId: driver.id, date },
+        // Closing twice in a day is a real pair of events once a shift can be reopened, so the
+        // instant is in the key.
+        { dedupeKey: `shift:${updated!.id}:closed:${endedAt.toISOString()}` },
+      );
+      return toShift(updated!);
+    });
+  }
+
+  /**
    * Record an odometer (and optionally fuel) reading against the driver's rostered shift.
    *
-   * There is no clocking on. A driver is rostered by dispatch and their work appears; nothing
-   * they do is gated on having pressed a button first, because a driver standing at a
-   * collection with a van full of cake should not be told to go and find their odometer.
+   * Entirely optional, and no longer the thing that gets a shift moving — it used to be the
+   * only action that did, which made a record nobody is obliged to keep into a gate on the
+   * day's work. A driver can log a reading before clocking on, after clocking off, or never.
    *
    * The first reading of the day becomes the opening one and every later reading replaces the
    * closing one, so the pair still spans the day's running. A driver who logs once has an
@@ -342,14 +443,10 @@ export class FleetService {
       const shift = await this.shiftFor(driver.id, date, tx);
       // Keep the newest as the live position; store all for the trail.
       const sorted = [...pings].sort((a, b) => a.recordedAt.localeCompare(b.recordedAt));
-      const first = sorted[0];
-      if (shift && shift.status === "scheduled" && first) {
-        await tx
-          .update(shifts)
-          .set({ status: "open", startedAt: new Date(first.recordedAt) })
-          .where(and(eq(shifts.id, shift.id), eq(shifts.status, "scheduled")));
-        shift.status = "open";
-      }
+      // A ping no longer opens the shift. It used to, which meant the shift started itself the
+      // moment the app sent a position — so a start button would have been decorative, already
+      // pressed before the driver could reach it. Clocking on is `openShift`, and a position
+      // that arrives outside a shift is still recorded, just not attributed to one.
       for (const p of sorted)
         await this.recordPosition(tx, driver.id, shift?.status === "open" ? shift.id : null, p);
     });
@@ -371,9 +468,9 @@ export class FleetService {
       driverId: r.driverId,
       location: r.location as LatLng,
       recordedAt: r.recordedAt.toISOString(),
-      // Rostered for today and not stood down. It cannot mean "has an open shift" any more:
-      // nothing opens one, because drivers no longer clock on.
-      onShift: r.shiftStatus != null && r.shiftStatus !== "closed",
+      // Clocked on, which is what the word means again now that a driver presses a button to
+      // do it. Rostered-but-not-started reads as off shift, because that is what it is.
+      onShift: r.shiftStatus === "open",
     }));
   }
 

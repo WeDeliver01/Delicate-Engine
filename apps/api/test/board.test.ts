@@ -135,9 +135,9 @@ describe("dispatch board", () => {
   /**
    * Roster the driver for the day and put their van on the map.
    *
-   * The position used to arrive as a side effect of the driver starting a shift. They no
-   * longer start one, so it comes from where it comes from in life: the app reporting its
-   * location while the driver drives.
+   * Deliberately without clocking them on: the board has to work for a driver who is rostered
+   * and has not pressed start yet, which is every driver first thing in the morning. A position
+   * arrives from the app reporting its location, not from the act of starting a shift.
    */
   const rosterDriver = async () => {
     await h

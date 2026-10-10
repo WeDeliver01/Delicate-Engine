@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { z } from "zod";
 import {
+  ClockShiftRequest,
   CollectRequest,
   DeliverRequest,
   DriverNotifyRequest,
@@ -50,6 +51,24 @@ export class DriverController {
     return this.dispatch.day(d);
   }
 
+  /**
+   * Clocking on and off. One press, nothing to fill in, and both idempotent — a driver on a
+   * patchy signal who taps twice gets the same answer rather than a second shift.
+   *
+   * Null back means dispatch has not rostered them today, which the app says plainly instead
+   * of leaving a button that looks as though it did nothing.
+   */
+  @Post("shift/start")
+  openShift(@CurrentDriver() d: Driver, @Body(ClockShiftRequest) body: ClockShiftRequest) {
+    return this.fleet.openShift(d, body);
+  }
+
+  @Post("shift/end")
+  closeShift(@CurrentDriver() d: Driver, @Body(ClockShiftRequest) body: ClockShiftRequest) {
+    return this.fleet.closeShift(d, body);
+  }
+
+  /** Optional, and not a precondition for anything. Log one, log several, or log none. */
   @Post("odometer")
   recordOdometer(
     @CurrentDriver() d: Driver,

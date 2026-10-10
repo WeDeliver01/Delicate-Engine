@@ -538,7 +538,7 @@ describe("fleet, dispatch & settlement", () => {
     expect(res.text).toBe("");
   });
 
-  it("opens the roster row from the driver's first position, since nobody clocks on", async () => {
+  it("clocks a driver on with one press, and will not do it behind their back", async () => {
     await h
       .http()
       .post("/v1/admin/fleet/shifts")
@@ -551,34 +551,74 @@ describe("fleet, dispatch & settlement", () => {
     expect(rostered.shift?.status).toBe("scheduled");
     expect(rostered.shift?.startedAt).toBeNull();
 
-    const firstSeen = new Date(Date.now() - 120_000).toISOString();
-    await h
-      .http()
-      .post("/v1/driver/location")
-      .set(asDriver())
-      .send({
-        pings: [
-          { location: MENLYN, recordedAt: firstSeen },
-          { location: CENTURION, recordedAt: new Date().toISOString() },
-        ],
-      })
-      .expect(202);
-
-    // The earliest ping of the batch is when the day began, not when the batch arrived — the
-    // app buffers while out of signal, so the two differ by however long the dead spot lasted.
-    const moving = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
-    expect(moving.shift?.status).toBe("open");
-    expect(moving.shift?.startedAt).toBe(firstSeen);
-
-    // A later batch must not shunt the start time forward.
+    // A position used to open the shift by itself. It must not: a start button that has
+    // already been pressed by the app before the driver reaches it is decoration, and a
+    // driver's location before they clock on is their own time.
     await h
       .http()
       .post("/v1/driver/location")
       .set(asDriver())
       .send({ pings: [{ location: MENLYN, recordedAt: new Date().toISOString() }] })
       .expect(202);
-    const later = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
-    expect(later.shift?.startedAt).toBe(firstSeen);
+    const pinged = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(pinged.shift?.status).toBe("scheduled");
+    expect(pinged.shift?.startedAt).toBeNull();
+
+    // One button, and nothing in the body to fill in.
+    const started = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
+    expect(started.status).toBe(201);
+    expect(started.body.status).toBe("open");
+    expect(started.body.startedAt).toBeTruthy();
+    expect(started.body.startOdometerKm).toBeNull(); // no mileage asked for, none recorded
+    const firstStart = started.body.startedAt as string;
+
+    // Pressed twice on a patchy signal: the same shift back, not a second one.
+    const again = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
+    expect(again.body.id).toBe(started.body.id);
+    expect(again.body.startedAt).toBe(firstStart);
+
+    const ended = await h.http().post("/v1/driver/shift/end").set(asDriver()).send({});
+    expect(ended.body.status).toBe("closed");
+    expect(ended.body.endedAt).toBeTruthy();
+    expect(ended.body.endOdometerKm).toBeNull(); // nor to finish
+
+    // Back out for an afternoon run. One shift with a gap in it, so the morning's start time
+    // stands and the end time stops reading as though the day were over.
+    const back = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
+    expect(back.body.status).toBe("open");
+    expect(back.body.startedAt).toBe(firstStart);
+    expect(back.body.endedAt).toBeNull();
+  });
+
+  it("records the day's mileage without it ever gating the shift", async () => {
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY })
+      .expect(201);
+
+    // A reading logged before clocking on, which is allowed and changes nothing about whether
+    // the driver is on shift.
+    const early = await h
+      .http()
+      .post("/v1/driver/odometer")
+      .set(asDriver())
+      .send({ odometerKm: 90_000 });
+    expect(early.body.startOdometerKm).toBe(90_000);
+    expect(early.body.status).toBe("scheduled");
+
+    const started = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
+    expect(started.body.status).toBe("open");
+    expect(started.body.startOdometerKm).toBe(90_000); // kept, not overwritten by the press
+  });
+
+  it("will not start a shift for a driver nobody rostered, and says so with an empty answer", async () => {
+    // The app turns this into a sentence telling the driver to ask dispatch. Inventing a shift
+    // would put a driver on the board that dispatch never put there.
+    const res = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
+    expect(res.status).toBe(201);
+    expect(res.text).toBe("");
   });
 
   it("a failed attempt settles (chargeable by rule), the drop can be reassigned, and files are served to staff", async () => {

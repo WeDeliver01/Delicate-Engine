@@ -127,6 +127,19 @@ export const ScheduleShiftRequest = z.object({
  * the pair still answers "how far did this van go today" without anybody being made to stop
  * and type before they can take their first collection.
  */
+/**
+ * Clocking on or off. One button, and nothing to fill in.
+ *
+ * A location if the phone will give one, so the day's trail starts where the driver did, but
+ * the whole point is that pressing start asks nothing of them. Mileage is a separate, optional
+ * thing (`OdometerReadingRequest`) that a driver may log whenever they like, or never — it used
+ * to be the only way to get a shift moving, which made an optional record a mandatory gate.
+ */
+export const ClockShiftRequest = z.object({
+  location: LatLng.nullable().default(null),
+});
+export type ClockShiftRequest = z.infer<typeof ClockShiftRequest>;
+
 export const OdometerReadingRequest = z.object({
   odometerKm: z.number().nonnegative(),
   fuelPct: z.number().int().min(0).max(100).nullable().default(null),
