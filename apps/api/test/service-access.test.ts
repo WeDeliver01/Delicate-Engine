@@ -628,9 +628,10 @@ describe("service access", () => {
 
       await h
         .http()
-        .patch(`/v1/admin/shipments/${shipmentId}/status`)
+        .post(`/v1/admin/dispatch/shipments/${shipmentId}/status`)
         .set(asAdmin())
-        .send({ status: to });
+        .send({ status: to })
+        .expect(201);
 
       await h.dispatcher.tick();
       return shipmentId;
