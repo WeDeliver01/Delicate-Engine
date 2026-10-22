@@ -239,6 +239,13 @@
       "when": 1791633946054,
       "tag": "0033_plain_eternals",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792708606328,
+      "tag": "0034_redundant_whistler",
+      "breakpoints": true
     }
   ]
 }

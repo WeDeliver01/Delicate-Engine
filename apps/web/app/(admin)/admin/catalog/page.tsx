@@ -101,6 +101,9 @@ const PCT: (keyof RateCard)[] = [
   // How much of a batched drop's own distance it is charged. 100% prices it like a separate
   // trip; 0% makes extra drops free of distance, leaving only the flat fee.
   "extraDropKmFactorBps",
+  // Charged on the declared value of every order that carries one -- an integrated store's
+  // own order total, most of the time. Independent of the liability cover toggle.
+  "orderValueFeeBps",
 ];
 const LABELS: Partial<Record<keyof RateCard, string>> = {
   costPerKmCents: "Cost per km (R)",
@@ -115,6 +118,7 @@ const LABELS: Partial<Record<keyof RateCard, string>> = {
   weddingVenueFeeCents: "Wedding venue (R)",
   roadFactorBps: "Road factor (% of straight line)",
   extraDropKmFactorBps: "Batched drop distance charged (%)",
+  orderValueFeeBps: "Order value fee (%)",
   // Zero means a timed window is free. It is on sale the moment capacity allows it, priced or
   // not, so this is the lever that makes the promise worth making.
   timedWindowSurchargeCents: "Timed window (R)",

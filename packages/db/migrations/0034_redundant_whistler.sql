@@ -1,0 +1,1 @@
+ALTER TABLE "rate_cards" ADD COLUMN "order_value_fee_bps" integer DEFAULT 200 NOT NULL;

@@ -336,6 +336,7 @@ export function toRateCard(r: typeof rateCards.$inferSelect): RateCard {
     extraDropKmFactorBps: r.extraDropKmFactorBps,
     liabilityCoverBps: r.liabilityCoverBps,
     liabilityCoverMinCents: r.liabilityCoverMinCents,
+    orderValueFeeBps: r.orderValueFeeBps,
     earlyCollectionFeeCents: r.earlyCollectionFeeCents,
     signatureFeeCents: r.signatureFeeCents,
     weddingVenueFeeCents: r.weddingVenueFeeCents,

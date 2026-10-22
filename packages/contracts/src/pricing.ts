@@ -263,6 +263,21 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
       amountCents: Math.max(pct, rateCard.liabilityCoverMinCents),
     });
   }
+  /*
+    A share of what is being sent, independent of liability cover: insuring the parcel and
+    this are two different things priced off the same number. An order placed through an
+    integrated store carries its own total as the declared value, sent with the booking
+    exactly as the ecommerce payload gave it to us -- that is what this is actually charged
+    on for most of the orders that will ever see it. A human filling in the portal form pays
+    it too, but only once they have put a value in, which today means opting into cover.
+  */
+  if (options.declaredValueCents > 0 && rateCard.orderValueFeeBps > 0) {
+    lines.push({
+      code: "order_value_fee",
+      label: "Order value fee",
+      amountCents: applyBps(options.declaredValueCents, rateCard.orderValueFeeBps),
+    });
+  }
   if (options.earlyCollection && rateCard.earlyCollectionFeeCents > 0) {
     lines.push({
       code: "early_collection",

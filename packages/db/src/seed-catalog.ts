@@ -149,6 +149,7 @@ export const CATALOG_SEED = {
     extraDropKmFactorBps: 6_000,
     liabilityCoverBps: 250,
     liabilityCoverMinCents: 2_500,
+    orderValueFeeBps: 200,
     earlyCollectionFeeCents: 6_000,
     signatureFeeCents: 1_500,
     weddingVenueFeeCents: 12_000,

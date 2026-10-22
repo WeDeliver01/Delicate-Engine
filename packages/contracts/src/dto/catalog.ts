@@ -98,6 +98,16 @@ export const RateCard = z.object({
   /** Options: liability cover as % of declared value (bps) with a minimum; the rest flat. */
   liabilityCoverBps: Bps,
   liabilityCoverMinCents: NonNegativeCents,
+  /**
+   * A share of what is being sent, charged on top of the delivery itself. 200 is 2%.
+   *
+   * Reads the same declared value liability cover does -- for an order placed through an
+   * integrated store, that is the order's own total, sent with the booking exactly as the
+   * ecommerce payload gave it to us. Charged whenever a value is present, whether or not the
+   * customer also took liability cover: insuring the parcel and this are two different
+   * things priced off the same number. Zero turns it off.
+   */
+  orderValueFeeBps: Bps,
   earlyCollectionFeeCents: NonNegativeCents,
   signatureFeeCents: NonNegativeCents,
   weddingVenueFeeCents: NonNegativeCents,

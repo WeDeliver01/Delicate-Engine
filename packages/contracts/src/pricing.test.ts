@@ -21,6 +21,7 @@ const card: RateCard = {
   extraDropKmFactorBps: 6_000,
   liabilityCoverBps: 250,
   liabilityCoverMinCents: 2_500,
+  orderValueFeeBps: 200,
   earlyCollectionFeeCents: 6_000,
   signatureFeeCents: 1_500,
   weddingVenueFeeCents: 12_000,
@@ -161,6 +162,54 @@ describe("pricing a batch of drops", () => {
 
 const roundTo = (n: number) => Math.round(n);
 
+/**
+ * A share of what is being sent, charged on top of the delivery -- an integrated store's own
+ * order total, most of the time, sent exactly as the ecommerce payload gave it to us.
+ * Independent of liability cover: insuring the parcel and this are two different things
+ * priced off the same declared value.
+ */
+describe("the order value fee", () => {
+  it("charges a share of the declared value, whether or not cover was taken", () => {
+    const q = priceQuote({
+      ...base,
+      options: { ...base.options, declaredValueCents: 100_000 },
+    });
+    expect(q.lines.find((l) => l.code === "order_value_fee")?.amountCents).toBe(2_000); // 2%
+    expect(q.lines.some((l) => l.code === "liability_cover")).toBe(false);
+  });
+
+  it("stacks with liability cover rather than replacing it", () => {
+    const q = priceQuote({
+      ...base,
+      options: { ...base.options, liabilityCover: true, declaredValueCents: 100_000 },
+    });
+    const byCode = Object.fromEntries(q.lines.map((l) => [l.code, l.amountCents]));
+    expect(byCode["order_value_fee"]).toBe(2_000);
+    expect(byCode["liability_cover"]).toBeGreaterThan(0);
+  });
+
+  it("charges nothing when no value was declared", () => {
+    const q = priceQuote({ ...base, options: { ...base.options, declaredValueCents: 0 } });
+    expect(q.lines.some((l) => l.code === "order_value_fee")).toBe(false);
+  });
+
+  it("is the operator's rate, not ours", () => {
+    const free = priceQuote({
+      ...base,
+      rateCard: { ...card, orderValueFeeBps: 0 },
+      options: { ...base.options, declaredValueCents: 100_000 },
+    });
+    expect(free.lines.some((l) => l.code === "order_value_fee")).toBe(false);
+
+    const dearer = priceQuote({
+      ...base,
+      rateCard: { ...card, orderValueFeeBps: 500 }, // 5%
+      options: { ...base.options, declaredValueCents: 100_000 },
+    });
+    expect(dearer.lines.find((l) => l.code === "order_value_fee")?.amountCents).toBe(5_000);
+  });
+});
+
 describe("priceQuote", () => {
   it("prices a 30 km standard loop from cogs and margin, lines summing to the total", () => {
     const q = priceQuote(base);
@@ -201,11 +250,12 @@ describe("priceQuote", () => {
     expect(byCode["extra_drops"]).toBe(4_500);
     expect(byCode["parcel:cake"]).toBe(4_000);
     expect(byCode["liability_cover"]).toBe(5_000); // 2.5% of R2000 > min R25
+    expect(byCode["order_value_fee"]).toBe(4_000); // 2% of R2000, stacked with cover
     expect(byCode["early_collection"]).toBe(6_000);
     expect(byCode["signature"]).toBe(1_500);
     expect(byCode["min_fee"]).toBeUndefined();
-    expect(q.subtotalCents).toBe(67_676);
-    expect(q.totalCents).toBe(67_676 + 10_151);
+    expect(q.subtotalCents).toBe(71_676);
+    expect(q.totalCents).toBe(71_676 + 10_751);
     expect(q.marginBps).toBeGreaterThan(5_500); // options lift realised margin above target
   });
 

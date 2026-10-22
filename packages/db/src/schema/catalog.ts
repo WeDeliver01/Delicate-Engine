@@ -109,6 +109,8 @@ export const rateCards = pgTable(
     extraDropKmFactorBps: integer("extra_drop_km_factor_bps").notNull().default(6_000),
     liabilityCoverBps: integer("liability_cover_bps").notNull().default(0),
     liabilityCoverMinCents: integer("liability_cover_min_cents").notNull().default(0),
+    /** A share of the declared value, charged on every order that carries one. 200 = 2%. */
+    orderValueFeeBps: integer("order_value_fee_bps").notNull().default(200),
     earlyCollectionFeeCents: integer("early_collection_fee_cents").notNull().default(0),
     signatureFeeCents: integer("signature_fee_cents").notNull().default(0),
     weddingVenueFeeCents: integer("wedding_venue_fee_cents").notNull().default(0),
