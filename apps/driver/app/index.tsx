@@ -40,9 +40,13 @@ const TABS: { key: Tab; label: string; of: (p: DriverDay["progress"]) => StopTal
 /**
  * The driver's day.
  *
- * There is nothing to start. Dispatch rosters the driver and assigns the work; it appears here
- * and they get on with it. The screen's only job is to answer three questions without being
- * asked: what is next, how much is left, and am I finished.
+ * Dispatch rosters the driver and assigns the work; it appears here. The one thing the driver
+ * does is clock on — a single button, asking nothing of them. Mileage is a separate, optional
+ * record; it used to be the only action that got a shift moving, which quietly made an
+ * optional thing mandatory.
+ *
+ * Beyond that the screen answers three questions without being asked: what is next, how much
+ * is left, and am I finished.
  */
 export default function Today() {
   const qc = useQueryClient();
@@ -59,15 +63,16 @@ export default function Today() {
     refetchInterval: 60_000,
   });
 
-  // Tracking follows having work, not having pressed anything — there is no longer a Start to
-  // hang it on. Keyed on whether anything is outstanding, so the trail runs while there are
-  // stops left and stops when the day is cleared, and the permission prompt arrives when the
-  // driver can see the work it is being asked for.
-  const outstanding = day.data?.progress.all.outstanding ?? 0;
+  // Tracking follows the shift, which is what it was always meant to do and what location.ts
+  // still describes. It briefly followed "has outstanding work" instead, because there was no
+  // Start to hang it on — that meant a driver's phone could be tracked before they had clocked
+  // on, which is their own time.
+  const shift = day.data?.shift ?? null;
+  const open = shift?.status === "open";
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (outstanding > 0) {
+      if (open) {
         const perms = await requestPermissions();
         if (!cancelled && perms.background) await startTracking();
       } else if (day.isSuccess) {
@@ -77,9 +82,28 @@ export default function Today() {
     return () => {
       cancelled = true;
     };
-  }, [outstanding, day.isSuccess]);
+  }, [open, day.isSuccess]);
   const invalidate = () => qc.invalidateQueries();
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
+
+  const clock = useMutation({
+    mutationFn: async (to: "start" | "end") =>
+      api<Shift | null>(`/v1/driver/shift/${to}`, {
+        method: "POST",
+        // Sent if the phone will give one, so the day's trail starts where the driver did. A
+        // refusal is not an obstacle: the press has to work with location switched off.
+        json: { location: await currentPosition().catch(() => null) },
+      }),
+    onSuccess: (updated) => {
+      setError(
+        updated
+          ? null
+          : "You are not on today's roster, so there is no shift to start. Ask dispatch to add you.",
+      );
+      invalidate();
+    },
+    onError,
+  });
 
   const logOdometer = useMutation({
     mutationFn: async () =>
@@ -135,6 +159,23 @@ export default function Today() {
             />
           )}
         </View>
+
+        {/* One button, and nothing to fill in to press it. */}
+        <Button
+          label={open ? "End shift" : shift?.startedAt ? "Start shift again" : "Start shift"}
+          variant={open ? "secondary" : "primary"}
+          onPress={() => clock.mutate(open ? "end" : "start")}
+          busy={clock.isPending}
+          style={{ marginTop: 14 }}
+        />
+        <Text style={[s.label, { marginTop: 8 }]}>
+          {open
+            ? `On shift${shift?.startedAt ? ` since ${clockTime(shift.startedAt)}` : ""} · your location is shared with dispatch`
+            : shift
+              ? "Rostered for today. Start when you set off — your location is only shared while you are on shift."
+              : "Not on today's roster. Dispatch has to add you before you can start."}
+        </Text>
+
         <View style={{ marginTop: 14, flexDirection: "row", gap: 10 }}>
           <Button
             label="Log fuel"
@@ -250,8 +291,9 @@ export default function Today() {
           >
             <Text style={s.h2}>Odometer reading</Text>
             <Text style={s.body}>
-              Optional, and useful whenever you remember — at the depot in the morning or back at
-              the end. The first reading of the day opens it and the last one closes it.
+              Optional. You do not need it to start or end a shift — log one whenever you remember,
+              at the depot in the morning or back at the end, or not at all. The first reading of
+              the day is kept as the opening one and the last as the closing one.
             </Text>
             <TextInput
               value={odometer}
@@ -389,4 +431,9 @@ function StopCard({ stop }: { stop: DriverStop }) {
       </View>
     </Card>
   );
+}
+
+/** "07:14" in the phone's own locale. A driver wants the time, not the date they already know. */
+function clockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }

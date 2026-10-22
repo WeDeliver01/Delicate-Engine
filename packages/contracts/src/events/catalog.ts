@@ -152,6 +152,35 @@ export const ShipmentUnassigned = defineEvent(
   }),
 );
 
+/**
+ * A driver clocked on, and off.
+ *
+ * Separate from `shift.started`/`shift.ended` below, which are about the odometer pair and
+ * carry a reading. Clocking on takes one button and no mileage, so it cannot borrow a payload
+ * built around a number the driver may never type.
+ *
+ * `reopened` tells a second start in a day from the first: a driver who closes off after the
+ * morning run and comes back for an afternoon one is one shift with a gap in it, not two.
+ */
+export const ShiftOpened = defineEvent(
+  "shift.opened",
+  z.object({
+    shiftId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+    reopened: z.boolean(),
+  }),
+);
+
+export const ShiftClosed = defineEvent(
+  "shift.closed",
+  z.object({
+    shiftId: z.string().uuid(),
+    driverId: z.string().uuid(),
+    date: z.string(),
+  }),
+);
+
 export const ShiftStarted = defineEvent(
   "shift.started",
   z.object({
@@ -455,6 +484,8 @@ export const DomainEvent = z.discriminatedUnion("type", [
   ShipmentStatusChanged,
   ShipmentAssigned,
   ShipmentUnassigned,
+  ShiftOpened,
+  ShiftClosed,
   ShiftStarted,
   ShiftEnded,
   CollectionCompleted,
