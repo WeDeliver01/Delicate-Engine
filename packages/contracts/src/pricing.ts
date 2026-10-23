@@ -21,11 +21,32 @@ import { Uuid } from "./dto/common.js";
  *   dated       = weekend / public-holiday surcharge, when the caller says the date qualifies
  *                 (zero on every rate card until the business decides otherwise)
  *   subtotal    = max(base + fuel + extraDrops + parcels + options + window + dated, minFee)
+ *   subtotal    = max(subtotal, costFloor)             ← see below; never below true cost
  *   vat         = subtotal × vatBps (only when registered)
  *   total       = subtotal + vat
  *
  * Every intermediate figure is integer cents, rounded half-up at each step so the breakdown
  * lines always sum to the total exactly.
+ *
+ * The cost floor (from "Delicate Engine pricing model", Oct 2026 — the audit that found 636
+ * of 1,657 deliveries cash-negative on direct cost, because the rate card above was a number
+ * someone picked rather than a number derived from fuel, wear and driver time, and nothing
+ * checked it against either):
+ *
+ *   c_var   = fuelConsumption/100 × fuelPrice + vehicleWear        (cents per km, derived)
+ *   hours   = distanceKm / speed + collectionMinutes/60 + dropMinutes/60 × dropCount
+ *   cost    = c_var × distanceKm + driverCostPerHour × hours
+ *   floor   = cost / (1 − targetMargin)
+ *
+ * `distanceKm` here is every kilometre actually driven for the job — depot to collection,
+ * every leg between drops, last drop back to depot — not the discounted figure a batching
+ * saving is billed on. The fuel is burnt either way; only the price passed on to the customer
+ * is allowed to reflect a saving, never the floor that protects the business. Whatever the
+ * rate card and its multipliers arrive at, the subtotal is lifted to the floor if it falls
+ * short, the same way the flat minimum fee already works — this is a second, cost-derived
+ * minimum, applied after it. One cost model, set once in Admin → Pricing, holds every rate
+ * card to the same floor, which is what makes the floor fair: no account is priced to a loss
+ * because its own card happened to be set too low.
  */
 
 export const QuoteOptions = z.object({
@@ -77,6 +98,62 @@ export function dateFlagsFor(
   };
 }
 
+/**
+ * What a delivery actually costs the business: fuel, wear and the driver's time. One of
+ * these, set in Admin → Pricing, holds every rate card to the same floor — the fairness is
+ * in there being a single shared answer to "what does this cost us", not one per account.
+ *
+ * Seeded from the October 2026 audit. Four of the seven numbers are stated assumptions —
+ * vehicle wear, driver cost, effective speed and the two stop times — and should be replaced
+ * with real figures (service invoices, payroll, tracking) before the floor is trusted. Fuel
+ * price is not an assumption: update it the day it changes, because `targetMarginBps` is a
+ * fraction of it and a stale price erodes the floor exactly the way the old rate card did
+ * through 2026, 46% of fuel inflation absorbed by nobody.
+ */
+export const CostModel = z.object({
+  /** Published monthly. The single input worth checking first when a quote looks wrong. */
+  fuelPriceCentsPerLitre: NonNegativeCents,
+  /** Fleet average, litres per 100 km. */
+  fuelConsumptionL100km: z.number().positive().max(50),
+  /** Tyres, services, repairs and the unplanned ones. Per km, assumption until proven. */
+  vehicleWearCentsPerKm: NonNegativeCents,
+  /** Fully loaded: UIF, leave, overtime, not the payslip number alone. */
+  driverCostCentsPerHour: NonNegativeCents,
+  /** Including traffic and stops, not the speed limit. */
+  effectiveSpeedKmh: z.number().positive().max(120),
+  /** Arrival to departure at the collection point, once per booking. */
+  collectionMinutes: z.number().nonnegative().max(120),
+  /** Arrival to departure at each drop. */
+  dropMinutes: z.number().nonnegative().max(120),
+  /**
+   * The margin every delivery must clear over true direct cost before anything else — not a
+   * target to aim for, a floor the engine enforces. 5500 is 55%.
+   */
+  targetMarginBps: Bps,
+});
+export type CostModel = z.infer<typeof CostModel>;
+
+/** c_var: fuel plus wear, per kilometre, in cents. Derived — never entered directly. */
+export function variableCostCentsPerKm(m: CostModel): number {
+  return (m.fuelConsumptionL100km / 100) * m.fuelPriceCentsPerLitre + m.vehicleWearCentsPerKm;
+}
+
+/** What the job actually cost: every kilometre driven, priced at c_var, plus driver time. */
+export function directCostCents(m: CostModel, distanceKm: number, dropCount: number): Cents {
+  const hours =
+    distanceKm / m.effectiveSpeedKmh + m.collectionMinutes / 60 + (m.dropMinutes / 60) * dropCount;
+  return (
+    Math.round(variableCostCentsPerKm(m) * distanceKm) +
+    Math.round(m.driverCostCentsPerHour * hours)
+  );
+}
+
+/** The price that holds the margin floor over a given direct cost: cost ÷ (1 − target). */
+export function costFloorCents(m: CostModel, cost: Cents): Cents {
+  const marginFraction = Math.min(m.targetMarginBps, 9_900) / 10_000;
+  return Math.round(cost / (1 - marginFraction));
+}
+
 export interface PricingInput {
   /** Road kilometres for each leg of the loop, in order. Must have at least 2 legs. */
   legsKm: number[];
@@ -96,6 +173,8 @@ export interface PricingInput {
   billable?: { overheadKm: number; dropKm: number[] };
   rateCard: RateCard;
   serviceLevel: ServiceLevel;
+  /** What this job must never be priced below, whatever the rate card says. */
+  costModel: CostModel;
   parcels: { packageType: PackageType; quantity: number }[];
   options: QuoteOptions;
   vatBps: Bps; // 0 when not VAT registered
@@ -141,6 +220,17 @@ export const QuoteBreakdown = z.object({
   vatCents: Cents,
   totalCents: Cents,
   minFeeApplied: z.boolean(),
+  /**
+   * What this job actually cost: every kilometre driven plus the driver's time, from the
+   * cost model in force when it was quoted. Fuel moves monthly; this is what makes an old
+   * quote's margin explainable against the fuel price on the day it was made rather than
+   * today's.
+   */
+  directCostCents: Cents.default(0),
+  /** The price the cost model required: directCostCents ÷ (1 − target margin). */
+  costFloorCents: Cents.default(0),
+  /** True when the rate card's own price fell short and the floor lifted it. */
+  costFloorApplied: z.boolean().default(false),
   /** Gross margin on the subtotal, for internal display only. */
   marginBps: Bps,
 });
@@ -340,6 +430,31 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
     minFeeApplied = true;
   }
 
+  /*
+    What this job actually cost, independent of everything above. The rate card's price is a
+    commercial decision -- a multiplier, a discount, a flat fee someone chose -- and none of
+    that changes how much fuel was burnt getting there. Every kilometre actually driven is
+    costed here, not the figure a batching saving was billed on: the saving is real and the
+    customer should see it, but it is a saving on what they pay, never on what protects the
+    business.
+
+    This is a second, cost-derived minimum, applied after the flat one above. Either can
+    bind; whichever is higher wins, the same way the flat minimum already worked before this
+    existed.
+  */
+  const directCost = directCostCents(input.costModel, distanceKm, input.dropCount);
+  const floor = costFloorCents(input.costModel, directCost);
+  let costFloorApplied = false;
+  if (subtotalCents < floor) {
+    lines.push({
+      code: "cost_floor_adjustment",
+      label: "Cost floor adjustment",
+      amountCents: floor - subtotalCents,
+    });
+    subtotalCents = floor;
+    costFloorApplied = true;
+  }
+
   const vatCents = applyBps(subtotalCents, vatBps);
   const totalCents = subtotalCents + vatCents;
   const marginBps =
@@ -356,6 +471,9 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
     vatCents,
     totalCents,
     minFeeApplied,
+    directCostCents: directCost,
+    costFloorCents: floor,
+    costFloorApplied,
     marginBps: Math.max(0, Math.min(10_000, marginBps)),
   };
 }

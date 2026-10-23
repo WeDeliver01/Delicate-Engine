@@ -35,6 +35,30 @@ export const CATALOG_SEED = {
       maxParcelLinesPerDrop: 8,
       maxWeightKgPerDrop: 200,
     },
+    /*
+     * What a delivery actually costs: fuel, wear and the driver's time. Every quote is held
+     * to this floor, whatever its rate card says -- see pricing.ts for the equations.
+     *
+     * Ships off, like the dated surcharges below: the three figures that make it bite --
+     * fuel price, vehicle wear, driver cost -- are zero, so the floor computes to zero and
+     * nothing changes until an operator enters real ones in Admin -> Pricing. Turning this
+     * on moves prices, on a system already carrying real bookings, and that is the
+     * operator's decision to make with real numbers in hand, not a side effect of this code
+     * existing. The other four fields are filled in with the audit's own starting figures
+     * (fuel consumption, effective speed, the two stop times) so the form is not empty the
+     * first time someone opens it -- they do nothing on their own while the cost terms are
+     * zero, and are worth checking against real tracking data before the floor goes live.
+     */
+    "pricing.cost_model": {
+      fuelPriceCentsPerLitre: 0,
+      fuelConsumptionL100km: 7.5,
+      vehicleWearCentsPerKm: 0,
+      driverCostCentsPerHour: 0,
+      effectiveSpeedKmh: 35,
+      collectionMinutes: 15,
+      dropMinutes: 10,
+      targetMarginBps: 5_500,
+    },
     "scheduling.policy": {
       operatingDays: [1, 2, 3, 4, 5, 6],
       windows: [

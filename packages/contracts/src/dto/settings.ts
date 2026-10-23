@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Bps } from "../money.js";
+import { CostModel } from "../pricing.js";
 import { CompanyTaxProfile } from "./billing.js";
 import { AdminCopySettings } from "./notifications.js";
 import { BookingLimits, SettlementRules } from "./catalog.js";
@@ -64,6 +65,7 @@ export const SettingsBundle = z.object({
   settlement: SettlementRules,
   slots: SlotPolicy,
   bookingLimits: BookingLimits,
+  costModel: CostModel,
   readiness: SettingsReadiness,
 });
 export type SettingsBundle = z.infer<typeof SettingsBundle>;

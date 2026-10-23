@@ -206,6 +206,7 @@ export const SettingKey = z.enum([
   "company.timezone",
   "booking.same_day_cutoff_minutes",
   "booking.limits",
+  "pricing.cost_model",
   "scheduling.policy",
   "settlement.rules",
   "treasury.policy",

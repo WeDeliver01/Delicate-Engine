@@ -6,6 +6,7 @@ import {
   AdminCopySettings,
   BookingLimits,
   CompanyTaxProfile,
+  CostModel,
   OperationsSettings,
   SettlementRules,
   SlotPolicy,
@@ -51,6 +52,7 @@ export class AdminSettingsController {
       waybillTerms,
       adminCopy,
       bookingLimits,
+      costModel,
     ] = await Promise.all([
       this.settings.get("company.tax_profile"),
       this.settings.get("company.vat_registered"),
@@ -63,6 +65,7 @@ export class AdminSettingsController {
       this.settings.get("company.waybill_terms"),
       this.settings.get("notifications.admin_copy"),
       this.settings.get("booking.limits"),
+      this.settings.get("pricing.cost_model"),
     ]);
     return {
       company,
@@ -73,6 +76,7 @@ export class AdminSettingsController {
       settlement,
       slots,
       bookingLimits,
+      costModel,
       readiness: await this.readiness(company, registered),
     };
   }
@@ -132,6 +136,17 @@ export class AdminSettingsController {
   @PlatformRoles("super_admin")
   async bookingLimits(@Body(BookingLimits) body: BookingLimits) {
     await this.settings.set("booking.limits", body);
+    return body;
+  }
+
+  /**
+   * What a delivery actually costs. Every quote is held to the margin floor derived from
+   * this, whatever its rate card says — see `priceQuote` in the contracts package.
+   */
+  @Put("cost-model")
+  @PlatformRoles("super_admin")
+  async costModel(@Body(CostModel) body: CostModel) {
+    await this.settings.set("pricing.cost_model", body);
     return body;
   }
 

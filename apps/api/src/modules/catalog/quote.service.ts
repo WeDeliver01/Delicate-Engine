@@ -39,12 +39,13 @@ export class QuoteService {
 
   /** Public, unsaved estimate for the marketing site. Uses the default rate card. */
   async estimate(input: EstimateRequest): Promise<EstimateResponse> {
-    const [rateCard, serviceLevel, vatBps, depot, packageTypes] = await Promise.all([
+    const [rateCard, serviceLevel, vatBps, depot, packageTypes, costModel] = await Promise.all([
       this.catalog.rateCardFor(null),
       this.catalog.serviceLevelByCode(input.serviceLevelCode),
       this.settings.vatBps(),
       this.settings.get("company.depot_address"),
       this.catalog.packageTypesByCodes(input.packageTypeCodes),
+      this.settings.get("pricing.cost_model"),
     ]);
     const legsKm = await this.geo.routeLegsKm(
       routePoints(
@@ -59,6 +60,7 @@ export class QuoteService {
       dropCount: input.drops.length,
       rateCard,
       serviceLevel,
+      costModel,
       parcels: packageTypes.map((packageType) => ({ packageType, quantity: 1 })),
       options: input.options,
       vatBps,
@@ -76,12 +78,13 @@ export class QuoteService {
 
   /** Full quote for an account: persisted, bookable for 24h. */
   async create(accountId: string, input: QuoteRequest): Promise<Quote> {
-    const [rateCard, serviceLevel, vatBps, depot, limits] = await Promise.all([
+    const [rateCard, serviceLevel, vatBps, depot, limits, costModel] = await Promise.all([
       this.catalog.rateCardFor(accountId),
       this.catalog.serviceLevelByCode(input.serviceLevelCode),
       this.settings.vatBps(),
       this.settings.get("company.depot_address"),
       this.settings.get("booking.limits"),
+      this.settings.get("pricing.cost_model"),
     ]);
     const packageTypeIds = input.drops.flatMap((d) => d.parcels.map((p) => p.packageTypeId));
     const packageTypeMap = await this.catalog.packageTypesByIds([...new Set(packageTypeIds)]);
@@ -158,6 +161,7 @@ export class QuoteService {
       dropCount: input.drops.length,
       rateCard,
       serviceLevel,
+      costModel,
       parcels: [...parcels.values()],
       options: input.options,
       vatBps,

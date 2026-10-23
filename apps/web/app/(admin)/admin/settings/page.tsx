@@ -2,13 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  CompanyTaxProfile,
-  OperationsSettings,
-  SettingsBundle,
-  BookingLimits,
-  SettlementRules,
-  VatSettings,
+import {
+  variableCostCentsPerKm,
+  type CompanyTaxProfile,
+  type CostModel,
+  type OperationsSettings,
+  type SettingsBundle,
+  type BookingLimits,
+  type SettlementRules,
+  type VatSettings,
 } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { rands } from "@/lib/money";
@@ -80,6 +82,12 @@ export default function AdminSettings() {
     onSuccess: saved_("Driver earnings & fuel"),
     onError,
   });
+  const costModel = useMutation({
+    mutationFn: (body: CostModel) =>
+      api("/v1/admin/settings/cost-model", { method: "PUT", json: body }),
+    onSuccess: saved_("What a delivery actually costs"),
+    onError,
+  });
 
   if (!s.data) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -122,6 +130,11 @@ export default function AdminSettings() {
         initial={s.data.bookingLimits}
         disabled={!canWrite || bookingLimits.isPending}
         onSave={(v) => bookingLimits.mutate(v)}
+      />
+      <CostModelCard
+        initial={s.data.costModel}
+        disabled={!canWrite || costModel.isPending}
+        onSave={(v) => costModel.mutate(v)}
       />
       <SettlementCard
         initial={s.data.settlement}
@@ -432,6 +445,106 @@ function BookingLimitsCard({
           }
         />
       </div>
+    </Card>
+  );
+}
+
+/**
+ * What a delivery actually costs the business, and the margin every quote must clear over
+ * it. Set once here, enforced on every rate card: that one shared answer to "what does this
+ * cost us" is what makes the floor fair rather than a number one account happens to have.
+ *
+ * Reads as "off" to the engine while fuel price, vehicle wear and driver cost are all zero
+ * -- the same way the dated surcharges ship at zero until someone sets them. Nothing changes
+ * for a customer until this is filled in with real numbers and saved.
+ */
+function CostModelCard({
+  initial,
+  disabled,
+  onSave,
+}: {
+  initial: CostModel;
+  disabled: boolean;
+  onSave: (v: CostModel) => void;
+}) {
+  const [v, setV] = useState(initial);
+  useEffect(() => setV(initial), [initial]);
+  const on =
+    v.fuelPriceCentsPerLitre > 0 || v.vehicleWearCentsPerKm > 0 || v.driverCostCentsPerHour > 0;
+  const perKm = Math.round(variableCostCentsPerKm(v));
+
+  return (
+    <Card
+      title="What a delivery actually costs"
+      hint="The floor under every quote, whatever its rate card says. A quote priced below this is lifted up to it automatically — see the note at the bottom."
+      disabled={disabled}
+      onSave={() => onSave(v)}
+    >
+      {!on && (
+        <p className="alert-info mb-4">
+          Off for now: fuel price, vehicle wear and driver cost are all zero, so the floor computes
+          to zero and nothing you quote is affected. Fill in real numbers below and save to switch
+          it on.
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Num
+          label="Fuel price (cents/litre)"
+          value={v.fuelPriceCentsPerLitre}
+          onChange={(x) => setV({ ...v, fuelPriceCentsPerLitre: x })}
+          hint={`${rands(v.fuelPriceCentsPerLitre)} per litre — the published price changes monthly, this should too`}
+        />
+        <Num
+          label="Fuel consumption (L / 100 km)"
+          step="0.1"
+          value={v.fuelConsumptionL100km}
+          onChange={(x) => setV({ ...v, fuelConsumptionL100km: x })}
+          hint="Fleet average, loaded."
+        />
+        <Num
+          label="Vehicle wear (cents/km)"
+          value={v.vehicleWearCentsPerKm}
+          onChange={(x) => setV({ ...v, vehicleWearCentsPerKm: x })}
+          hint={`${rands(v.vehicleWearCentsPerKm)} per km — tyres, services, repairs`}
+        />
+        <Num
+          label="Driver cost (cents/hour)"
+          value={v.driverCostCentsPerHour}
+          onChange={(x) => setV({ ...v, driverCostCentsPerHour: x })}
+          hint={`${rands(v.driverCostCentsPerHour)} per hour, fully loaded — UIF, leave, overtime`}
+        />
+        <Num
+          label="Effective speed (km/h)"
+          value={v.effectiveSpeedKmh}
+          onChange={(x) => setV({ ...v, effectiveSpeedKmh: x })}
+          hint="Including traffic and stops, not the speed limit."
+        />
+        <Num
+          label="Target margin (%)"
+          step="0.1"
+          value={v.targetMarginBps / 100}
+          onChange={(x) => setV({ ...v, targetMarginBps: Math.round(x * 100) })}
+          hint="Every quote is lifted to clear this over direct cost, never just aimed at it."
+        />
+        <Num
+          label="Time at collection (minutes)"
+          value={v.collectionMinutes}
+          onChange={(x) => setV({ ...v, collectionMinutes: x })}
+          hint="Once per booking, however many drops."
+        />
+        <Num
+          label="Time per drop (minutes)"
+          value={v.dropMinutes}
+          onChange={(x) => setV({ ...v, dropMinutes: x })}
+        />
+      </div>
+      <p className="mt-4 rounded-xl bg-[#FAFAF9] p-3 text-xs text-[#6B6661]">
+        Variable cost right now: <span className="font-mono">{rands(perKm)} per kilometre</span>,
+        before driver time — fuel and wear, derived from the numbers above, not entered separately.{" "}
+        {on
+          ? "This is live: any quote priced below cost is raised to clear the margin target."
+          : "Still off until fuel price, wear or driver cost is above zero."}
+      </p>
     </Card>
   );
 }

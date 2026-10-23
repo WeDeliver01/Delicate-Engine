@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  costFloorCents,
+  type CostModel,
   dateFlagsFor,
+  directCostCents,
   haversineKm,
   priceQuote,
   type PricingInput,
   toCustomerBreakdown,
+  variableCostCentsPerKm,
 } from "./pricing.js";
 import type { PackageType, RateCard, ServiceLevel } from "./dto/catalog.js";
 
@@ -69,11 +73,27 @@ const cake: PackageType = {
   active: true,
 };
 
+// Inert on purpose: every pre-existing test in this file asserts exact cents against the
+// rate card alone, and the cost floor must not move a single one of them. Its own behaviour
+// -- including the real October 2026 figures from the pricing audit -- is tested separately,
+// below, against scenarios built to make it bind.
+const inertCostModel: CostModel = {
+  fuelPriceCentsPerLitre: 1,
+  fuelConsumptionL100km: 1,
+  vehicleWearCentsPerKm: 0,
+  driverCostCentsPerHour: 0,
+  effectiveSpeedKmh: 100,
+  collectionMinutes: 0,
+  dropMinutes: 0,
+  targetMarginBps: 0,
+};
+
 const base: PricingInput = {
   legsKm: [8.2, 12.5, 9.3],
   dropCount: 1,
   rateCard: card,
   serviceLevel: standard,
+  costModel: inertCostModel,
   parcels: [],
   options: {
     liabilityCover: false,
@@ -365,6 +385,9 @@ describe("what a customer is allowed to see", () => {
     vatCents: 4_050,
     totalCents: 31_050,
     minFeeApplied: false,
+    directCostCents: 12_000,
+    costFloorCents: 26_667,
+    costFloorApplied: false,
     marginBps: 3_000,
   };
 
@@ -413,5 +436,134 @@ describe("what a customer is allowed to see", () => {
       lines: [{ code: "liability_cover", label: "Liability cover", amountCents: 1 }],
     }).lines;
     expect(line!.label).toBe("Liability cover");
+  });
+});
+
+/**
+ * The cost floor: what a delivery actually costs, enforced as a second minimum on top of
+ * the flat one. Pinned against the published figures in "Delicate Engine pricing model"
+ * (Oct 2026) -- the audit that found 636 of 1,657 deliveries cash-negative on direct cost
+ * because nothing checked the price against what the job actually cost to run.
+ */
+// The document's own October 2026 figures, verbatim. Shared by both describe blocks below.
+const october: CostModel = {
+  fuelPriceCentsPerLitre: 3_025, // R30.25/L
+  fuelConsumptionL100km: 7.5,
+  vehicleWearCentsPerKm: 70, // R0.70/km
+  driverCostCentsPerHour: 5_500, // R55.00/hour
+  effectiveSpeedKmh: 35,
+  collectionMinutes: 15,
+  dropMinutes: 10,
+  targetMarginBps: 5_500, // 55%
+};
+
+describe("the cost model", () => {
+  it("derives c_var exactly as the document states it: R2.969 per km", () => {
+    // 7.5 / 100 * 3025 + 70 = 226.875 + 70 = 296.875
+    expect(variableCostCentsPerKm(october)).toBeCloseTo(296.875, 3);
+  });
+
+  it("turns a R150 direct cost into a R333 floor, the document's own worked example", () => {
+    expect(costFloorCents(october, 15_000)).toBe(33_333);
+  });
+
+  it("caps an unreasonable margin rather than dividing by zero or going negative", () => {
+    // 100% would divide by zero; comfortably over 100% would invert the price. Capped well
+    // under 100%, same ceiling the rate card's own margin already uses.
+    const reckless: CostModel = { ...october, targetMarginBps: 10_000 };
+    expect(() => costFloorCents(reckless, 15_000)).not.toThrow();
+    expect(costFloorCents(reckless, 15_000)).toBeGreaterThan(0);
+  });
+});
+
+describe("the cost floor in a quote", () => {
+  it("leaves an ordinary quote alone", () => {
+    // base's own cost model is deliberately inert; nothing here should bind.
+    const q = priceQuote(base);
+    expect(q.costFloorApplied).toBe(false);
+    expect(q.lines.some((l) => l.code === "cost_floor_adjustment")).toBe(false);
+  });
+
+  it("lifts an underpriced long haul to true cost -- the Crumble GF problem, priced", () => {
+    // The document's own complaint: a Johannesburg collection, drops averaging well over
+    // 100 km round trip, billed R134-R239 against a floor the document puts between R500
+    // and R1,000. A cheap rate card (low cost/km, generous margin) cannot get near that
+    // without the floor.
+    const q = priceQuote({
+      ...base,
+      legsKm: [40, 35, 40], // 115 km round trip, as the document describes that account
+      rateCard: { ...card, costPerKmCents: 50, marginBps: 2_000 }, // a badly underpriced card
+      costModel: october,
+    });
+    expect(q.costFloorApplied).toBe(true);
+    expect(q.lines.some((l) => l.code === "cost_floor_adjustment")).toBe(true);
+    expect(q.subtotalCents).toBe(q.costFloorCents);
+    expect(q.subtotalCents).toBeGreaterThan(50_000); // squarely in the document's R500-R1,000 range
+  });
+
+  it("never lets the realised margin fall short of the target, once it binds", () => {
+    const q = priceQuote({
+      ...base,
+      legsKm: [40, 35, 40],
+      rateCard: { ...card, costPerKmCents: 50, marginBps: 2_000 },
+      costModel: october,
+    });
+    expect(q.costFloorApplied).toBe(true);
+    // marginBps is computed on cogsCents (the rate card's own COGS line), which the floor
+    // does not rewrite -- what it guarantees is that the price charged is never below cost
+    // divided by (1 - target), which this checks directly.
+    const impliedMargin = (q.subtotalCents - q.directCostCents) / q.subtotalCents;
+    expect(impliedMargin).toBeGreaterThanOrEqual(0.549); // floating point, not a cent short
+  });
+
+  it("is the operator's cost model, not a constant -- a cheaper fleet needs a smaller floor", () => {
+    const expensive = priceQuote({
+      ...base,
+      legsKm: [40, 35, 40],
+      rateCard: { ...card, costPerKmCents: 50, marginBps: 2_000 },
+      costModel: october,
+    });
+    const cheap = priceQuote({
+      ...base,
+      legsKm: [40, 35, 40],
+      rateCard: { ...card, costPerKmCents: 50, marginBps: 2_000 },
+      costModel: {
+        fuelPriceCentsPerLitre: 1_500, // a far cheaper fuel index
+        fuelConsumptionL100km: 5,
+        vehicleWearCentsPerKm: 30,
+        driverCostCentsPerHour: 3_000,
+        effectiveSpeedKmh: 35,
+        collectionMinutes: 15,
+        dropMinutes: 10,
+        targetMarginBps: 5_500,
+      },
+    });
+    expect(cheap.costFloorCents).toBeLessThan(expensive.costFloorCents);
+  });
+
+  it("records what the job actually cost on every quote, for later audit", () => {
+    // base's own cost model is deliberately inert (see above), so a real one is needed here
+    // -- this is checking that the figures are recorded at all, not that they bind.
+    const q = priceQuote({ ...base, costModel: october });
+    expect(q.directCostCents).toBeGreaterThan(0);
+    expect(q.costFloorCents).toBeGreaterThan(0);
+  });
+
+  it("never reaches the customer: the floor's own figures are internal only", () => {
+    const q = priceQuote({
+      ...base,
+      legsKm: [40, 35, 40],
+      rateCard: { ...card, costPerKmCents: 50, marginBps: 2_000 },
+      costModel: october,
+    });
+    const served = toCustomerBreakdown(q) as Record<string, unknown>;
+    for (const secret of ["directCostCents", "costFloorCents", "costFloorApplied", "cogsCents"]) {
+      expect(served[secret], `${secret} reached the customer`).toBeUndefined();
+    }
+    // The adjustment line itself is fine to show -- it is money on their total, same as the
+    // flat minimum fee already is -- just not the internals behind it.
+    expect(served.lines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "cost_floor_adjustment" })]),
+    );
   });
 });
