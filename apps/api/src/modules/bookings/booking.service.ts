@@ -204,7 +204,10 @@ export class BookingService {
         // 10:00 places would otherwise each hold one and wait for the other; one of them has to
         // lose cleanly instead of both hanging.
         if (slot)
-          await this.scheduling.reserve(tx, slot, { immediate: !serviceLevel.requiresSlot });
+          await this.scheduling.reserve(tx, slot, {
+            immediate: !serviceLevel.requiresSlot,
+            serviceLevel: serviceLevel.code,
+          });
         if (timedWindow?.collection || timedWindow?.delivery) {
           const windowDate = slot?.date ?? (await this.scheduling.localNow()).date;
           // Both windows in one call, so the bands are taken in a single ascending pass.

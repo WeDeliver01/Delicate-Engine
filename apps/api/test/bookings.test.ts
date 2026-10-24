@@ -34,7 +34,7 @@ describe("bookings & shipments", () => {
   let dispatcher: string;
   let accountId: string;
   let cakeId: string;
-  const SLOT = { date: "2026-09-24", windowKey: "morning" };
+  const SLOT = { date: "2026-09-24", windowKey: "std_morning" };
 
   beforeAll(async () => {
     h = await createHarness();
@@ -113,9 +113,10 @@ describe("bookings & shipments", () => {
     const slot = (
       await h
         .http()
-        .get("/v1/public/slots/availability")
+        .get("/v1/admin/capacity/slots")
+        .set("Authorization", `Bearer ${dispatcher}`)
         .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
-    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    ).body.find((s: { windowKey: string }) => s.windowKey === "std_morning");
     expect(slot.booked).toBe(0);
     // quote is still bookable once funded
     const q2 = (await h.http().get(`/v1/account/quotes/${q.id}`).set(asOwner())).body as Quote;
@@ -151,9 +152,10 @@ describe("bookings & shipments", () => {
     const slot = (
       await h
         .http()
-        .get("/v1/public/slots/availability")
+        .get("/v1/admin/capacity/slots")
+        .set("Authorization", `Bearer ${dispatcher}`)
         .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
-    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    ).body.find((s: { windowKey: string }) => s.windowKey === "std_morning");
     expect(slot.booked).toBe(1);
     expect(
       ((await h.http().get(`/v1/account/quotes/${q.id}`).set(asOwner())).body as Quote).status,
@@ -205,13 +207,19 @@ describe("bookings & shipments", () => {
       .http()
       .post("/v1/account/bookings")
       .set(asOwner())
-      .send({ quoteId: (await quote()).id, slot: { date: "2026-09-25", windowKey: "afternoon" } });
+      .send({
+        quoteId: (await quote()).id,
+        slot: { date: "2026-09-25", windowKey: "std_afternoon" },
+      });
     expect(first.status).toBe(201);
     const second = await h
       .http()
       .post("/v1/account/bookings")
       .set(asOwner())
-      .send({ quoteId: (await quote()).id, slot: { date: "2026-09-25", windowKey: "afternoon" } });
+      .send({
+        quoteId: (await quote()).id,
+        slot: { date: "2026-09-25", windowKey: "std_afternoon" },
+      });
     expect(second.status).toBe(409);
     expect(second.body.code).toBe("slot_unavailable");
     const rejected = await h.db.db
@@ -239,18 +247,35 @@ describe("bookings & shipments", () => {
         .set(asOwner())
         .send({
           quoteId: (await quote("on_demand")).id,
-          // Closed to Standard — the lead time is a day — and open to this.
-          slot: { date: TODAY, windowKey: "morning" },
+          // Closed to Standard — the lead time is a day — and open to this. On-demand draws
+          // from the Express bands, not the Standard ones: same-day and urgent belongs with
+          // the narrow pool.
+          slot: { date: TODAY, windowKey: "exp_morning" },
         });
       expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body.slotDate).toBe(TODAY);
-      expect(res.body.slotWindowKey).toBe("morning");
+      expect(res.body.slotWindowKey).toBe("exp_morning");
 
       const [row] = await h.db.db
         .select()
         .from(deliverySlots)
-        .where(and(eq(deliverySlots.date, TODAY), eq(deliverySlots.windowKey, "morning")));
+        .where(and(eq(deliverySlots.date, TODAY), eq(deliverySlots.windowKey, "exp_morning")));
       expect(row!.bookedCount).toBe(1);
+    });
+
+    it("refuses a window it does not sell", async () => {
+      // std_morning belongs to Standard, not On-demand -- the price was for a different
+      // promise than the slot asked for.
+      await wallet.adjust(accountId, 200_000, "test funds");
+      const res = await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({
+          quoteId: (await quote("on_demand")).id,
+          slot: { date: TODAY, windowKey: "std_morning" },
+        });
+      expect(res.status).toBe(422);
     });
 
     it("refuses any other day", async () => {
@@ -261,7 +286,7 @@ describe("bookings & shipments", () => {
         .set(asOwner())
         .send({
           quoteId: (await quote("on_demand")).id,
-          slot: { date: "2026-09-25", windowKey: "morning" },
+          slot: { date: "2026-09-25", windowKey: "exp_morning" },
         });
       expect(res.status).toBe(422);
     });
@@ -354,9 +379,10 @@ describe("bookings & shipments", () => {
     const slot = (
       await h
         .http()
-        .get("/v1/public/slots/availability")
+        .get("/v1/admin/capacity/slots")
+        .set("Authorization", `Bearer ${dispatcher}`)
         .query({ dateFrom: SLOT.date, dateTo: SLOT.date })
-    ).body.find((s: { windowKey: string }) => s.windowKey === "morning");
+    ).body.find((s: { windowKey: string }) => s.windowKey === "std_morning");
     expect(slot.booked).toBe(0);
 
     const b2 = (

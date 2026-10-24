@@ -246,6 +246,13 @@
       "when": 1792708606328,
       "tag": "0034_redundant_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792708607328,
+      "tag": "0035_capacity_windows",
+      "breakpoints": true
     }
   ]
 }

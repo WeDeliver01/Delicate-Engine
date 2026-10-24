@@ -57,13 +57,25 @@ export class SchedulingService {
   async availability(
     dateFrom?: string,
     dateTo?: string,
-    opts: { immediate?: boolean } = {},
+    opts: { immediate?: boolean; serviceLevel?: string } = {},
   ): Promise<SlotAvailability[]> {
     const [policy, now] = await Promise.all([this.policy(), this.localNow()]);
     if (opts.immediate) {
       dateFrom = now.date;
       dateTo = now.date;
     }
+    /*
+      A window belongs to whichever service levels name it, or to all of them if it names
+      none -- the one list of windows every policy shipped with, before a second service
+      level needed its own. A Standard window and an Express window can cover the same
+      hours and still be different rows: each is its own capacity, because a 4-hour promise
+      and a 2-hour promise are not the same amount of room on the same van.
+    */
+    const windows = opts.serviceLevel
+      ? policy.windows.filter(
+          (w) => w.serviceLevels.length === 0 || w.serviceLevels.includes(opts.serviceLevel!),
+        )
+      : policy.windows;
     const from = dateFrom ?? now.date;
     const to = dateTo ?? addDays(now.date, policy.horizonDays);
     if (to < from)
@@ -89,7 +101,7 @@ export class SchedulingService {
     const out: SlotAvailability[] = [];
     for (let d = from; d <= to; d = addDays(d, 1)) {
       if (!policy.operatingDays.includes(weekday(d))) continue;
-      for (const w of policy.windows) {
+      for (const w of windows) {
         const row = byKey.get(`${d}:${w.key}`);
         const capacity = row?.capacity ?? w.capacity ?? policy.defaultCapacity;
         const booked = row?.bookedCount ?? 0;
@@ -122,10 +134,32 @@ export class SchedulingService {
   }
 
   /** Consume one space. Throws 409 `slot_unavailable` with the reason. */
-  async reserve(tx: DbExecutor, ref: SlotRef, opts: { immediate?: boolean } = {}): Promise<void> {
+  async reserve(
+    tx: DbExecutor,
+    ref: SlotRef,
+    opts: { immediate?: boolean; serviceLevel?: string } = {},
+  ): Promise<void> {
     const [policy, now] = await Promise.all([this.policy(), this.localNow()]);
     const window = policy.windows.find((w) => w.key === ref.windowKey);
     if (!window) throw AppError.notFound("slot window", { windowKey: ref.windowKey });
+    /*
+      The quote was priced for a window of a particular width -- four hours for Standard, two
+      for Express -- and the capacity reserved has to be the one that promise actually costs.
+      Booking an Express price against a Standard window's row would spend the wrong pool and
+      keep a promise the price never paid for.
+    */
+    if (
+      opts.serviceLevel &&
+      window.serviceLevels.length > 0 &&
+      !window.serviceLevels.includes(opts.serviceLevel)
+    ) {
+      throw AppError.validation([
+        {
+          path: ["slot", "windowKey"],
+          message: `${ref.windowKey} is not a window ${opts.serviceLevel} sells`,
+        },
+      ]);
+    }
     if (!policy.operatingDays.includes(weekday(ref.date))) {
       throw new AppError("slot_unavailable", "we do not deliver on that day", 409, {
         reason: "closed",

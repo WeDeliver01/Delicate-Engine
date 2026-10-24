@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { SlotAvailability } from "@delicate/contracts";
+import type { PublicSlotAvailability } from "@delicate/contracts";
 
 /**
  * Pick a delivery date from a month, then a window within it.
@@ -22,14 +22,14 @@ export function SlotCalendar({
   onChange,
   emptyMessage = "No delivery dates are open at the moment.",
 }: {
-  slots: SlotAvailability[];
+  slots: PublicSlotAvailability[];
   value: { date: string; windowKey: string } | null;
   onChange: (v: { date: string; windowKey: string } | null) => void;
   /** What to say when there is nothing at all, which differs by service. */
   emptyMessage?: string;
 }) {
   const byDate = useMemo(() => {
-    const map = new Map<string, SlotAvailability[]>();
+    const map = new Map<string, PublicSlotAvailability[]>();
     for (const s of slots) map.set(s.date, [...(map.get(s.date) ?? []), s]);
     return map;
   }, [slots]);
@@ -135,7 +135,7 @@ export function SlotCalendar({
                 >
                   <span>{s.label}</span>
                   <span className="text-xs text-muted">
-                    {s.bookable ? `${s.remaining} left` : reasonText(s.closedReason)}
+                    {s.bookable ? healthText(s.health) : reasonText(s.closedReason)}
                   </span>
                 </button>
               );
@@ -154,14 +154,16 @@ function DayCell({
   onPick,
 }: {
   date: string;
-  slots: SlotAvailability[] | null;
+  slots: PublicSlotAvailability[] | null;
   selected: boolean;
   onPick: (date: string) => void;
 }) {
   const open = slots?.some((s) => s.bookable) ?? false;
-  const left = slots?.reduce((n, s) => n + (s.bookable ? s.remaining : 0), 0) ?? 0;
+  // Worst of the day's windows, not best: a day with one healthy window and four limited
+  // ones is a limited day to pick, not a healthy one.
+  const dayHealth = slots ? worstHealth(slots.filter((s) => s.bookable)) : "closed";
   const title = open
-    ? `${longDate(date)} — ${left} ${left === 1 ? "space" : "spaces"} left`
+    ? `${longDate(date)} — ${healthText(dayHealth)}`
     : `${longDate(date)} — ${slots ? reasonText(firstReason(slots)) : "we do not deliver on this day"}`;
 
   return (
@@ -221,8 +223,30 @@ function MonthStep({
   );
 }
 
+/** How a window looks, in the customer's words rather than a count. */
+function healthText(health: PublicSlotAvailability["health"]): string {
+  switch (health) {
+    case "healthy":
+      return "Good availability";
+    case "limited":
+      return "Filling up";
+    case "closed":
+      return "Fully booked";
+  }
+}
+
+/**
+ * The least healthy of a set of bookable windows -- a day with one healthy window and four
+ * limited ones is a limited day to pick, not a healthy one. A bookable window is never
+ * itself "closed"; that only happens here when there is nothing bookable to look at.
+ */
+function worstHealth(slots: PublicSlotAvailability[]): PublicSlotAvailability["health"] {
+  if (slots.length === 0) return "closed";
+  return slots.some((s) => s.health === "limited") ? "limited" : "healthy";
+}
+
 /** Why a day is shut, in words a customer can act on. */
-function reasonText(reason: SlotAvailability["closedReason"]): string {
+function reasonText(reason: PublicSlotAvailability["closedReason"]): string {
   switch (reason) {
     case "full":
       return "fully booked";
@@ -239,7 +263,7 @@ function reasonText(reason: SlotAvailability["closedReason"]): string {
   }
 }
 
-function firstReason(slots: SlotAvailability[]): SlotAvailability["closedReason"] {
+function firstReason(slots: PublicSlotAvailability[]): PublicSlotAvailability["closedReason"] {
   return slots.find((s) => s.closedReason)?.closedReason ?? null;
 }
 

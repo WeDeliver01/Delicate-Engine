@@ -28,8 +28,8 @@ describe("shipment change requests", () => {
   let dispatcherToken: string;
   let accountId: string;
   let cakeId: string;
-  const SLOT = { date: "2026-09-24", windowKey: "morning" };
-  const LATER_SLOT = { date: "2026-09-25", windowKey: "afternoon" };
+  const SLOT = { date: "2026-09-24", windowKey: "std_morning" };
+  const LATER_SLOT = { date: "2026-09-25", windowKey: "std_afternoon" };
 
   beforeAll(async () => {
     h = await createHarness();
@@ -249,7 +249,7 @@ describe("shipment change requests", () => {
       .post(`/v1/account/shipments/${shipmentId}/changes`)
       .set(asOwner())
       .send({
-        payload: { kind: "reschedule", slotDate: "2026-09-20", slotWindowKey: "morning" },
+        payload: { kind: "reschedule", slotDate: "2026-09-20", slotWindowKey: "std_morning" },
       });
     // Held first, then refused on approval — the date check belongs where it is applied,
     // because a request can sit overnight and be approved the morning after.

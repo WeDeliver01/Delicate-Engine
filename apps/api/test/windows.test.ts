@@ -10,6 +10,7 @@ import type {
   SlotPolicy,
   Trip,
   TripSheet,
+  PublicWindowBandAvailability,
   WindowBandAvailability,
 } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
@@ -274,17 +275,32 @@ describe("timed windows", () => {
     expect((await bookWith(await quote(window), window)).status).toBe(201);
   });
 
-  it("reports band availability a booking form can show", async () => {
+  it("reports band availability a dispatcher can see exact numbers for", async () => {
     await enableWindows(2);
     const window = { collection: null, delivery: { startMinute: 600, endMinute: 660 } };
     await bookWith(await quote(window), window);
 
-    const bands = (await h.http().get(`/v1/public/slots/windows/${TODAY}`))
+    const bands = (await h.http().get(`/v1/admin/capacity/windows/${TODAY}`).set(asDispatcher()))
       .body as WindowBandAvailability[];
     const ten = bands.find((b) => b.startMinute === 600)!;
     expect(ten).toMatchObject({ capacity: 2, booked: 1, remaining: 1, bookable: true });
     const eleven = bands.find((b) => b.startMinute === 660)!;
     expect(eleven.booked).toBe(0);
+  });
+
+  it("tells a customer whether a band looks healthy, never the count behind it", async () => {
+    await enableWindows(2);
+    const window = { collection: null, delivery: { startMinute: 600, endMinute: 660 } };
+    await bookWith(await quote(window), window);
+
+    const bands = (await h.http().get(`/v1/public/slots/windows/${TODAY}`))
+      .body as PublicWindowBandAvailability[];
+    const ten = bands.find((b) => b.startMinute === 600) as unknown as Record<string, unknown>;
+    expect(ten.capacity, "capacity reached the customer").toBeUndefined();
+    expect(ten.booked, "booked reached the customer").toBeUndefined();
+    expect(ten.remaining, "remaining reached the customer").toBeUndefined();
+    expect(ten.health).toBe("healthy"); // 1 of 2 taken, comfortably above the default line
+    expect(ten.bookable).toBe(true);
   });
 
   it("offers nothing when windows are off, rather than failing the booking form", async () => {

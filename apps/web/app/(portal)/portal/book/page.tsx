@@ -9,9 +9,9 @@ import type {
   CatalogResponse,
   PackageType,
   Quote,
-  SlotAvailability,
+  PublicSlotAvailability,
   TimedWindow,
-  WindowBandAvailability,
+  PublicWindowBandAvailability,
   WalletSummary,
 } from "@delicate/contracts";
 import { useMe } from "@/components/use-me";
@@ -256,7 +256,9 @@ function Book() {
   const bands = useQuery({
     queryKey: ["window-bands", windowDate],
     queryFn: () =>
-      api<WindowBandAvailability[]>(`/v1/public/slots/windows/${windowDate}`, { account: null }),
+      api<PublicWindowBandAvailability[]>(`/v1/public/slots/windows/${windowDate}`, {
+        account: null,
+      }),
   });
 
   /*
@@ -267,7 +269,7 @@ function Book() {
   const slots = useQuery({
     queryKey: ["slots", serviceLevel],
     queryFn: () =>
-      api<SlotAvailability[]>(
+      api<PublicSlotAvailability[]>(
         `/v1/public/slots/availability?serviceLevel=${encodeURIComponent(serviceLevel)}`,
         { account: null },
       ),
@@ -988,7 +990,7 @@ function Book() {
                     {!scheduled && (
                       <p className="lede mt-1">
                         On-demand is collected and delivered today, so today is the only day on
-                        offer. Need another day? Switch to Standard above.
+                        offer. Need another day? Pick a pre-scheduled service above.
                       </p>
                     )}
                     <SlotCalendar
@@ -998,7 +1000,7 @@ function Book() {
                       emptyMessage={
                         scheduled
                           ? "No delivery dates are open at the moment."
-                          : "Nothing is left for today. Switch to Standard above to book a day ahead."
+                          : "Nothing is left for today. Pick a pre-scheduled service above to book a day ahead."
                       }
                     />
                   </section>
@@ -1209,13 +1211,13 @@ function WindowPicker({
   value,
   onChange,
 }: {
-  bands: WindowBandAvailability[];
+  bands: PublicWindowBandAvailability[];
   value: TimedWindow | null;
   onChange: (w: TimedWindow | null) => void;
 }) {
   const clock = (m: number) =>
     `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const chosen = (b: WindowBandAvailability) =>
+  const chosen = (b: PublicWindowBandAvailability) =>
     value?.startMinute === b.startMinute && value?.endMinute === b.endMinute;
 
   return (
@@ -1233,7 +1235,13 @@ function WindowPicker({
           type="button"
           disabled={!b.bookable}
           onClick={() => onChange({ startMinute: b.startMinute, endMinute: b.endMinute })}
-          title={b.bookable ? `${b.remaining} left` : "fully booked"}
+          title={
+            b.bookable
+              ? b.health === "limited"
+                ? "Filling up"
+                : "Good availability"
+              : "fully booked"
+          }
           className={`chip ${chosen(b) ? "chip-info" : "chip-outline"} ${
             b.bookable ? "" : "opacity-40"
           }`}

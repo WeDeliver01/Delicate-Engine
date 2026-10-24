@@ -35,7 +35,7 @@ describe("acting on a customer's account", () => {
   let dispatcher: string;
   let accountId: string;
   let cakeId: string;
-  const SLOT = { date: "2026-09-24", windowKey: "morning" };
+  const SLOT = { date: "2026-09-24", windowKey: "std_morning" };
 
   beforeAll(async () => {
     h = await createHarness();

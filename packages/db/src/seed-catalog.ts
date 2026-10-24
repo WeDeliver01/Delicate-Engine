@@ -59,28 +59,106 @@ export const CATALOG_SEED = {
       dropMinutes: 10,
       targetMarginBps: 5_500,
     },
+    /*
+     * Monday to Saturday, 07:00 to 17:00. Two service levels share this span and sell
+     * different-width promises out of it -- Standard a 4-hour window, Express a 2-hour one --
+     * so each window below names which service it belongs to, and each is its own capacity
+     * row: a 4-hour promise and a 2-hour promise are not the same amount of room on the same
+     * van, and letting them share a pool is how one oversells the other.
+     *
+     * The five Express bands are the atomic unit (07-09, 09-11, 11-13, 13-15, 15-17); the
+     * four Standard windows are adjacent pairs of that same span, stepped by two hours, so
+     * there is always a four-hour option starting near wherever the day is. On-demand draws
+     * from the Express bands too -- same-day and urgent is closer in spirit to the narrow
+     * pool than the wide, batching-friendly one, and it is safer than a third pool of its
+     * own while the fleet is stretched.
+     *
+     * Capacity on every window is a placeholder -- conservative on purpose, because the
+     * fleet it is meant to reflect is not at full strength right now. Set each one to what
+     * the vehicles on the road can actually carry; this is the number of DIFFERENT customers'
+     * collections a window can hold, not drops -- a batched run still counts once here.
+     */
     "scheduling.policy": {
       operatingDays: [1, 2, 3, 4, 5, 6],
       windows: [
         {
-          key: "morning",
-          label: "Morning · 08:00 – 12:00",
-          startMinutes: 8 * 60,
-          endMinutes: 12 * 60,
-          capacity: null,
+          key: "std_morning",
+          label: "Morning · 07:00 – 11:00",
+          startMinutes: 7 * 60,
+          endMinutes: 11 * 60,
+          capacity: 6,
+          serviceLevels: ["standard"],
         },
         {
-          key: "afternoon",
-          label: "Afternoon · 12:00 – 16:00",
-          startMinutes: 12 * 60,
-          endMinutes: 16 * 60,
-          capacity: null,
+          key: "std_late_morning",
+          label: "Late morning · 09:00 – 13:00",
+          startMinutes: 9 * 60,
+          endMinutes: 13 * 60,
+          capacity: 6,
+          serviceLevels: ["standard"],
+        },
+        {
+          key: "std_midday",
+          label: "Midday · 11:00 – 15:00",
+          startMinutes: 11 * 60,
+          endMinutes: 15 * 60,
+          capacity: 6,
+          serviceLevels: ["standard"],
+        },
+        {
+          key: "std_afternoon",
+          label: "Afternoon · 13:00 – 17:00",
+          startMinutes: 13 * 60,
+          endMinutes: 17 * 60,
+          capacity: 6,
+          serviceLevels: ["standard"],
+        },
+        {
+          key: "exp_super_early",
+          label: "Super early · 07:00 – 09:00",
+          startMinutes: 7 * 60,
+          endMinutes: 9 * 60,
+          capacity: 3,
+          serviceLevels: ["express", "on_demand"],
+        },
+        {
+          key: "exp_morning",
+          label: "Morning · 09:00 – 11:00",
+          startMinutes: 9 * 60,
+          endMinutes: 11 * 60,
+          capacity: 3,
+          serviceLevels: ["express", "on_demand"],
+        },
+        {
+          key: "exp_brunch",
+          label: "Brunch · 11:00 – 13:00",
+          startMinutes: 11 * 60,
+          endMinutes: 13 * 60,
+          capacity: 3,
+          serviceLevels: ["express", "on_demand"],
+        },
+        {
+          key: "exp_lunch",
+          label: "Lunch · 13:00 – 15:00",
+          startMinutes: 13 * 60,
+          endMinutes: 15 * 60,
+          capacity: 3,
+          serviceLevels: ["express", "on_demand"],
+        },
+        {
+          key: "exp_late_afternoon",
+          label: "Late afternoon · 15:00 – 17:00",
+          startMinutes: 15 * 60,
+          endMinutes: 17 * 60,
+          capacity: 3,
+          serviceLevels: ["express", "on_demand"],
         },
       ],
-      defaultCapacity: 12,
+      defaultCapacity: 4,
       minLeadDays: 1,
       cutoffMinutesBefore: 120,
       horizonDays: 180,
+      healthLimitedBelowBps: 3_000,
     },
     // PLACEHOLDERS until the real fleet economics are supplied.
     "settlement.rules": {
@@ -184,12 +262,26 @@ export const CATALOG_SEED = {
       code: "standard",
       name: "Standard",
       description:
-        "Pre-scheduled. Book at least a day ahead and we collect and deliver on the day you choose, inside the time slot you pick.",
+        "Pre-scheduled. Book at least a day ahead and we collect and deliver inside a 4-hour window you choose.",
       multiplierBps: 10_000,
       surchargeCents: 0,
       requiresSlot: true,
       sameDayCutoffMinutes: 10 * 60,
       sortOrder: 1,
+    },
+    {
+      code: "express",
+      name: "Express",
+      description:
+        "Pre-scheduled, on a tighter promise. Book at least a day ahead and we collect and deliver inside a 2-hour window you choose.",
+      // A narrower window is less room to batch it with other work, which is the actual cost
+      // of selling it: a premium over Standard, short of what On-demand charges for no notice
+      // at all.
+      multiplierBps: 12_500,
+      surchargeCents: 2_000,
+      requiresSlot: true,
+      sameDayCutoffMinutes: 10 * 60,
+      sortOrder: 2,
     },
     {
       code: "on_demand",
@@ -200,7 +292,7 @@ export const CATALOG_SEED = {
       surchargeCents: 5_000,
       requiresSlot: false,
       sameDayCutoffMinutes: null,
-      sortOrder: 2,
+      sortOrder: 3,
     },
   ],
   packageTypes: [

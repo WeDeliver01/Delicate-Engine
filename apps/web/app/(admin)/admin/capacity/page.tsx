@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import type {
   BlackoutDate,
+  CatalogResponse,
   SlotAvailability,
   SlotPolicy,
   WindowBandAvailability,
@@ -21,6 +22,13 @@ export default function AdminCapacity() {
     queryKey: ["admin", "capacity", "policy"],
     queryFn: () => api<SlotPolicy>("/v1/admin/capacity/policy"),
   });
+  // Which service levels a window belongs to is picked from this list -- on-demand left out,
+  // since it never touches the slot system at all.
+  const catalog = useQuery({
+    queryKey: ["catalog"],
+    queryFn: () => api<CatalogResponse>("/v1/public/catalog", { account: null }),
+  });
+  const slotServiceLevels = (catalog.data?.serviceLevels ?? []).filter((s) => s.requiresSlot);
   const slots = useQuery({
     queryKey: ["admin", "capacity", "slots"],
     queryFn: () => api<SlotAvailability[]>("/v1/admin/capacity/slots"),
@@ -58,7 +66,14 @@ export default function AdminCapacity() {
   return (
     <div className="space-y-6">
       {error && <p className="alert-error">{error}</p>}
-      {policy.data && <PolicyForm policy={policy.data} onSaved={invalidate} onError={onError} />}
+      {policy.data && (
+        <PolicyForm
+          policy={policy.data}
+          serviceLevels={slotServiceLevels}
+          onSaved={invalidate}
+          onError={onError}
+        />
+      )}
 
       <section className="panel p-5">
         <h2 className="section-title">Next {days.length} operating days</h2>
@@ -165,10 +180,13 @@ export default function AdminCapacity() {
 
 function PolicyForm({
   policy,
+  serviceLevels,
   onSaved,
   onError,
 }: {
   policy: SlotPolicy;
+  /** Which service levels a window can be tagged with — the ones that use the slot system. */
+  serviceLevels: { code: string; name: string }[];
   onSaved: () => void;
   onError: (e: unknown) => void;
 }) {
@@ -238,6 +256,31 @@ function PolicyForm({
       </div>
 
       {/*
+        What a customer is told is never a count -- "12 left" says how thin the fleet is
+        running to anyone who books twice. Below this share of a window's capacity still
+        free, it reads as "limited" rather than "healthy"; at zero it reads as closed, same
+        as today. This is the only number that decides which word they see.
+      */}
+      <label className="mt-4 block max-w-xs text-sm">
+        <span className="text-[#6B6661]">Reads as &ldquo;limited&rdquo; below (%)</span>
+        <input
+          type="number"
+          step="1"
+          min="0"
+          max="100"
+          value={p.healthLimitedBelowBps / 100}
+          onChange={(e) =>
+            setP({ ...p, healthLimitedBelowBps: Math.round(Number(e.target.value) * 100) })
+          }
+          className="mt-1 w-full input px-2 py-1.5 font-mono"
+        />
+        <span className="mt-1 block text-xs text-muted">
+          A customer never sees a number of spaces, only whether a window looks healthy, limited, or
+          closed.
+        </span>
+      </label>
+
+      {/*
         Volume and concurrency are different constraints. The capacity above answers "how much
         work exists this half-day", which is what drivers on shift can cover. It cannot answer
         "how many promises are there for 09:00" — four drivers can cover forty morning stops and
@@ -291,93 +334,142 @@ function PolicyForm({
         )}
       </div>
       <h3 className="mt-4 section-title">Windows</h3>
+      <p className="mt-1 text-xs text-muted">
+        A window belongs to the service levels ticked below it. Standard and Express can cover the
+        same hours and still be separate rows — each is its own capacity, because a 4-hour promise
+        and a 2-hour promise are not the same amount of room on the same van.
+      </p>
       {p.windows.map((w, i) => (
-        <div key={i} className="mt-2 grid items-end gap-2 sm:grid-cols-5 text-sm">
-          <label>
-            <span className="text-xs text-[#6B6661]">Key</span>
-            <input
-              value={w.key}
-              onChange={(e) =>
-                setP({
-                  ...p,
-                  windows: p.windows.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)),
-                })
-              }
-              className="mt-1 w-full input px-2 py-1 font-mono"
-            />
-          </label>
-          <label>
-            <span className="text-xs text-[#6B6661]">Label</span>
-            <input
-              value={w.label}
-              onChange={(e) =>
-                setP({
-                  ...p,
-                  windows: p.windows.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)),
-                })
-              }
-              className="mt-1 w-full input px-2 py-1"
-            />
-          </label>
-          <label>
-            <span className="text-xs text-[#6B6661]">Start</span>
-            <input
-              type="time"
-              value={minutesToClock(w.startMinutes)}
-              onChange={(e) =>
-                setP({
-                  ...p,
-                  windows: p.windows.map((x, j) =>
-                    j === i ? { ...x, startMinutes: toMinutes(e.target.value) } : x,
-                  ),
-                })
-              }
-              className="mt-1 w-full input px-2 py-1"
-            />
-          </label>
-          <label>
-            <span className="text-xs text-[#6B6661]">End</span>
-            <input
-              type="time"
-              value={minutesToClock(w.endMinutes)}
-              onChange={(e) =>
-                setP({
-                  ...p,
-                  windows: p.windows.map((x, j) =>
-                    j === i ? { ...x, endMinutes: toMinutes(e.target.value) } : x,
-                  ),
-                })
-              }
-              className="mt-1 w-full input px-2 py-1"
-            />
-          </label>
-          <div className="flex gap-2">
-            <label className="flex-1">
-              <span className="text-xs text-[#6B6661]">Capacity</span>
+        <div key={i} className="mt-3 rounded-xl border border-line p-3">
+          <div className="grid items-end gap-2 sm:grid-cols-5 text-sm">
+            <label>
+              <span className="text-xs text-[#6B6661]">Key</span>
               <input
-                type="number"
-                placeholder="default"
-                value={w.capacity ?? ""}
+                value={w.key}
                 onChange={(e) =>
                   setP({
                     ...p,
-                    windows: p.windows.map((x, j) =>
-                      j === i
-                        ? { ...x, capacity: e.target.value === "" ? null : Number(e.target.value) }
-                        : x,
-                    ),
+                    windows: p.windows.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)),
                   })
                 }
                 className="mt-1 w-full input px-2 py-1 font-mono"
               />
             </label>
-            <button
-              type="button"
-              onClick={() => setP({ ...p, windows: p.windows.filter((_, j) => j !== i) })}
-              className="mb-1 text-xs text-[#C13B73]"
-            >
-              ×
-            </button>
+            <label>
+              <span className="text-xs text-[#6B6661]">Label</span>
+              <input
+                value={w.label}
+                onChange={(e) =>
+                  setP({
+                    ...p,
+                    windows: p.windows.map((x, j) =>
+                      j === i ? { ...x, label: e.target.value } : x,
+                    ),
+                  })
+                }
+                className="mt-1 w-full input px-2 py-1"
+              />
+            </label>
+            <label>
+              <span className="text-xs text-[#6B6661]">Start</span>
+              <input
+                type="time"
+                value={minutesToClock(w.startMinutes)}
+                onChange={(e) =>
+                  setP({
+                    ...p,
+                    windows: p.windows.map((x, j) =>
+                      j === i ? { ...x, startMinutes: toMinutes(e.target.value) } : x,
+                    ),
+                  })
+                }
+                className="mt-1 w-full input px-2 py-1"
+              />
+            </label>
+            <label>
+              <span className="text-xs text-[#6B6661]">End</span>
+              <input
+                type="time"
+                value={minutesToClock(w.endMinutes)}
+                onChange={(e) =>
+                  setP({
+                    ...p,
+                    windows: p.windows.map((x, j) =>
+                      j === i ? { ...x, endMinutes: toMinutes(e.target.value) } : x,
+                    ),
+                  })
+                }
+                className="mt-1 w-full input px-2 py-1"
+              />
+            </label>
+            <div className="flex gap-2">
+              <label className="flex-1">
+                <span className="text-xs text-[#6B6661]">Capacity</span>
+                <input
+                  type="number"
+                  placeholder="default"
+                  value={w.capacity ?? ""}
+                  onChange={(e) =>
+                    setP({
+                      ...p,
+                      windows: p.windows.map((x, j) =>
+                        j === i
+                          ? {
+                              ...x,
+                              capacity: e.target.value === "" ? null : Number(e.target.value),
+                            }
+                          : x,
+                      ),
+                    })
+                  }
+                  className="mt-1 w-full input px-2 py-1 font-mono"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setP({ ...p, windows: p.windows.filter((_, j) => j !== i) })}
+                className="mb-1 text-xs text-[#C13B73]"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3 border-t border-[#F0EDE9] pt-3">
+            {serviceLevels.length === 0 ? (
+              <span className="text-xs text-muted">
+                No pre-scheduled service levels yet — add one under Pricing first.
+              </span>
+            ) : (
+              serviceLevels.map((sl) => (
+                <label key={sl.code} className="flex items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={w.serviceLevels.includes(sl.code)}
+                    onChange={(e) =>
+                      setP({
+                        ...p,
+                        windows: p.windows.map((x, j) =>
+                          j !== i
+                            ? x
+                            : {
+                                ...x,
+                                serviceLevels: e.target.checked
+                                  ? [...x.serviceLevels, sl.code]
+                                  : x.serviceLevels.filter((c) => c !== sl.code),
+                              },
+                        ),
+                      })
+                    }
+                  />
+                  {sl.name}
+                </label>
+              ))
+            )}
+            {w.serviceLevels.length === 0 && (
+              <span className="text-xs text-[#C13B73]">
+                Nothing ticked — this window belongs to every pre-scheduled service level.
+              </span>
+            )}
           </div>
         </div>
       ))}
@@ -394,6 +486,7 @@ function PolicyForm({
                 startMinutes: 9 * 60,
                 endMinutes: 12 * 60,
                 capacity: null,
+                serviceLevels: [],
               },
             ],
           })

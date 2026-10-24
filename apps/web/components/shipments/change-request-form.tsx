@@ -6,8 +6,8 @@ import {
   CHANGE_REQUEST_KIND_LABELS,
   type Address,
   type ChangeRequestKind,
+  type PublicSlotAvailability,
   type Shipment,
-  type SlotAvailability,
 } from "@delicate/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiRequestError } from "@/lib/api";
@@ -43,7 +43,11 @@ export function ChangeRequestForm({
 
   const slots = useQuery({
     queryKey: ["slots"],
-    queryFn: () => api<SlotAvailability[]>("/v1/public/slots/availability", { account: null }),
+    queryFn: () =>
+      api<PublicSlotAvailability[]>(
+        `/v1/public/slots/availability?serviceLevel=${encodeURIComponent(shipment.serviceLevelCode)}`,
+        { account: null },
+      ),
     enabled: kind === "reschedule",
   });
 
@@ -138,7 +142,9 @@ export function ChangeRequestForm({
                   <span>
                     {s.date} · {s.label}
                   </span>
-                  <span className="text-xs text-muted">{s.remaining} left</span>
+                  <span className="text-xs text-muted">
+                    {s.health === "limited" ? "Filling up" : "Good availability"}
+                  </span>
                 </button>
               );
             })}

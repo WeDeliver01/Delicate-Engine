@@ -46,7 +46,7 @@ describe("fleet, dispatch & settlement", () => {
   let cakeId: string;
   let driver: Driver;
   const TODAY = "2026-09-23"; // Wednesday, on-demand bookings land today
-  const SLOT = { date: "2026-09-24", windowKey: "morning" };
+  const SLOT = { date: "2026-09-24", windowKey: "std_morning" };
 
   beforeAll(async () => {
     h = await createHarness();

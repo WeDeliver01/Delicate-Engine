@@ -25,7 +25,7 @@ const addr = (formatted: string, location: { lat: number; lng: number }, suburb 
   placeId: null,
 });
 
-const SLOT = { date: "2026-09-24", windowKey: "morning" };
+const SLOT = { date: "2026-09-24", windowKey: "std_morning" };
 
 describe("service access", () => {
   let h: Harness;
@@ -460,7 +460,7 @@ describe("service access", () => {
         .send(
           bookingBody({
             quoteId: quoted.body.id,
-            slot: { date: "2026-09-25", windowKey: "morning" },
+            slot: { date: "2026-09-25", windowKey: "std_morning" },
           }),
         );
       clock.now = () => start;

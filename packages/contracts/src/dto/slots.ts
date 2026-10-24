@@ -13,6 +13,17 @@ export const SlotWindow = z.object({
   startMinutes: z.number().int().min(0).max(1439),
   endMinutes: z.number().int().min(1).max(1440),
   capacity: z.number().int().min(0).max(500).nullable(), // null = policy default
+  /**
+   * Which service levels this window is sold under. Empty means every slot-requiring
+   * service level -- the one list of windows this policy shipped with, before a second
+   * service level needed its own.
+   *
+   * A Standard window and an Express window can cover the same hours and still be two rows:
+   * each is its own capacity, because a 4-hour promise and a 2-hour promise are not the same
+   * amount of room on the same van, and pretending they share one pool is how one oversells
+   * the other.
+   */
+  serviceLevels: z.array(z.string().min(2).max(32)).default([]),
 });
 export type SlotWindow = z.infer<typeof SlotWindow>;
 
@@ -64,6 +75,24 @@ export const WindowBandAvailability = z.object({
 });
 export type WindowBandAvailability = z.infer<typeof WindowBandAvailability>;
 
+/**
+ * How full a slot looks, without saying how full. "12 left" tells a competitor, and a slow
+ * week, exactly how thin the operation is running; "healthy" tells a customer what they
+ * actually came to find out, which is whether to book this one or try another.
+ */
+export const SlotHealth = z.enum(["healthy", "limited", "closed"]);
+export type SlotHealth = z.infer<typeof SlotHealth>;
+
+/** What the public is told about a band: whether it can be bought, never by how much room. */
+export const PublicWindowBandAvailability = z.object({
+  date: IsoDate,
+  startMinute: z.number().int(),
+  endMinute: z.number().int(),
+  bookable: z.boolean(),
+  health: SlotHealth,
+});
+export type PublicWindowBandAvailability = z.infer<typeof PublicWindowBandAvailability>;
+
 export const SlotPolicy = z.object({
   /** 0 = Sunday … 6 = Saturday */
   operatingDays: z.array(z.number().int().min(0).max(6)).min(1),
@@ -75,6 +104,12 @@ export const SlotPolicy = z.object({
   cutoffMinutesBefore: z.number().int().min(0).max(1440),
   /** How far ahead slots are offered. */
   horizonDays: z.number().int().min(1).max(400),
+  /**
+   * Where "healthy" stops and "limited" starts, as a share of capacity still free. 3000 is
+   * 30%: at or above that, a slot reads as healthy; below it, limited; none left, closed.
+   * The business's own read of how worried a thin day should look, not ours.
+   */
+  healthLimitedBelowBps: z.number().int().min(0).max(10_000).default(3_000),
   /** Timed windows sold inside a slot. Off until the business turns it on. */
   timedWindow: TimedWindowPolicy.default({
     enabled: false,
@@ -101,6 +136,65 @@ export const SlotAvailability = z.object({
   closedReason: z.enum(["full", "closed", "blackout", "cutoff_passed", "lead_time"]).nullable(),
 });
 export type SlotAvailability = z.infer<typeof SlotAvailability>;
+
+/**
+ * What a customer is told about a slot: whether it can be booked, and roughly how it looks,
+ * never the count behind either. `closedReason` stays -- "too late to book" and "fully
+ * booked" are words, not a number, and knowing why a slot is shut is the difference between
+ * trying another window and trying another day.
+ */
+export const PublicSlotAvailability = z.object({
+  date: IsoDate,
+  windowKey: z.string(),
+  label: z.string(),
+  startMinutes: z.number().int(),
+  endMinutes: z.number().int(),
+  bookable: z.boolean(),
+  health: SlotHealth,
+  closedReason: z.enum(["full", "closed", "blackout", "cutoff_passed", "lead_time"]).nullable(),
+});
+export type PublicSlotAvailability = z.infer<typeof PublicSlotAvailability>;
+
+/** `remaining ÷ capacity` as a word, at the operator's own threshold. */
+export function slotHealth(
+  remaining: number,
+  capacity: number,
+  limitedBelowBps: number,
+): SlotHealth {
+  if (remaining <= 0) return "closed";
+  if (capacity <= 0) return "healthy"; // uncapped: nothing to be short of
+  const freeBps = Math.round((remaining / capacity) * 10_000);
+  return freeBps < limitedBelowBps ? "limited" : "healthy";
+}
+
+export function toPublicSlotAvailability(
+  s: SlotAvailability,
+  limitedBelowBps: number,
+): PublicSlotAvailability {
+  return {
+    date: s.date,
+    windowKey: s.windowKey,
+    label: s.label,
+    startMinutes: s.startMinutes,
+    endMinutes: s.endMinutes,
+    bookable: s.bookable,
+    health: s.bookable ? slotHealth(s.remaining, s.capacity, limitedBelowBps) : "closed",
+    closedReason: s.closedReason,
+  };
+}
+
+export function toPublicWindowBandAvailability(
+  b: WindowBandAvailability,
+  limitedBelowBps: number,
+): PublicWindowBandAvailability {
+  return {
+    date: b.date,
+    startMinute: b.startMinute,
+    endMinute: b.endMinute,
+    bookable: b.bookable,
+    health: b.bookable ? slotHealth(b.remaining, b.capacity, limitedBelowBps) : "closed",
+  };
+}
 
 export const AvailabilityQuery = z.object({
   dateFrom: IsoDate.optional(),

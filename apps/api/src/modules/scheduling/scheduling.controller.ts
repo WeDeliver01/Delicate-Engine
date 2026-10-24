@@ -7,6 +7,8 @@ import {
   IsoDate,
   SetSlotRequest,
   SlotPolicy,
+  toPublicSlotAvailability,
+  toPublicWindowBandAvailability,
 } from "@delicate/contracts";
 import { PlatformRoles, Public } from "../../auth/decorators.js";
 import { Body, Params, Query } from "../../common/zod.js";
@@ -22,16 +24,27 @@ export class PublicSlotsController {
     private readonly catalog: CatalogService,
   ) {}
 
+  /**
+   * What is bookable, as a customer is allowed to see it: health, never the count behind it.
+   * Which windows even exist also depends on the service level asked about -- a Standard
+   * booking is not offered an Express window and the reverse -- so the same parameter does
+   * two jobs: it tells the engine whether this service dispatches immediately, and it
+   * narrows the window list to the ones that service actually sells.
+   */
   @Public()
   @Get("availability")
   async availability(@Query(AvailabilityQuery) q: AvailabilityQuery) {
-    // Resolved here rather than taken as a flag: whether a service dispatches immediately is
-    // ours to know, and a client that could assert it would be offered slots the booking
-    // would then refuse.
-    const immediate = q.serviceLevel
-      ? !(await this.catalog.serviceLevelByCode(q.serviceLevel)).requiresSlot
-      : false;
-    return this.scheduling.availability(q.dateFrom, q.dateTo, { immediate });
+    const [immediate, policy] = await Promise.all([
+      q.serviceLevel
+        ? this.catalog.serviceLevelByCode(q.serviceLevel).then((sl) => !sl.requiresSlot)
+        : Promise.resolve(false),
+      this.scheduling.policy(),
+    ]);
+    const slots = await this.scheduling.availability(q.dateFrom, q.dateTo, {
+      immediate,
+      serviceLevel: q.serviceLevel,
+    });
+    return slots.map((s) => toPublicSlotAvailability(s, policy.healthLimitedBelowBps));
   }
 
   /**
@@ -40,8 +53,12 @@ export class PublicSlotsController {
    */
   @Public()
   @Get("windows/:date")
-  windows(@Params(z.object({ date: IsoDate })) p: { date: string }) {
-    return this.scheduling.windowAvailability(p.date);
+  async windows(@Params(z.object({ date: IsoDate })) p: { date: string }) {
+    const [bands, policy] = await Promise.all([
+      this.scheduling.windowAvailability(p.date),
+      this.scheduling.policy(),
+    ]);
+    return bands.map((b) => toPublicWindowBandAvailability(b, policy.healthLimitedBelowBps));
   }
 }
 
