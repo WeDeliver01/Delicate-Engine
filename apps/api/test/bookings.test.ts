@@ -205,9 +205,7 @@ describe("bookings & shipments", () => {
     const policy = await sched.policy();
     await sched.updatePolicy({
       ...policy,
-      windows: policy.windows.map((w) =>
-        w.key === "std_afternoon" ? { ...w, capacity: 1 } : w,
-      ),
+      windows: policy.windows.map((w) => (w.key === "std_afternoon" ? { ...w, capacity: 1 } : w)),
     });
     const first = await h
       .http()
