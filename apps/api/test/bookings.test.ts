@@ -202,7 +202,13 @@ describe("bookings & shipments", () => {
     expect(od.body.slotDate).toBeNull();
 
     const sched = h.app.get(SchedulingService);
-    await sched.updatePolicy({ ...(await sched.policy()), defaultCapacity: 1 });
+    const policy = await sched.policy();
+    await sched.updatePolicy({
+      ...policy,
+      windows: policy.windows.map((w) =>
+        w.key === "std_afternoon" ? { ...w, capacity: 1 } : w,
+      ),
+    });
     const first = await h
       .http()
       .post("/v1/account/bookings")

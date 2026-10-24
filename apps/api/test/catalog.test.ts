@@ -51,7 +51,7 @@ describe("catalog & quotes", () => {
     const res = await h.http().get("/v1/public/catalog");
     expect(res.status).toBe(200);
     const body = res.body as CatalogResponse;
-    expect(body.serviceLevels.map((s) => s.code)).toEqual(["standard", "on_demand"]);
+    expect(body.serviceLevels.map((s) => s.code)).toEqual(["standard", "express", "on_demand"]);
     expect(body.packageTypes.length).toBeGreaterThan(3);
     expect(body.vatBps).toBe(1_500);
   });
