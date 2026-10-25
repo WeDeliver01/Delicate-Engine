@@ -26,12 +26,6 @@ function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  /*
-    What the provider actually said, when we have replaced it with something kinder.
-    Rewording an error is for the customer; throwing the original away is for nobody --
-    "we could not send the email" with no reason is unfixable by whoever has to fix it.
-  */
-  const [detail, setDetail] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [resent, setResent] = useState(false);
@@ -72,11 +66,10 @@ function SignUpForm() {
     setSentTo(email.trim());
   }
 
-  /** Show our wording, and keep theirs where it differs. */
+  /** Show our wording to the customer; theirs goes to the console, for us, not the page. */
   function fail(providerMessage: string) {
-    const friendly = readable(providerMessage);
-    setError(friendly);
-    setDetail(friendly === providerMessage ? null : providerMessage);
+    setError(readable(providerMessage));
+    console.error("signup: provider error:", providerMessage);
   }
 
   /** Nothing arrived. Usually spam, sometimes a typo, occasionally our mail is not sending. */
@@ -97,7 +90,7 @@ function SignUpForm() {
     return (
       <AuthShell
         title="Check your email"
-        lede={`We sent a confirmation link to ${sentTo}. Open it on this device to finish signing up.`}
+        lede={`We sent a confirmation link to ${sentTo}. Open it on whichever device is handiest — it works wherever you tap it.`}
         footer={
           <>
             Wrong address?{" "}
@@ -107,16 +100,10 @@ function SignUpForm() {
           </>
         }
       >
-        <p className="alert-info mt-8">
-          The link opens this site and signs you in. It only works in the browser you started in —
-          if you open it on your phone instead, come back here and sign in with your email and
-          password.
-        </p>
-        <div className="mt-4 space-y-3">
+        <div className="mt-8 space-y-3">
           {error && (
             <div className="alert-error">
               <p>{error}</p>
-              {detail && <p className="mt-1.5 text-xs opacity-75">Reported as: {detail}</p>}
             </div>
           )}
           {resent ? (
@@ -199,7 +186,6 @@ function SignUpForm() {
             {error && (
               <div className="alert-error">
                 <p>{error}</p>
-                {detail && <p className="mt-1.5 text-xs opacity-75">Reported as: {detail}</p>}
               </div>
             )}
             <button disabled={busy} className="btn btn-primary w-full">
@@ -219,7 +205,7 @@ function SignUpForm() {
 }
 
 function confirmUrl(next: string): string {
-  return `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+  return `${window.location.origin}/auth/confirm?next=${encodeURIComponent(next)}`;
 }
 
 /**

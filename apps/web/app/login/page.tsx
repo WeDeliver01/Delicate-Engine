@@ -47,8 +47,8 @@ function LoginForm() {
   }
 
   /**
-   * Supabase sends the reset link; the callback exchanges it for a session and drops them in
-   * the portal, where they can set a new password from their profile.
+   * Supabase sends the reset link; /auth/confirm verifies it and signs them in, and
+   * /auth/reset is where they actually set the new password.
    */
   async function resetPassword() {
     if (misconfigured) return setError(misconfigured);
@@ -58,7 +58,7 @@ function LoginForm() {
 
     setError(null);
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset`,
+      redirectTo: `${window.location.origin}/auth/confirm?next=/auth/reset`,
     });
     if (error) return setError(error.message);
     setNotice(`If we know ${email.trim()}, a reset link is on its way.`);
