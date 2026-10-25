@@ -64,7 +64,11 @@ describe("invoices, credit notes and statements", () => {
   beforeEach(async () => {
     await h.reset();
     await h.db.db.insert(users).values({ ...USERS.admin, platformRole: "super_admin" });
-    // a real supplier VAT number, so documents issue as TAX INVOICEs
+    // VAT registered with a real supplier number, so documents issue as TAX INVOICEs. The
+    // company is not VAT registered in reality (hence the default is off) -- this file is
+    // specifically about what invoicing does when it is on, with one test at the bottom for
+    // what the real, unregistered default looks like.
+    await settings.set("company.vat_registered", true);
     const profile = await settings.get("company.tax_profile");
     await settings.set("company.tax_profile", {
       ...profile,

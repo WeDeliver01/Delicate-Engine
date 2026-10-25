@@ -40,15 +40,22 @@ describe("operator settings", () => {
   it("returns every operator-owned number in one typed bundle", async () => {
     const s = await bundle();
     expect(s.company.legalName).toBe("Delicate Courier (Pty) Ltd");
-    expect(s.vat).toEqual({ registered: true, bps: 1_500 });
+    // The company is not VAT registered; the seeded rate is only what would apply if it were.
+    expect(s.vat).toEqual({ registered: false, bps: 1_500 });
     expect(s.operations.timezone).toBe("Africa/Johannesburg");
     expect(s.settlement.driverEarningPerDropCents).toBeGreaterThan(0);
     expect(s.slots).toBeTruthy();
   });
 
-  it("warns that documents are not tax invoices until the VAT number is filled in", async () => {
+  it("warns that documents are not tax invoices until the VAT number is filled in, once VAT is switched on", async () => {
+    await h
+      .http()
+      .put("/v1/admin/settings/vat")
+      .set(asAdmin())
+      .send({ registered: true, bps: 1_500 })
+      .expect(200);
     const s = await bundle();
-    // seeded profile has no VAT number but VAT is switched on
+    // seeded profile has no VAT number
     expect(s.readiness.issuesTaxInvoices).toBe(false);
     const blocking = s.readiness.missing.filter((m) => m.severity === "blocking");
     expect(blocking.map((m) => m.field)).toContain("company.vatNumber");
@@ -133,7 +140,15 @@ describe("operator settings", () => {
     expect((await bundle()).readiness.obligationCount).toBe(6); // 6 seeded − telecoms + security
   });
 
-  it("switching VAT off issues plain invoices and stops adding VAT to quotes", async () => {
+  it("switching VAT on charges it, and back off stops issuing tax invoices", async () => {
+    await h
+      .http()
+      .put("/v1/admin/settings/vat")
+      .set(asAdmin())
+      .send({ registered: true, bps: 1_500 })
+      .expect(200);
+    expect(await settings.vatBps()).toBe(1_500);
+
     await h
       .http()
       .put("/v1/admin/settings/vat")

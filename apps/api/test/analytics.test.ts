@@ -205,7 +205,9 @@ describe("reports and exports", () => {
     const d = await overview();
     // revenue is credit-normal, so the ledger shows it negative
     expect(-(await ledger.balance("REVENUE", "company", null))).toBe(d.revenueCents);
-    expect(-(await ledger.balance("VAT_OUTPUT", "company", null))).toBe(d.vatCents);
+    // toBeCloseTo rather than toBe: with VAT off, both sides are zero, and -0 !== 0 under toBe's
+    // Object.is comparison -- a sign distinction that means nothing for a cents amount.
+    expect(-(await ledger.balance("VAT_OUTPUT", "company", null))).toBeCloseTo(d.vatCents);
     expect(await ledger.balance("FUEL_EXPENSE", "company", null)).toBe(d.fuelCents);
     expect(d.marginCents).toBe(d.revenueCents - d.fuelCents - d.driverEarningsCents);
   });

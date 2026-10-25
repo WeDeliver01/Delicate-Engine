@@ -47,12 +47,18 @@ describe("catalog & quotes", () => {
     cupcakesId = catalog.packageTypes.find((p) => p.code === "cupcakes")!.id;
   });
 
-  it("serves the public catalog with VAT", async () => {
+  it("serves the public catalog with no VAT, because the company is not VAT registered", async () => {
     const res = await h.http().get("/v1/public/catalog");
     expect(res.status).toBe(200);
     const body = res.body as CatalogResponse;
     expect(body.serviceLevels.map((s) => s.code)).toEqual(["standard", "express", "on_demand"]);
     expect(body.packageTypes.length).toBeGreaterThan(3);
+    expect(body.vatBps).toBe(0);
+  });
+
+  it("carries VAT on the public catalog once the company registers", async () => {
+    await settings.set("company.vat_registered", true);
+    const body = (await h.http().get("/v1/public/catalog")).body as CatalogResponse;
     expect(body.vatBps).toBe(1_500);
   });
 

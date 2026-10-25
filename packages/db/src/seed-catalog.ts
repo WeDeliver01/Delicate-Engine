@@ -25,7 +25,7 @@ export const CATALOG_SEED = {
       location: { lat: -25.7642, lng: 28.2917 },
       placeId: null,
     },
-    "company.vat_registered": true,
+    "company.vat_registered": false,
     "company.vat_bps": 1_500,
     "company.timezone": "Africa/Johannesburg",
     "booking.same_day_cutoff_minutes": 10 * 60,

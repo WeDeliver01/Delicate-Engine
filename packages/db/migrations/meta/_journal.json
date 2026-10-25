@@ -253,6 +253,13 @@
       "when": 1792708607328,
       "tag": "0035_capacity_windows",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792708608328,
+      "tag": "0036_vat_not_registered",
+      "breakpoints": true
     }
   ]
 }

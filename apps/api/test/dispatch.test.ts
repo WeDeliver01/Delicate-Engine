@@ -391,7 +391,9 @@ describe("fleet, dispatch & settlement", () => {
       -(500_000 - b.totalCents),
     );
     expect(await ledger.balance("REVENUE", "company", null)).toBe(-b.breakdown.subtotalCents);
-    expect(await ledger.balance("VAT_OUTPUT", "company", null)).toBe(-b.breakdown.vatCents);
+    // toBeCloseTo rather than toBe: with VAT off, both sides are zero, and -0 !== 0 under toBe's
+    // Object.is comparison -- a sign distinction that means nothing for a cents amount.
+    expect(await ledger.balance("VAT_OUTPUT", "company", null)).toBeCloseTo(-b.breakdown.vatCents);
 
     // replaying delivery cannot double-settle
     const again = await h
