@@ -291,6 +291,48 @@ the ledger. No Phase 7 event moves money: invariant 7 holds unchanged. Timed win
 the one part that touches pricing and the booking transaction, and the exception lane has
 nothing to measure against until they land.
 
+### Phase 8 — System events (proposed, not yet signed off)
+
+Added 2026-10-25, from Ashley's own Overview page next to a screenshot of ShipLogic's Tools menu
+and a description of Sentry. The gap those point at is real: `outbox_messages` already counts
+pending/processing/delivered/failed/dead on the Overview card, and `audit_log` already records
+every privileged admin action — but there is nowhere to see _why_ a given webhook was rejected, a
+booking was refused, or a request 500'd, short of SSH'ing into the VPS and reading container
+logs. Phase 8 is that missing feed: one place a dispatcher or finance user can search for "what
+just went wrong," without needing shell access or a Sentry account.
+
+**What it is not**: not a replacement for `audit_log` (who changed a setting) or for the outbox's
+own retry/dead-letter machinery (how a domain event gets delivered) — it sits beside both,
+recording the operational failures and notable refusals that happen around them. Not a stack-trace
+aggregator with issue grouping and release tracking either; that is what a real APM (Sentry itself,
+whenever it is wired up per the Observability row in §2) is for. This is a narrower, in-console
+log built from events the engine already decides are worth a human knowing about.
+
+| Item                                                                                                                                                                   | State    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `system_events` table: level (`info`\|`warning`\|`error`), category, message, context (jsonb), request_id, created_at                                                  | Proposed |
+| `GlobalExceptionFilter` writes a row for every 5xx (and 4xx categories worth seeing in bulk, e.g. repeated `validation_failed`), alongside the existing structured log | Proposed |
+| Outbox dispatcher writes a row when a message dead-letters, carrying the event type and the last error                                                                 | Proposed |
+| Webhook handlers (PayFast/Yoco/BobPay) write a row on a signature failure or an unrecognised payload, before they reject the request                                   | Proposed |
+| Booking rejections (`rejected_slot_unavailable`, `insufficient_funds`, etc.) write a row rather than only living on the `bookings` row itself                          | Proposed |
+| Admin console page: filterable feed (level, category, date range) with a detail view for the context JSON                                                              | Proposed |
+| Retention: rows older than 90 days pruned by a scheduled job (no scheduled-job runner exists yet — see §2's "later" on pg-boss)                                        | Proposed |
+| Access: `super_admin` to start; broadened to `dispatcher`/`finance` once it is clear which categories they need                                                        | Proposed |
+
+Written from inside the same request/transaction where practical (the exception filter, the
+webhook handler) but **never inside a domain transaction that can roll back** — a booking
+rejection's event row must survive even though the rejection itself writes nothing else, and an
+outbox dead-letter's row is written by the worker after the attempt, not inside it. No new
+domain event is added to the catalog for this: these are operational facts for a human reading a
+screen, not business facts another module reacts to, so they do not go through the outbox
+themselves.
+
+The ShipLogic Tools screenshots are a separate idea living in the same message — a searchable grid
+of operational utilities (bulk import, address book, barcode generator, route planning). That is
+mostly navigation and reuse of things the console can already mostly do, not a new capture
+surface, and is better scoped once Phase 8 shows what "worth a dedicated tool" looks like here.
+It is not included in this phase.
+
 ---
 
 ## 7. Open items to confirm
