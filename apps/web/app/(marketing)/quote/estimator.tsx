@@ -23,7 +23,7 @@ export function Estimator() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const ready = collection && drops.every(Boolean) && drops.length > 0;
+  const ready = collection && drops.every(Boolean) && drops.length > 0 && Boolean(packageType);
 
   async function estimate(e: React.FormEvent) {
     e.preventDefault();
@@ -38,7 +38,7 @@ export function Estimator() {
           serviceLevelCode: serviceLevel,
           collection,
           drops,
-          packageTypeCodes: packageType ? drops.map(() => packageType) : [],
+          packageTypeCodes: drops.map(() => packageType),
           options: {
             liabilityCover: liability,
             declaredValueCents: liability ? Math.round(Number(declared || 0) * 100) : 0,
@@ -47,7 +47,18 @@ export function Estimator() {
       });
       setResult(res);
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : String(err));
+      // The engine's own validation message is written for whoever reads the logs, not for a
+      // customer on a public form — this is our wording, with that one for us in the console.
+      if (err instanceof ApiRequestError) {
+        console.error("quote estimate failed:", err.code, err.message);
+        setError(
+          err.code === "validation_failed"
+            ? "Something about that request did not look right. Check the addresses and what you are sending, and try again."
+            : err.message,
+        );
+      } else {
+        setError(String(err));
+      }
     } finally {
       setBusy(false);
     }

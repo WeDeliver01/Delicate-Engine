@@ -15,7 +15,16 @@ export const Address = z.object({
   postalCode: z.string().max(12).nullable().default(null),
   country: z.string().length(2).default("ZA"),
   location: LatLng,
-  placeId: z.string().max(200).nullable().default(null),
+  /*
+    An opaque handle from whichever provider resolved this address, so its shape is the
+    provider's business, not ours. Google's place_id stays well under 200 characters, but the
+    OSM/Geoapify fallback encodes the matched place's name into the id itself, so a long venue
+    name -- "Ekurhuleni Metro Police Department Alberton Precinct" turned up one 263 characters
+    long -- pushed straight past that cap and failed validation on a perfectly real address.
+    512 is headroom, not a measured bound: nothing downstream parses this string, it is only
+    ever sent back to the provider it came from.
+  */
+  placeId: z.string().max(512).nullable().default(null),
 });
 export type Address = z.infer<typeof Address>;
 
