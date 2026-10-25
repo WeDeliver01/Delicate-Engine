@@ -36,6 +36,24 @@ export class GeoapifyProvider implements GeoProvider {
     this.logger.setContext(GeoapifyProvider.name);
   }
 
+  /**
+   * Below this, a result is noise even alongside good ones — a street-only match in a city
+   * nobody asked about, scored by Geoapify itself at ~0.1-0.12 against ~0.5+ for anything
+   * plausible. Dropped outright rather than merely ranked lower.
+   */
+  private static readonly MIN_CONFIDENCE = 0.3;
+
+  /**
+   * Below this, even the BEST result is not good enough to call it a day. Geoapify's address
+   * autocomplete does not reliably index named places — a shopping centre or a government
+   * building comes back as a handful of same-score street-only matches across several suburbs
+   * (confidence ~0.5, `match_by_street`) with the venue itself nowhere in the list, rather than
+   * the `full_match` ~1.0 a precise street-and-number address gets. 0.6 separates those two
+   * cases; below it, returning [] here hands the query to LocationIQ next in the chain, which
+   * found "Broadacres Shopping Centre" by name on the exact query Geoapify could not place.
+   */
+  private static readonly GOOD_ENOUGH = 0.6;
+
   async geocode(query: string, limit = 5): Promise<GeocodeSuggestion[]> {
     const params = new URLSearchParams({
       text: query,
@@ -58,7 +76,17 @@ export class GeoapifyProvider implements GeoProvider {
         return [];
       }
       const body = (await res.json()) as { results?: GeoapifyPlace[] };
-      return (body.results ?? []).map((r) => ({
+      const results = body.results ?? [];
+
+      // Missing confidence is not treated as low confidence -- only drop what Geoapify itself
+      // scored as noise, and only decline the whole response when it scored nothing as good.
+      const confident = results.filter(
+        (r) => (r.rank?.confidence ?? 1) >= GeoapifyProvider.MIN_CONFIDENCE,
+      );
+      const best = Math.max(0, ...confident.map((r) => r.rank?.confidence ?? 1));
+      if (confident.length === 0 || best < GeoapifyProvider.GOOD_ENOUGH) return [];
+
+      return confident.map((r) => ({
         formatted: r.formatted ?? [r.address_line1, r.address_line2].filter(Boolean).join(", "),
         location: { lat: r.lat, lng: r.lon },
         placeId: r.place_id ? `geoapify:${r.place_id}` : null,
@@ -132,4 +160,5 @@ interface GeoapifyPlace {
   town?: string;
   village?: string;
   postcode?: string;
+  rank?: { confidence?: number };
 }
