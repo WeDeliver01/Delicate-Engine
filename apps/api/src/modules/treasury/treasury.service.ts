@@ -444,6 +444,47 @@ export class TreasuryService {
     });
   }
 
+  /**
+   * Removes a wallet outright, for the case "edit" cannot fix: one added by mistake, never
+   * allocated to. A wallet with a real allocation history is not deleted, whatever its balance
+   * is now -- the rows in `allocation_transactions` are what explain where that history's
+   * margin went, and deleting the wallet would leave them pointing at nothing. Switch it off
+   * with `active: false` instead; that is what the inactive bills on this page already are.
+   */
+  async deleteWallet(slug: string): Promise<void> {
+    return this.dbs.transaction(async (tx) => {
+      const wallet = await tx.query.allocationWallets.findFirst({
+        where: eq(allocationWallets.slug, slug),
+      });
+      if (!wallet) throw AppError.notFound("wallet");
+      if (wallet.isRetainedEarnings) {
+        throw AppError.conflict(
+          "retained_earnings_wallet",
+          "the retained-earnings wallet cannot be deleted -- exactly one must always exist",
+        );
+      }
+      const [row] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(allocationTransactions)
+        .where(eq(allocationTransactions.walletId, wallet.id));
+      const count = row!.count;
+      if (count > 0) {
+        throw AppError.conflict(
+          "wallet_has_history",
+          `"${wallet.name}" has ${count} allocation${count === 1 ? "" : "s"} against it and cannot be deleted -- switch it off instead, which keeps that history explainable`,
+        );
+      }
+      await tx.delete(allocationWallets).where(eq(allocationWallets.id, wallet.id));
+      await this.audit.record(tx, {
+        action: "treasury.wallet.delete",
+        entityType: "allocation_wallet",
+        entityId: wallet.id,
+        before: wallet,
+        after: null,
+      });
+    });
+  }
+
   async policy(): Promise<TreasuryPolicy> {
     return this.settings.get("treasury.policy");
   }

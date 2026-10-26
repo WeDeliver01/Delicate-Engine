@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { settings as settingsTable, users } from "@delicate/db";
+import {
+  allocationTransactions,
+  allocationWallets,
+  settings as settingsTable,
+  users,
+} from "@delicate/db";
 import type { AllocationWallet, SettingsBundle } from "@delicate/contracts";
 import { createHarness, USERS, type Harness } from "./harness.js";
 import { SettingsService } from "../src/infra/settings.service.js";
@@ -138,6 +143,54 @@ describe("operator settings", () => {
     expect(wallets.find((w) => w.slug === "telecoms")?.active).toBe(false);
     // an inactive bill stops counting as an obligation
     expect((await bundle()).readiness.obligationCount).toBe(6); // 6 seeded − telecoms + security
+  });
+
+  it("deletes a wallet nobody has ever allocated to", async () => {
+    await h
+      .http()
+      .put("/v1/admin/treasury/wallets/misc-one-off")
+      .set(asAdmin())
+      .send({ name: "A mistake", category: "operating_expense" })
+      .expect(200);
+
+    await h.http().delete("/v1/admin/treasury/wallets/misc-one-off").set(asAdmin()).expect(204);
+
+    const wallets = (await h.http().get("/v1/admin/treasury/wallets").set(asAdmin()))
+      .body as AllocationWallet[];
+    expect(wallets.find((w) => w.slug === "misc-one-off")).toBeUndefined();
+  });
+
+  it("refuses to delete a wallet with real allocation history", async () => {
+    const [wallet] = await h.db.db
+      .select()
+      .from(allocationWallets)
+      .where(eq(allocationWallets.slug, "premises"));
+    await h.db.db.insert(allocationTransactions).values({
+      walletId: wallet!.id,
+      kind: "allocation",
+      amountCents: 50_000,
+      balanceAfterCents: 50_000,
+      reference: "test:1",
+      period: "2026-09",
+      idempotencyKey: "test-alloc-1",
+    });
+
+    const res = await h.http().delete("/v1/admin/treasury/wallets/premises").set(asAdmin()).send();
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("wallet_has_history");
+    // switching it off instead must still work -- the point of the refusal
+    await h
+      .http()
+      .put("/v1/admin/treasury/wallets/premises")
+      .set(asAdmin())
+      .send({ name: "Premises rent", category: "operating_expense", active: false })
+      .expect(200);
+  });
+
+  it("refuses to delete the retained-earnings sink", async () => {
+    const res = await h.http().delete("/v1/admin/treasury/wallets/retained").set(asAdmin()).send();
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("retained_earnings_wallet");
   });
 
   it("switching VAT on charges it, and back off stops issuing tax invoices", async () => {

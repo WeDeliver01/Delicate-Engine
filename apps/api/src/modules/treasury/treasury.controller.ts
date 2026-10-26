@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import { TreasuryPolicy, UpsertWalletRequest, Uuid } from "@delicate/contracts";
@@ -45,6 +45,12 @@ export class AdminTreasuryController {
     @Body(UpsertWalletRequest) body: UpsertWalletRequest,
   ) {
     return this.treasury.upsertWallet(p.slug, body);
+  }
+
+  @Delete("wallets/:slug")
+  @HttpCode(204)
+  deleteWallet(@Params(SlugParam) p: { slug: string }) {
+    return this.treasury.deleteWallet(p.slug);
   }
 
   @Get("transactions")

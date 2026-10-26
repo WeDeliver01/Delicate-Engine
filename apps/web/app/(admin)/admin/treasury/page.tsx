@@ -439,12 +439,20 @@ function WalletGroupRows({
                 <td className="px-5 py-2 text-right font-mono">{rands(w.balanceCents)}</td>
                 <td className="px-5 py-2 text-right">
                   {!w.isRetainedEarnings && (
-                    <button
-                      onClick={() => setEditing(editing === w.id ? null : w.id)}
-                      className="text-xs text-brand-pink hover:underline"
-                    >
-                      {editing === w.id ? "close" : "edit"}
-                    </button>
+                    <span className="inline-flex gap-3">
+                      <button
+                        onClick={() => setEditing(editing === w.id ? null : w.id)}
+                        className="text-xs text-brand-pink hover:underline"
+                      >
+                        {editing === w.id ? "close" : "edit"}
+                      </button>
+                      <DeleteWalletButton
+                        slug={w.slug}
+                        name={w.name}
+                        onDone={onDone}
+                        onError={onError}
+                      />
+                    </span>
                   )}
                 </td>
               </tr>
@@ -632,6 +640,62 @@ function WalletForm({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A second click to confirm, rather than a dialog -- this is a hard delete (the row is gone,
+ * not deactivated), so it earns a step the softer actions on this page do not. The server is
+ * still the one that actually decides whether it is safe: a wallet with real allocation history
+ * refuses with a message explaining to switch it off instead, which lands in the page's error
+ * banner the same way any other save failure does.
+ */
+function DeleteWalletButton({
+  slug,
+  name,
+  onDone,
+  onError,
+}: {
+  slug: string;
+  name: string;
+  onDone: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const del = useMutation({
+    mutationFn: () => api(`/v1/admin/treasury/wallets/${slug}`, { method: "DELETE" }),
+    onSuccess: onDone,
+    onError: (e) => {
+      setConfirming(false);
+      onError(e);
+    },
+  });
+
+  if (confirming) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className="text-xs text-muted">Delete {name}?</span>
+        <button
+          onClick={() => del.mutate()}
+          disabled={del.isPending}
+          className="text-xs font-medium text-[#C13B73] hover:underline"
+        >
+          {del.isPending ? "deleting…" : "yes, delete"}
+        </button>
+        <button onClick={() => setConfirming(false)} className="text-xs text-muted hover:underline">
+          cancel
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setConfirming(true)}
+      className="text-xs text-muted hover:text-[#C13B73] hover:underline"
+    >
+      delete
+    </button>
   );
 }
 
