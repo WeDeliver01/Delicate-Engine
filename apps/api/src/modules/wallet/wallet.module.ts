@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { PinoLogger } from "nestjs-pino";
 import { ENV, type Env } from "../../config/env.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { WalletService } from "./wallet.service.js";
@@ -21,12 +22,12 @@ import { PayFastProvider } from "./payments/payfast.provider.js";
     TopUpService,
     {
       provide: PAYMENT_PROVIDERS,
-      inject: [ENV, SettingsService],
-      useFactory: (env: Env, settings: SettingsService) => [
+      inject: [ENV, SettingsService, PinoLogger],
+      useFactory: (env: Env, settings: SettingsService, logger: PinoLogger) => [
         new ManualEftProvider(env, settings),
         new PayFastProvider(env),
         new YocoProvider(env),
-        new BobPayProvider(env),
+        new BobPayProvider(env, logger),
       ],
     },
   ],

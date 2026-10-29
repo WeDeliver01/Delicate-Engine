@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PinoLogger } from "nestjs-pino";
 import type { TopUp, TopUpInstructions } from "@delicate/contracts";
 import type { Env } from "../../../config/env.js";
 import { AppError } from "../../../common/errors.js";
@@ -36,7 +37,12 @@ export class BobPayProvider implements PaymentProvider {
     production: "13.246.100.25",
   } as const;
 
-  constructor(private readonly env: Env) {}
+  constructor(
+    private readonly env: Env,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(BobPayProvider.name);
+  }
 
   private get sandbox(): boolean {
     return this.env.BOBPAY_SANDBOX === true;
@@ -210,6 +216,14 @@ export class BobPayProvider implements PaymentProvider {
     // Bob Pay's choice, not ours; the timing-safe compare costs nothing and removes one way
     // to learn the digest a byte at a time.
     if (!equalsHex(expected, p.signature ?? "")) {
+      // Everything here except the digests themselves is either already public (the field
+      // names) or already in the payload Bob Pay just sent us -- never the passphrase. This is
+      // what lets a real mismatch be diagnosed from the next retry alone, without needing the
+      // secret in hand to compare against.
+      this.logger.warn(
+        { unsigned: pairs.join("&"), theirSignature: p.signature, ourDigest: expected },
+        "bobpay signature mismatch",
+      );
       throw AppError.unauthorized("bobpay signature mismatch");
     }
   }

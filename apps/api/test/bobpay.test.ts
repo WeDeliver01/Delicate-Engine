@@ -4,6 +4,13 @@ import { BobPayProvider } from "../src/modules/wallet/payments/bobpay.provider.j
 import type { Env } from "../src/config/env.js";
 import type { TopUp } from "@delicate/contracts";
 
+const logger = {
+  setContext: () => undefined,
+  warn: () => undefined,
+  info: () => undefined,
+  error: () => undefined,
+} as unknown as ConstructorParameters<typeof BobPayProvider>[1];
+
 const ACCOUNT_CODE = "ABC123";
 const PASSPHRASE = "a-test-passphrase";
 const SANDBOX_IP = "13.245.58.93";
@@ -108,13 +115,13 @@ describe("Bob Pay", () => {
     it("stays off until it can both take a payment and verify one", async () => {
       // A token on its own could collect money and then be unable to prove the notification
       // about it was genuine, which is the worst of both.
-      const provider = new BobPayProvider(env({ BOBPAY_PASSPHRASE: undefined }));
+      const provider = new BobPayProvider(env({ BOBPAY_PASSPHRASE: undefined }), logger);
       expect(await provider.isEnabled()).toBe(false);
       expect(provider.pendingReason).toContain("BOBPAY_PASSPHRASE");
     });
 
     it("names every missing setting at once, not one per attempt", async () => {
-      const provider = new BobPayProvider({} as unknown as Env);
+      const provider = new BobPayProvider({} as unknown as Env, logger);
       expect(await provider.isEnabled()).toBe(false);
       expect(provider.pendingReason).toContain("BOBPAY_API_TOKEN");
       expect(provider.pendingReason).toContain("BOBPAY_ACCOUNT_CODE");
@@ -122,9 +129,9 @@ describe("Bob Pay", () => {
     });
 
     it("says which environment it is pointed at once it is configured", async () => {
-      expect(await new BobPayProvider(env()).isEnabled()).toBe(true);
-      expect(new BobPayProvider(env()).pendingReason).toContain("sandbox");
-      expect(new BobPayProvider(env({ BOBPAY_SANDBOX: false })).pendingReason).toContain(
+      expect(await new BobPayProvider(env(), logger).isEnabled()).toBe(true);
+      expect(new BobPayProvider(env(), logger).pendingReason).toContain("sandbox");
+      expect(new BobPayProvider(env({ BOBPAY_SANDBOX: false }), logger).pendingReason).toContain(
         "production",
       );
     });
@@ -138,7 +145,7 @@ describe("Bob Pay", () => {
         }),
       );
 
-      const result = await new BobPayProvider(env()).initiate(topUp, {
+      const result = await new BobPayProvider(env(), logger).initiate(topUp, {
         returnUrl: "https://example.test/ok",
         cancelUrl: "https://example.test/no",
         notifyUrl: "https://example.test/notify",
@@ -165,7 +172,7 @@ describe("Bob Pay", () => {
       const fetchMock = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(new Response(JSON.stringify({ url: "https://my.bobpay.co.za/pay/x" })));
-      await new BobPayProvider(env({ BOBPAY_SANDBOX: false })).initiate(topUp, {
+      await new BobPayProvider(env({ BOBPAY_SANDBOX: false }), logger).initiate(topUp, {
         returnUrl: "https://example.test/ok",
         cancelUrl: "https://example.test/no",
         notifyUrl: "https://example.test/notify",
@@ -178,7 +185,7 @@ describe("Bob Pay", () => {
 
     it("asks for an email rather than sending a request Bob Pay will refuse", async () => {
       await expect(
-        new BobPayProvider(env()).initiate(topUp, {
+        new BobPayProvider(env(), logger).initiate(topUp, {
           returnUrl: "https://example.test/ok",
           cancelUrl: "https://example.test/no",
           notifyUrl: "https://example.test/notify",
@@ -192,7 +199,7 @@ describe("Bob Pay", () => {
         new Response("amount too small", { status: 422 }),
       );
       await expect(
-        new BobPayProvider(env()).initiate(topUp, {
+        new BobPayProvider(env(), logger).initiate(topUp, {
           returnUrl: "https://example.test/ok",
           cancelUrl: "https://example.test/no",
           notifyUrl: "https://example.test/notify",
@@ -204,7 +211,9 @@ describe("Bob Pay", () => {
 
   describe("verifying a notification", () => {
     it("accepts a correctly signed payment from Bob Pay's address", async () => {
-      const verified = await new BobPayProvider(env()).verifyNotification(notify(webhook()));
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(
+        notify(webhook()),
+      );
       expect(verified).toMatchObject({
         reference: topUp.id,
         status: "complete",
@@ -216,23 +225,23 @@ describe("Bob Pay", () => {
     it("refuses a notification from any other address", async () => {
       // The signature is valid; the source is not. Both have to hold.
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(webhook(), "41.76.108.2")),
+        new BobPayProvider(env(), logger).verifyNotification(notify(webhook(), "41.76.108.2")),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
     it("refuses the sandbox address when it is live, and the reverse", async () => {
       await expect(
-        new BobPayProvider(env({ BOBPAY_SANDBOX: false })).verifyNotification(
+        new BobPayProvider(env({ BOBPAY_SANDBOX: false }), logger).verifyNotification(
           notify(webhook(), SANDBOX_IP),
         ),
       ).rejects.toMatchObject({ code: "unauthorized" });
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(webhook(), PRODUCTION_IP)),
+        new BobPayProvider(env(), logger).verifyNotification(notify(webhook(), PRODUCTION_IP)),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
     it("accepts an IPv4-mapped IPv6 source, which is the same address", async () => {
-      const verified = await new BobPayProvider(env()).verifyNotification(
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(
         notify(webhook(), `::ffff:${SANDBOX_IP}`),
       );
       expect(verified.status).toBe("complete");
@@ -242,7 +251,7 @@ describe("Bob Pay", () => {
       // The attack this exists to stop: change the amount, keep the signature.
       const tampered = { ...webhook(), amount: 12_999.99, paid_amount: 12_999.99 };
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(tampered)),
+        new BobPayProvider(env(), logger).verifyNotification(notify(tampered)),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
@@ -250,7 +259,7 @@ describe("Bob Pay", () => {
       const body = webhook();
       body.signature = sign(body, "not-our-passphrase");
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(body)),
+        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
@@ -258,7 +267,7 @@ describe("Bob Pay", () => {
       const body = webhook();
       body.signature = sign(body, PASSPHRASE, "ZZZ999");
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(body)),
+        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
@@ -266,7 +275,7 @@ describe("Bob Pay", () => {
       const body = webhook();
       delete body.signature;
       await expect(
-        new BobPayProvider(env()).verifyNotification(notify(body)),
+        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
 
@@ -278,13 +287,13 @@ describe("Bob Pay", () => {
         item_description: "R1 299,99 — thanks!",
         success_url: "https://dev.delicatecourier.co.za/portal/wallet?topup=ok&from=bobpay",
       });
-      const verified = await new BobPayProvider(env()).verifyNotification(notify(body));
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(notify(body));
       expect(verified.status).toBe("complete");
     });
 
     it("refuses a body that is not JSON", async () => {
       await expect(
-        new BobPayProvider(env()).verifyNotification({
+        new BobPayProvider(env(), logger).verifyNotification({
           rawBody: "not json",
           params: {},
           headers: {},
@@ -295,7 +304,7 @@ describe("Bob Pay", () => {
 
     it("refuses a notification that carries no payment id", async () => {
       await expect(
-        new BobPayProvider(env()).verifyNotification({
+        new BobPayProvider(env(), logger).verifyNotification({
           rawBody: JSON.stringify({ amount: 10, status: "paid" }),
           params: {},
           headers: {},
@@ -306,14 +315,15 @@ describe("Bob Pay", () => {
 
     it("refuses everything while it is unconfigured", async () => {
       await expect(
-        new BobPayProvider({} as unknown as Env).verifyNotification(notify(webhook())),
+        new BobPayProvider({} as unknown as Env, logger).verifyNotification(notify(webhook())),
       ).rejects.toMatchObject({ code: "unauthorized" });
     });
   });
 
   describe("status mapping", () => {
     const check = async (status: string) =>
-      (await new BobPayProvider(env()).verifyNotification(notify(webhook({ status })))).status;
+      (await new BobPayProvider(env(), logger).verifyNotification(notify(webhook({ status }))))
+        .status;
 
     it("credits only a paid intent", async () => {
       expect(await check("paid")).toBe("complete");
@@ -347,6 +357,7 @@ describe("Bob Pay", () => {
       const body = webhook();
       const verified = await new BobPayProvider(
         env({ BOBPAY_SKIP_VALIDATE: false }),
+        logger,
       ).verifyNotification(notify(body));
 
       expect(verified.status).toBe("complete");
@@ -363,7 +374,7 @@ describe("Bob Pay", () => {
         new Response("no such payment", { status: 404 }),
       );
       await expect(
-        new BobPayProvider(env({ BOBPAY_SKIP_VALIDATE: false })).verifyNotification(
+        new BobPayProvider(env({ BOBPAY_SKIP_VALIDATE: false }), logger).verifyNotification(
           notify(webhook()),
         ),
       ).rejects.toMatchObject({ code: "unauthorized" });
@@ -374,7 +385,7 @@ describe("Bob Pay", () => {
       // wallet on an unreachable validator is the alternative, and that is not a trade.
       vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
       await expect(
-        new BobPayProvider(env({ BOBPAY_SKIP_VALIDATE: false })).verifyNotification(
+        new BobPayProvider(env({ BOBPAY_SKIP_VALIDATE: false }), logger).verifyNotification(
           notify(webhook()),
         ),
       ).rejects.toMatchObject({ code: "bobpay_validate_unreachable" });
@@ -397,7 +408,7 @@ describe("Bob Pay", () => {
         [10_000.5, 1_000_050],
       ];
       for (const [rand, cents] of cases) {
-        const verified = await new BobPayProvider(env()).verifyNotification(
+        const verified = await new BobPayProvider(env(), logger).verifyNotification(
           notify(webhook({ amount: rand, paid_amount: rand })),
         );
         expect(verified.amountCents, `R${rand}`).toBe(cents);
@@ -409,7 +420,7 @@ describe("Bob Pay", () => {
       // did, the conversion could be a cent out. That is caught rather than trusted: the
       // central handler compares this figure against the top-up row and refuses a mismatch,
       // so the failure mode is a refused notification, never a wrong balance.
-      const verified = await new BobPayProvider(env()).verifyNotification(
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(
         notify(webhook({ amount: 1.005, paid_amount: 1.005 })),
       );
       expect(verified.amountCents).not.toBe(129_999);
@@ -419,7 +430,7 @@ describe("Bob Pay", () => {
       // Some payment methods allow a non-exact amount. The central handler compares this
       // against the top-up row and refuses a mismatch, so it must be the real figure.
       const body = webhook({ amount: 1299.99, paid_amount: 1000 });
-      const verified = await new BobPayProvider(env()).verifyNotification(notify(body));
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(notify(body));
       expect(verified.amountCents).toBe(100_000);
     });
   });
