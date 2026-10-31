@@ -1,10 +1,11 @@
-import { Controller, Delete, Get, Patch, Post } from "@nestjs/common";
+import { Controller, Delete, Get, Patch, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
   CreateServiceClientRequest,
   CreateWebhookSubscriptionRequest,
   LinkAccountExternalRefRequest,
+  SetAccountIntegrationAccessRequest,
   UpdateServiceClientRequest,
   Uuid,
 } from "@delicate/contracts";
@@ -14,6 +15,7 @@ import { ServiceAccessService } from "./service-access.service.js";
 
 const IdParam = z.object({ id: Uuid });
 const RefQuery = z.object({ accountId: Uuid.optional() });
+const AccountServiceParams = z.object({ id: Uuid, serviceClientId: Uuid });
 
 /**
  * Who may let another system in: super_admin only.
@@ -60,6 +62,35 @@ export class AdminServiceClientsController {
   @Post(":id/revoke")
   revoke(@Params(IdParam) p: { id: string }) {
     return this.svc.revoke(p.id);
+  }
+}
+
+/**
+ * The same grants, reached from the account rather than from the credential.
+ *
+ * Reading is open to the roles that run the business — dispatch gets asked "why has their
+ * shop stopped booking?" and should be able to see the answer. Changing it stays with
+ * super_admin, because it is the standing authority to book against a wallet.
+ */
+@ApiTags("admin")
+@ApiBearerAuth()
+@Controller("v1/admin/accounts/:id/integration")
+@PlatformRoles("super_admin", "finance", "dispatcher")
+export class AdminAccountIntegrationController {
+  constructor(private readonly svc: ServiceAccessService) {}
+
+  @Get()
+  access(@Params(IdParam) p: { id: string }) {
+    return this.svc.accountIntegrationAccess(p.id);
+  }
+
+  @Put(":serviceClientId")
+  @PlatformRoles("super_admin")
+  set(
+    @Params(AccountServiceParams) p: z.infer<typeof AccountServiceParams>,
+    @Body(SetAccountIntegrationAccessRequest) body: SetAccountIntegrationAccessRequest,
+  ) {
+    return this.svc.setAccountIntegrationAccess(p.id, p.serviceClientId, body.granted);
   }
 }
 

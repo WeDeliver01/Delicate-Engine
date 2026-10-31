@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   AccountExternalRef,
+  AccountIntegrationAccess,
   CreateWebhookSubscriptionRequest,
   WebhookSubscription,
   WebhookSubscriptionWithSecret,
@@ -211,6 +212,91 @@ export class ServiceAccessService {
 
   async get(id: string): Promise<ServiceClient> {
     return this.require(id);
+  }
+
+  // ── integration access, per account ─────────────────────────────────────────
+
+  /**
+   * Which integrations may act for this account, and the code they name it by.
+   */
+  async accountIntegrationAccess(accountId: string): Promise<AccountIntegrationAccess> {
+    const account = await this.dbs.db.query.accounts.findFirst({
+      where: eq(accounts.id, accountId),
+      columns: { id: true, code: true },
+    });
+    if (!account) throw AppError.notFound("account");
+
+    const clients = await this.dbs.db
+      .select()
+      .from(serviceClients)
+      .orderBy(desc(serviceClients.createdAt));
+    const grants = await this.dbs.db
+      .select({ serviceClientId: serviceClientAccounts.serviceClientId })
+      .from(serviceClientAccounts)
+      .where(eq(serviceClientAccounts.accountId, accountId));
+    const granted = new Set(grants.map((g) => g.serviceClientId));
+
+    return {
+      accountId: account.id,
+      code: account.code,
+      services: clients.map((c) => ({
+        id: c.id,
+        slug: c.slug,
+        name: c.name,
+        status: c.status,
+        granted: granted.has(c.id),
+      })),
+    };
+  }
+
+  /**
+   * Let one credential act for this account, or stop it.
+   *
+   * The same decision as the `accountIds` list on the credential, taken one account at a
+   * time. That list replaces wholesale — correct for "these and no others", and a quiet way
+   * to revoke every other merchant while adding one. Onboarding happens an account at a
+   * time, so it is done an account at a time here.
+   */
+  async setAccountIntegrationAccess(
+    accountId: string,
+    serviceClientId: string,
+    granted: boolean,
+  ): Promise<AccountIntegrationAccess> {
+    await this.assertAccountsExist([accountId]);
+    const client = await this.require(serviceClientId);
+
+    await this.dbs.transaction(async (tx) => {
+      const existing = await tx.query.serviceClientAccounts.findFirst({
+        where: and(
+          eq(serviceClientAccounts.serviceClientId, serviceClientId),
+          eq(serviceClientAccounts.accountId, accountId),
+        ),
+      });
+      if (granted === !!existing) return; // Already how it was asked to be.
+
+      if (granted) {
+        await tx.insert(serviceClientAccounts).values({ serviceClientId, accountId });
+      } else {
+        await tx
+          .delete(serviceClientAccounts)
+          .where(
+            and(
+              eq(serviceClientAccounts.serviceClientId, serviceClientId),
+              eq(serviceClientAccounts.accountId, accountId),
+            ),
+          );
+      }
+
+      await this.audit.record(tx, {
+        action: granted ? "service_client.account_grant" : "service_client.account_revoke",
+        entityType: "account",
+        entityId: accountId,
+        before: { serviceClient: client.slug, granted: !!existing },
+        after: { serviceClient: client.slug, granted },
+      });
+    });
+
+    return this.accountIntegrationAccess(accountId);
   }
 
   // ── external references ─────────────────────────────────────────────────────

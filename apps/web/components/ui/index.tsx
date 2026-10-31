@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 /**
  * The shared vocabulary for the portal and the ops console.
@@ -203,4 +203,49 @@ export function Notice({
   const cls =
     tone === "error" ? "alert-error" : tone === "success" ? "alert-success" : "alert-info";
   return <p className={cls}>{children}</p>;
+}
+
+/**
+ * An identifier to be copied rather than read.
+ *
+ * Shown in the mono face for the same reason a waybill is: these are compared character by
+ * character, and a 0 that might be an O costs somebody an afternoon. The button exists
+ * because the alternative is selecting a code by hand and losing a character off the end.
+ */
+export function CopyField({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: ReactNode;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Denied clipboard permission, or an insecure origin. The value is on screen and
+      // selectable either way, so there is nothing to recover from and nothing to say.
+    }
+  }
+
+  return (
+    <div className="block">
+      <span className="field-label">{label}</span>
+      <div className="mt-1.5 flex items-center gap-2">
+        <code className="font-mono flex-1 truncate rounded-lg border border-line bg-[#FAF8F5] px-3 py-2 text-sm text-ink">
+          {value}
+        </code>
+        <button type="button" onClick={copy} className="btn btn-secondary btn-sm shrink-0">
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      {hint && <span className="field-hint">{hint}</span>}
+    </div>
+  );
 }

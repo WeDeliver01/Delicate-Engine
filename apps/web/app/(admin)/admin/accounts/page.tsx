@@ -9,6 +9,7 @@ import { rands } from "@/lib/money";
 interface AccountRow {
   id?: string;
   name?: string;
+  code?: string;
   billingMode?: string;
   balanceCents?: number | null;
   creditLimitCents?: number | null;
@@ -45,6 +46,11 @@ export default function AdminAccounts() {
               {r.name}
             </Link>
           ),
+        },
+        {
+          key: "code",
+          label: "Reference",
+          render: (r: AccountRow) => <span className="font-mono text-sm">{r.code}</span>,
         },
         { key: "organizationName", label: "Organization" },
         { key: "type", label: "Type" },

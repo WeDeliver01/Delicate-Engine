@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { auditLog, bookings, quotes, users } from "@delicate/db";
+import { accounts, auditLog, bookings, quotes, users } from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -67,6 +67,15 @@ describe("service access", () => {
   }
 
   const asAdmin = () => ({ Authorization: `Bearer ${admin}` });
+
+  /** The short code the engine issued this account, e.g. "HON001". */
+  async function codeOf(id: string): Promise<string> {
+    const row = await h.db.db.query.accounts.findFirst({
+      where: eq(accounts.id, id),
+      columns: { code: true },
+    });
+    return row!.code;
+  }
 
   async function newClient(
     overrides: Partial<{ slug: string; scopes: string[]; accountIds: string[] }> = {},
@@ -335,6 +344,67 @@ describe("service access", () => {
       expect(res.status).toBe(403);
     });
 
+    it("resolves an account by its own code, with nothing mapped at all", async () => {
+      // The whole point: onboarding a merchant should not need a row written by hand.
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set({ Authorization: `Bearer ${client.secret}`, "X-Account-Ref": await codeOf(accountId) })
+        .send(bookingBody());
+      expect(res.status).toBe(201);
+      expect((res.body as ServiceBookingResponse).booking.accountId).toBe(accountId);
+    });
+
+    it("understands a code whatever case it arrives in", async () => {
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set({
+          Authorization: `Bearer ${client.secret}`,
+          "X-Account-Ref": (await codeOf(accountId)).toLowerCase(),
+        })
+        .send(bookingBody());
+      expect(res.status).toBe(201);
+    });
+
+    it("still refuses a code the credential was never granted", async () => {
+      // Codes are short and guessable, which is fine: naming an account is not being allowed
+      // to use it. If this ever goes green, resolving by code has become an authorisation
+      // hole and the grant check is no longer doing its job.
+      const client = await newClient({ accountIds: [accountId] });
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set({
+          Authorization: `Bearer ${client.secret}`,
+          "X-Account-Ref": await codeOf(otherAccountId),
+        })
+        .send(bookingBody());
+      expect(res.status).toBe(403);
+    });
+
+    it("lets a registered mapping win over a code it collides with", async () => {
+      const borrowed = await codeOf(otherAccountId);
+      await h
+        .http()
+        .post("/v1/admin/account-external-refs")
+        .set(asAdmin())
+        .send({ accountId, system: "courier-api", externalId: borrowed })
+        .expect(201);
+
+      const client = await newClient({ accountIds: [accountId, otherAccountId] });
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set({ Authorization: `Bearer ${client.secret}`, "X-Account-Ref": borrowed })
+        .send(bookingBody());
+      expect(res.status).toBe(201);
+      // The mapping, not the account that happens to wear that code.
+      expect((res.body as ServiceBookingResponse).booking.accountId).toBe(accountId);
+    });
+
     it("refuses to point one reference at two accounts", async () => {
       await h
         .http()
@@ -349,6 +419,97 @@ describe("service access", () => {
         .send({ accountId: otherAccountId, system: "courier-api", externalId: "store-42" });
       expect(res.status).toBe(409);
       expect(res.body.code).toBe("external_ref_taken");
+    });
+  });
+
+  // ── granting from the account side ──────────────────────────────────────────
+
+  describe("integration access per account", () => {
+    it("reports the code and who may act for the account", async () => {
+      const client = await newClient({ accountIds: [] });
+      const res = await h
+        .http()
+        .get(`/v1/admin/accounts/${accountId}/integration`)
+        .set(asAdmin())
+        .expect(200);
+      expect(res.body.code).toBe(await codeOf(accountId));
+      const svc = res.body.services.find((x: { id: string }) => x.id === client.id);
+      expect(svc.granted).toBe(false);
+    });
+
+    it("grants one account without disturbing the others", async () => {
+      // The whole reason this exists: PATCH accountIds replaces the list, so adding the
+      // second merchant through it silently revokes the first.
+      const client = await newClient({ accountIds: [otherAccountId] });
+      await h
+        .http()
+        .put(`/v1/admin/accounts/${accountId}/integration/${client.id}`)
+        .set(asAdmin())
+        .send({ granted: true })
+        .expect(200);
+
+      const after = await h.http().get(`/v1/admin/service-clients/${client.id}`).set(asAdmin());
+      expect([...(after.body.accountIds as string[])].sort()).toEqual(
+        [accountId, otherAccountId].sort(),
+      );
+    });
+
+    it("revokes just as narrowly, and is safe to repeat", async () => {
+      const client = await newClient({ accountIds: [accountId, otherAccountId] });
+      const url = `/v1/admin/accounts/${accountId}/integration/${client.id}`;
+      await h.http().put(url).set(asAdmin()).send({ granted: false }).expect(200);
+      await h.http().put(url).set(asAdmin()).send({ granted: false }).expect(200);
+
+      const after = await h.http().get(`/v1/admin/service-clients/${client.id}`).set(asAdmin());
+      expect(after.body.accountIds).toEqual([otherAccountId]);
+    });
+
+    it("takes effect on the next call, not the next deploy", async () => {
+      const client = await newClient({ accountIds: [] });
+      const ref = {
+        Authorization: `Bearer ${client.secret}`,
+        "X-Account-Ref": await codeOf(accountId),
+      };
+
+      const before = await h.http().post("/v1/service/bookings").set(ref).send(bookingBody());
+      expect(before.status).toBe(403);
+
+      await h
+        .http()
+        .put(`/v1/admin/accounts/${accountId}/integration/${client.id}`)
+        .set(asAdmin())
+        .send({ granted: true })
+        .expect(200);
+
+      const after = await h.http().post("/v1/service/bookings").set(ref).send(bookingBody());
+      expect(after.status).toBe(201);
+    });
+
+    it("records who opened the door", async () => {
+      const client = await newClient({ accountIds: [] });
+      await h
+        .http()
+        .put(`/v1/admin/accounts/${accountId}/integration/${client.id}`)
+        .set(asAdmin())
+        .send({ granted: true })
+        .expect(200);
+
+      const [entry] = await h.db.db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.action, "service_client.account_grant"));
+      expect(entry!.entityId).toBe(accountId);
+      expect(entry!.actorUserId).toBe(USERS.admin.id);
+    });
+
+    it("will not let finance or dispatch change it", async () => {
+      const client = await newClient({ accountIds: [] });
+      const res = await h
+        .http()
+        .put(`/v1/admin/accounts/${accountId}/integration/${client.id}`)
+        .set({ Authorization: `Bearer ${owner}` })
+        .send({ granted: true });
+      expect(res.status).toBe(403);
     });
   });
 

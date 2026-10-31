@@ -42,6 +42,7 @@ const NAV: NavSection[] = [
     items: [
       { href: "/portal/members", label: "Team", icon: "group" },
       { href: "/portal/notifications", label: "Alerts", icon: "notifications" },
+      { href: "/portal/integration", label: "Integration", icon: "integration_instructions" },
     ],
   },
 ];

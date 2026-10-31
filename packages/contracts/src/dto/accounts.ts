@@ -22,6 +22,13 @@ export type Organization = z.infer<typeof Organization>;
 export const Account = z.object({
   id: Uuid,
   organizationId: Uuid.nullable(),
+  /**
+   * The short handle, e.g. "HBB001" — and the name an integrating system calls this account
+   * by. It is the only identifier here a person can read out, write on a box or paste into a
+   * store's settings, so it is what the portal and the console show. `id` stays the key
+   * everything else is filed under, and stays out of sight.
+   */
+  code: z.string(),
   name: z.string(),
   type: AccountType,
   billingMode: BillingMode,

@@ -60,8 +60,13 @@ export class ServiceClientVerifier {
   /**
    * Resolve the account a service caller named, and prove it may act for it.
    *
-   * Two ways to name one: our account id, or the caller's own identifier for it. The second
-   * exists so an integrating system can keep using its ids and never store ours.
+   * Three ways to name one: our account id, the caller's own identifier for it, or the
+   * account's short code. The second exists so an integrating system can keep using its ids
+   * and never store ours; the third exists so that most of them need not do either.
+   *
+   * Resolving a name is not the same as being allowed to use it. Whichever way the account
+   * was named, the grant below is what authorises — so a caller that guesses a code it was
+   * never granted gets exactly as far as one that guesses a uuid.
    */
   async resolveAccount(
     service: ServicePrincipal,
@@ -78,13 +83,17 @@ export class ServiceClientVerifier {
           eq(accountExternalRefs.externalId, named.externalRef),
         ),
       });
-      if (!ref) {
+
+      // A mapping wins where one exists, so a system that has registered its own id keeps
+      // the meaning it registered even if that id collides with somebody's code.
+      accountId = ref?.accountId ?? (await this.accountIdByCode(named.externalRef));
+
+      if (!accountId) {
         throw AppError.forbidden("no account is mapped to this reference", {
           system: service.slug,
           externalId: named.externalRef,
         });
       }
-      accountId = ref.accountId;
     }
 
     if (!accountId) {
@@ -109,6 +118,23 @@ export class ServiceClientVerifier {
     if (account.status !== "active") throw AppError.forbidden("account is not active");
 
     return { id: account.id, role: null };
+  }
+
+  /**
+   * The account wearing this short code, if any.
+   *
+   * Codes are issued uppercase, so the input is folded up rather than the column folded down:
+   * the comparison stays an equality on the unique index, and a merchant who typed "hbb001"
+   * into their store settings is still understood.
+   */
+  private async accountIdByCode(ref: string): Promise<string | null> {
+    const code = ref.trim().toUpperCase();
+    if (!code) return null;
+    const row = await this.dbs.db.query.accounts.findFirst({
+      where: eq(accounts.code, code),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
   }
 
   /** Best-effort, and deliberately not awaited: a write per request would be a silly cost. */

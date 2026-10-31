@@ -44,6 +44,7 @@ export class AdminController {
       .select({
         id: accounts.id,
         name: accounts.name,
+        code: accounts.code,
         type: accounts.type,
         billingMode: accounts.billingMode,
         status: accounts.status,
@@ -60,7 +61,15 @@ export class AdminController {
       .where(
         and(
           cursorDate ? lt(accounts.createdAt, cursorDate) : undefined,
-          term ? or(ilike(accounts.name, term), ilike(organizations.name, term)) : undefined,
+          // The code too: it is what somebody has in front of them when a store's settings
+          // are open and they are checking they typed the right account.
+          term
+            ? or(
+                ilike(accounts.name, term),
+                ilike(accounts.code, term),
+                ilike(organizations.name, term),
+              )
+            : undefined,
         ),
       )
       .orderBy(desc(accounts.createdAt))

@@ -80,6 +80,33 @@ export const UpdateServiceClientRequest = z.object({
 export type UpdateServiceClientRequest = z.infer<typeof UpdateServiceClientRequest>;
 
 /**
+ * What one account looks like to the integrations, and which of them may act for it.
+ *
+ * Assembled for the account page rather than the credential page, because the question being
+ * asked there is "can this customer's store book?" — and answering it from a list of
+ * credentials means reading every one of them to find the account.
+ */
+export const AccountIntegrationAccess = z.object({
+  accountId: Uuid,
+  /** What an integrating system puts in its settings to name this account. */
+  code: z.string(),
+  services: z.array(
+    z.object({
+      id: Uuid,
+      slug: z.string(),
+      name: z.string(),
+      status: ServiceClientStatus,
+      /** Whether this credential may currently act for this account. */
+      granted: z.boolean(),
+    }),
+  ),
+});
+export type AccountIntegrationAccess = z.infer<typeof AccountIntegrationAccess>;
+
+export const SetAccountIntegrationAccessRequest = z.object({ granted: z.boolean() });
+export type SetAccountIntegrationAccessRequest = z.infer<typeof SetAccountIntegrationAccessRequest>;
+
+/**
  * Mapping from another system's identifier to an engine account.
  *
  * The calling system knows its own ids — a WooCommerce store, a Shopify shop — and should not

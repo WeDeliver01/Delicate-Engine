@@ -493,6 +493,7 @@ function toAccount(row: typeof accounts.$inferSelect): Account {
   return {
     id: row.id,
     organizationId: row.organizationId,
+    code: row.code,
     name: row.name,
     type: row.type,
     billingMode: row.billingMode,

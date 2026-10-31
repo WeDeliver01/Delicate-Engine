@@ -4,6 +4,7 @@ import { ServiceAccessService } from "./service-access.service.js";
 import { WebhookSender } from "./webhook-sender.service.js";
 import {
   AdminAccountExternalRefsController,
+  AdminAccountIntegrationController,
   AdminServiceClientsController,
   AdminWebhookSubscriptionsController,
 } from "./service-access.controller.js";
@@ -18,6 +19,7 @@ import {
   controllers: [
     AdminServiceClientsController,
     AdminAccountExternalRefsController,
+    AdminAccountIntegrationController,
     AdminWebhookSubscriptionsController,
   ],
   providers: [ServiceAccessService, WebhookSender],
