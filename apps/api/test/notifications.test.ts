@@ -168,14 +168,21 @@ describe("notifications", () => {
       .select()
       .from(notificationsTable)
       .where(eq(notificationsTable.id, confirm.id));
-    const { consignment } = raw!.payload as {
+    const { consignment, collection } = raw!.payload as {
       consignment: { waybill: string; destination: string; contents: string }[];
+      collection: { address: string; contact: string | null; phone: string | null } | null;
     };
     expect(consignment).toHaveLength(b.shipments.length);
     expect(consignment[0]!.waybill).toBe(b.shipments[0]!.waybill);
-    expect(consignment[0]!.destination).toBe("Centurion");
+    // The whole address, not the suburb: a customer checking that we took the right one down
+    // cannot do it against "Centurion".
+    expect(consignment[0]!.destination).toBe("12 Oak St, Centurion");
     // "1 x Single-tier cake" — the catalog's own name, counted.
     expect(consignment[0]!.contents).toMatch(/^1 x .*cake/i);
+
+    // And where we are collecting from, which the email never used to say at all.
+    expect(collection?.address).toBe("Honey Bee, Menlyn");
+    expect(collection?.phone).toBe("0821111111");
   });
 
   it("redacts contact details in the admin list", async () => {
