@@ -27,7 +27,15 @@ export const EMPTY_FILTERS: ShipmentFilters = {
   search: "",
   status: [],
   dateType: "slot",
-  period: { key: "last28", from: null, to: null },
+  /*
+    Everything, until someone narrows it.
+
+    A board that opens on a window has to guess which window, and every guess is wrong for
+    somebody: "today" hid a delivery booked for next week and showed an empty page to a
+    dispatcher who had work waiting. Show the lot and let the filters do the narrowing, which
+    is also the order people actually work in -- look, then look for.
+  */
+  period: { key: "all", from: null, to: null },
   flags: [],
   serviceLevelCode: null,
   sort: "slot_desc",
@@ -50,10 +58,19 @@ export function filtersToQuery(f: ShipmentFilters, extra: Record<string, string>
   for (const s of f.status) p.append("status", s);
   for (const fl of f.flags) p.append("flags", fl);
   p.set("dateType", f.dateType);
-  const range = periodRange(f.period);
-  p.set("period", f.period.key);
-  p.set("from", range.from);
-  p.set("to", range.to);
+  /*
+    "All time" is sent by saying nothing.
+
+    The engine reads a query with no period, from or to as unbounded, which is a truer answer
+    than any range we could name -- a booking can be months ahead, and a window with an end
+    date would quietly hide it.
+  */
+  if (f.period.key !== "all") {
+    const range = periodRange(f.period);
+    p.set("period", f.period.key);
+    p.set("from", range.from);
+    p.set("to", range.to);
+  }
   if (f.serviceLevelCode) p.set("serviceLevelCode", f.serviceLevelCode);
   p.set("sort", f.sort);
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
@@ -67,7 +84,7 @@ export function activeFilterCount(f: ShipmentFilters): number {
     f.status.length +
     f.flags.length +
     (f.serviceLevelCode ? 1 : 0) +
-    (f.period.key === "last28" ? 0 : 1)
+    (f.period.key === EMPTY_FILTERS.period.key ? 0 : 1)
   );
 }
 
@@ -164,7 +181,7 @@ export function ShipmentFilterBar({
         <PeriodPicker
           value={value.period}
           onChange={(p) => set("period", p)}
-          presets={["today", "tomorrow", "yesterday", "last7", "this_month", "last_month"]}
+          presets={["all", "today", "tomorrow", "yesterday", "last7", "this_month", "last_month"]}
         />
 
         <button

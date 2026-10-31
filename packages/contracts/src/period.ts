@@ -52,6 +52,7 @@ export function formatOperatingDate(at: Date | string): string {
 }
 
 export const PERIOD_KEYS = [
+  "all",
   "today",
   "yesterday",
   "tomorrow",
@@ -73,6 +74,7 @@ export interface DateRange {
 }
 
 export const PERIOD_LABELS: Record<PeriodKey, string> = {
+  all: "All time",
   today: "Today",
   yesterday: "Yesterday",
   tomorrow: "Tomorrow",
@@ -112,6 +114,17 @@ export function resolvePeriod(
   const today = toOperatingDate(now);
 
   switch (key) {
+    /*
+      Everything there has ever been, and everything booked ahead.
+
+      Callers that mean "all of time" normally say so by sending no period at all, which the
+      query layer reads as an unbounded search. This case exists so a caller holding the key
+      still gets a sane answer rather than falling through: the far end is deliberately a long
+      way out, because a booking can be made months ahead and a range that stopped at today
+      would hide exactly the work that has been paid for but not yet done.
+    */
+    case "all":
+      return { from: "1970-01-01", to: addDays(today, 3_650) };
     case "today":
       return { from: today, to: today };
     case "yesterday": {

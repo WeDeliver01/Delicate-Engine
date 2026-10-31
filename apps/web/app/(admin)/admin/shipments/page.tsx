@@ -19,19 +19,20 @@ import { useMe } from "@/components/use-me";
  * The operations board.
  *
  * Same filter bar and table as the customer sees, because they are looking at the same objects
- * and two implementations would drift. What differs is the default: ops care about today and
- * about what is going wrong, so the page opens on today rather than on the last month.
+ * and two implementations would drift.
+ *
+ * Opens on everything, soonest first. It used to open on today, which meant a dispatcher with
+ * a week of work ahead of them was greeted by an empty page -- and nothing booked for next
+ * month was visible anywhere without knowing to go looking for it.
  */
 export default function AdminShipmentsPage() {
   const me = useMe();
   // Who may move a parcel to another driver: the two roles that run the day.
   const role = me.data?.user.platformRole;
   const canAssign = role === "super_admin" || role === "dispatcher";
-  const [filters, setFilters] = useState<ShipmentFilters>({
-    ...EMPTY_FILTERS,
-    period: { key: "today", from: null, to: null },
-    sort: "slot_asc",
-  });
+  // Newest first: ascending made sense when the page opened on a single day, but over all
+  // of time it buries this week's work under the oldest delivery on record.
+  const [filters, setFilters] = useState<ShipmentFilters>({ ...EMPTY_FILTERS });
 
   const debouncedSearch = useDebounced(filters.search);
   const query = useMemo(

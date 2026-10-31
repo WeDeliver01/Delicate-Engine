@@ -131,7 +131,10 @@ export function PeriodPicker({
 
       {/* The chips say which preset; this says what that actually means in dates, because
           "last month" is ambiguous enough to be worth spelling out next to the numbers. */}
-      <span className="text-xs text-muted">{formatRange(periodRange(value))}</span>
+      {/* A sentinel range is not something to read back at anyone. */}
+      <span className="text-xs text-muted">
+        {value.key === "all" ? "Everything" : formatRange(periodRange(value))}
+      </span>
     </div>
   );
 }
