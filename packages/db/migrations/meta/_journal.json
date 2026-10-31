@@ -267,6 +267,13 @@
       "when": 1793433652832,
       "tag": "0037_white_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793445635881,
+      "tag": "0038_curvy_serpent_society",
+      "breakpoints": true
     }
   ]
 }

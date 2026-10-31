@@ -35,8 +35,8 @@ export const SEED = {
   },
   organization: { id: "00000000-0000-4000-8000-0000000000a0", name: "Honey Bee Bakers (Pty) Ltd" },
   accounts: [
-    { id: "00000000-0000-4000-8000-0000000000b1", name: "Honey Bee – Menlyn" },
-    { id: "00000000-0000-4000-8000-0000000000b2", name: "Honey Bee – Centurion" },
+    { id: "00000000-0000-4000-8000-0000000000b1", name: "Honey Bee – Menlyn", code: "HON001" },
+    { id: "00000000-0000-4000-8000-0000000000b2", name: "Honey Bee – Centurion", code: "HON002" },
   ],
 } as const;
 
@@ -77,6 +77,7 @@ export async function seed(connectionString: string): Promise<void> {
           .values({
             id: a.id,
             name: a.name,
+            code: a.code,
             organizationId: SEED.organization.id,
             type: "business",
             billingMode: "prepaid",

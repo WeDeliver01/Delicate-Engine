@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import type {
   Account,
   AdminAccountDetail,
@@ -127,6 +127,7 @@ export class IdentityService {
         .insert(accounts)
         .values({
           name: input.name,
+          code: await nextAccountCode(tx, input.name),
           type: input.type,
           organizationId,
           billingMode: "prepaid",
@@ -498,4 +499,25 @@ function toAccount(row: typeof accounts.$inferSelect): Account {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+/**
+ * The next free short code for an account, e.g. "HBB001".
+ *
+ * Three letters from the name and a counter within that prefix, matching the backfill in
+ * migration 0038 so a code issued today looks like one issued before it existed. Counts what
+ * is already taken rather than the number of accounts, because a code is never reissued and
+ * the two drift apart the moment one is skipped.
+ */
+async function nextAccountCode(tx: DbExecutor, name: string): Promise<string> {
+  const prefix = `${name.replace(/[^a-zA-Z]/g, "").toUpperCase()}XXX`.slice(0, 3);
+  const taken = await tx
+    .select({ code: accounts.code })
+    .from(accounts)
+    .where(like(accounts.code, `${prefix}%`));
+  const highest = taken.reduce((max, row) => {
+    const n = Number.parseInt(row.code.slice(prefix.length), 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return `${prefix}${String(highest + 1).padStart(3, "0")}`;
 }

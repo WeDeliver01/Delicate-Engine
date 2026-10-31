@@ -1,11 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import type { Shipment } from "@delicate/contracts";
+import type { Address, Shipment } from "@delicate/contracts";
 import { DriverCell } from "./driver-cell";
 import { StatusBadge } from "@/components/booking/status-badge";
+import { dateTime } from "@/lib/money";
+
+/**
+ * The service level in the three letters ops uses on a waybill, rather than the slug.
+ *
+ * Unknown codes fall back to their own first three letters, so a service added in the admin
+ * console shows something sensible here without this list having to be kept in step.
+ */
+const SERVICE_LABELS: Record<string, string> = {
+  standard: "STD",
+  express: "EXP",
+  on_demand: "ODM",
+  same_day: "SDX",
+};
+
+function serviceLabel(code: string): string {
+  return SERVICE_LABELS[code] ?? code.replace(/[^a-zA-Z]/g, "").slice(0, 3);
+}
 
 export interface ShipmentRow extends Shipment {
+  /** Where it is collected from. Null on older rows written before this was carried. */
+  collectionAddress?: Address | null;
+  accountName?: string;
+  /** The short handle ops says on the phone, e.g. "HBB001". */
+  accountCode?: string;
   /** The order this parcel belongs to, so the booking is reachable without its own menu. */
   bookingReference?: string;
   /** What the customer filed it under, shown in preference to ours when they set one. */
@@ -59,18 +82,31 @@ export function ShipmentTable({
       <table className="table-base">
         <thead>
           <tr>
-            <th>Waybill</th>
-            <th>Scheduled</th>
-            <th>Recipient</th>
-            <th>Delivery to</th>
-            <th>Driver</th>
+            {showAccount && <th>Account</th>}
+            <th>Waybill no.</th>
+            <th>Created</th>
             <th>Status</th>
+            <th>Service</th>
+            <th>Collection address</th>
+            <th>Delivery address</th>
+            <th>Scheduled</th>
+            <th>Driver</th>
             <th className="text-right">Flags</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((s) => (
             <tr key={s.id} className="transition-colors hover:bg-[#FAFAF9]">
+              {showAccount && (
+                <td className="whitespace-nowrap">
+                  <span className="block font-mono text-xs font-semibold text-[#E84A8A]">
+                    {s.accountCode ?? "—"}
+                  </span>
+                  <span className="block truncate text-xs text-muted" title={s.accountName}>
+                    {s.accountName ?? ""}
+                  </span>
+                </td>
+              )}
               <td>
                 <Link href={`${hrefBase}/${s.id}`} className="font-mono hover:underline">
                   {s.waybill}
@@ -85,6 +121,30 @@ export function ShipmentTable({
                   </Link>
                 )}
               </td>
+              <td className="whitespace-nowrap text-[#6B6661]">{dateTime(s.createdAt)}</td>
+              <td>
+                <StatusBadge status={s.status} />
+              </td>
+              <td className="whitespace-nowrap uppercase text-[#6B6661]">
+                {serviceLabel(s.serviceLevelCode)}
+              </td>
+              <td className="max-w-64">
+                {s.collectionAddress ? (
+                  <span className="block truncate" title={s.collectionAddress.formatted}>
+                    {s.collectionAddress.formatted}
+                  </span>
+                ) : (
+                  <span className="text-muted">—</span>
+                )}
+              </td>
+              <td className="max-w-64">
+                <span className="block truncate" title={s.deliveryAddress.formatted}>
+                  {s.deliveryAddress.formatted}
+                </span>
+                {s.recipient.name && (
+                  <span className="block truncate text-xs text-muted">{s.recipient.name}</span>
+                )}
+              </td>
               <td className="whitespace-nowrap">
                 {s.slotDate ? (
                   <>
@@ -95,25 +155,6 @@ export function ShipmentTable({
                   </>
                 ) : (
                   <span className="text-muted">—</span>
-                )}
-              </td>
-              <td>
-                <span className="block">{s.recipient.name}</span>
-                {s.recipient.phone && (
-                  <span className="block text-xs text-muted">{s.recipient.phone}</span>
-                )}
-              </td>
-              <td className="max-w-64">
-                <span className="block truncate" title={s.deliveryAddress.formatted}>
-                  {s.deliveryAddress.suburb ?? s.deliveryAddress.formatted}
-                </span>
-                {s.deliveryAddress.suburb && (
-                  <span
-                    className="block truncate text-xs text-muted"
-                    title={s.deliveryAddress.formatted}
-                  >
-                    {s.deliveryAddress.formatted}
-                  </span>
                 )}
               </td>
               <td className="whitespace-nowrap text-[#6B6661]">

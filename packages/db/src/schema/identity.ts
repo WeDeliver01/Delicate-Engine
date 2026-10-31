@@ -66,6 +66,14 @@ export const accounts = pgTable(
       onDelete: "restrict",
     }),
     name: text("name").notNull(),
+    /**
+     * Short handle for this customer, e.g. "HBB001".
+     *
+     * Three letters from the name and a number, because ops say it on the phone and write it
+     * on a box, and neither works with a uuid. Assigned once and never reissued: it ends up
+     * on paperwork we do not control.
+     */
+    code: text("code").notNull(),
     type: accountTypeEnum("type").notNull(),
     billingMode: billingModeEnum("billing_mode").notNull().default("prepaid"),
     /** Printed on invoices; a tax invoice over R5 000 must carry the recipient's details. */
@@ -82,7 +90,10 @@ export const accounts = pgTable(
     requiresVehicleClass: text("requires_vehicle_class"),
     ...timestamps(),
   },
-  (t) => [index("accounts_org_idx").on(t.organizationId)],
+  (t) => [
+    index("accounts_org_idx").on(t.organizationId),
+    uniqueIndex("accounts_code_uq").on(t.code),
+  ],
 );
 
 export const memberships = pgTable(

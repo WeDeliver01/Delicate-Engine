@@ -23,6 +23,7 @@ import {
   type ShipmentStatus,
 } from "@delicate/contracts";
 import {
+  accounts as accountsTable,
   assignments,
   bookings,
   drivers,
@@ -226,9 +227,16 @@ export class ShipmentQueryService {
         shipment: shipments,
         bookingReference: bookings.reference,
         customerReference: bookings.customerReference,
+        // Where it is collected from, which lives on the booking rather than the drop. The
+        // board is unusable for dispatch without it: "which of today's parcels come from the
+        // Silverton bakery" was a question nobody could answer from this screen.
+        collection: bookings.collection,
+        accountName: accountsTable.name,
+        accountCode: accountsTable.code,
       })
       .from(shipments)
       .innerJoin(bookings, eq(bookings.id, shipments.bookingId))
+      .innerJoin(accountsTable, eq(accountsTable.id, shipments.accountId))
       .where(and(where, cursorDate ? lt(shipments.createdAt, cursorDate) : undefined))
       .orderBy(...this.ordering(q.sort))
       .limit(q.limit + 1);
@@ -237,6 +245,9 @@ export class ShipmentQueryService {
       ...r.shipment,
       bookingReference: r.bookingReference,
       customerReference: r.customerReference,
+      collectionAddress: (r.collection as { address?: unknown } | null)?.address ?? null,
+      accountName: r.accountName,
+      accountCode: r.accountCode,
     }));
     const ids = page.map((r) => r.id);
     const [assigned, pods, pending] = await Promise.all([
