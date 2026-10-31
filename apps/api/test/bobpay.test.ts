@@ -223,7 +223,7 @@ describe("Bob Pay", () => {
     });
 
     it("refuses a notification from any other address", async () => {
-      // The signature is valid; the source is not. Both have to hold.
+      // With the signature no longer a gate, this is the first line of defence, not a second.
       await expect(
         new BobPayProvider(env(), logger).verifyNotification(notify(webhook(), "41.76.108.2")),
       ).rejects.toMatchObject({ code: "unauthorized" });
@@ -247,36 +247,31 @@ describe("Bob Pay", () => {
       expect(verified.status).toBe("complete");
     });
 
-    it("refuses a payload whose amount was edited in flight", async () => {
-      // The attack this exists to stop: change the amount, keep the signature.
-      const tampered = { ...webhook(), amount: 12_999.99, paid_amount: 12_999.99 };
-      await expect(
-        new BobPayProvider(env(), logger).verifyNotification(notify(tampered)),
-      ).rejects.toMatchObject({ code: "unauthorized" });
-    });
-
-    it("refuses a payload signed with the wrong passphrase", async () => {
-      const body = webhook();
-      body.signature = sign(body, "not-our-passphrase");
-      await expect(
-        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
-      ).rejects.toMatchObject({ code: "unauthorized" });
-    });
-
-    it("refuses a payload signed against another merchant's account code", async () => {
-      const body = webhook();
-      body.signature = sign(body, PASSPHRASE, "ZZZ999");
-      await expect(
-        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
-      ).rejects.toMatchObject({ code: "unauthorized" });
-    });
-
-    it("refuses a payload with no signature at all", async () => {
+    // The signature is computed and logged, but is not what a notification is trusted on: Bob
+    // Pay's production account has never sent one, so enforcing it stranded every real payment.
+    // What the notification is actually trusted on is the source IP (covered above), Bob Pay's
+    // own confirmation (covered below), and the central amount check in TopUpService.
+    it("accepts a payload with no signature at all, which is what Bob Pay really sends", async () => {
       const body = webhook();
       delete body.signature;
-      await expect(
-        new BobPayProvider(env(), logger).verifyNotification(notify(body)),
-      ).rejects.toMatchObject({ code: "unauthorized" });
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(notify(body));
+      expect(verified.status).toBe("complete");
+    });
+
+    it("accepts a payload whose signature does not match, rather than stranding the payment", async () => {
+      const body = webhook();
+      body.signature = sign(body, "not-our-passphrase");
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(notify(body));
+      expect(verified.status).toBe("complete");
+    });
+
+    it("still reports the paid amount as sent, for the central check to judge", async () => {
+      // An amount edited in flight is no longer caught here. TopUpService.handleNotification
+      // compares this against the top-up row and refuses a mismatch, which is the check that
+      // never depended on the signature in the first place.
+      const tampered = { ...webhook(), amount: 12_999.99, paid_amount: 12_999.99 };
+      const verified = await new BobPayProvider(env(), logger).verifyNotification(notify(tampered));
+      expect(verified.amountCents).toBe(1_299_999);
     });
 
     it("signs values that need escaping the way Bob Pay does", async () => {

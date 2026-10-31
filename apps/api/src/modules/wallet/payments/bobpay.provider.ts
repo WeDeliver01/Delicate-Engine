@@ -14,10 +14,14 @@ import type { PaymentProvider, VerifiedPayment } from "./payment.provider.js";
  * customer can reach it by typing it, so it can never be the thing that moves money
  * (invariant #5).
  *
- * Bob Pay asks for four checks on a notification and this does all four, in their order:
+ * Bob Pay asks for four checks on a notification. This does three of them and logs the fourth
+ * rather than enforcing it:
  *
  *   1. the request came from one of their static IPs
- *   2. the MD5 signature over our own account code and passphrase matches
+ *   2. the MD5 signature over our own account code and passphrase matches — logged on a
+ *      mismatch, not enforced: Bob Pay's production account has never once sent a non-empty
+ *      `signature` field on a real webhook despite their own docs, and requiring it left every
+ *      genuine payment stuck pending forever. Trust instead rests on checks 1 and 3.
  *   3. Bob Pay itself confirms the payment when we hand the payload back
  *   4. the amount is the amount we asked for
  *
@@ -186,11 +190,12 @@ export class BobPayProvider implements PaymentProvider {
   }
 
   /**
-   * MD5 over an ordered key=value string ending in the passphrase, exactly as Bob Pay computes
-   * it.
+   * MD5 over an ordered key=value string ending in the passphrase, exactly as Bob Pay's docs
+   * describe it. Computed and compared only to log a mismatch for diagnosis — see the class
+   * docstring for why this is not a hard gate. Never throws.
    *
-   * Two details that are easy to get wrong and silently produce a mismatch: the account code
-   * in the string is *ours*, because the payload's own `recipient_account_code` is always
+   * Two details that are easy to get wrong and would silently produce a mismatch: the account
+   * code in the string is *ours*, because the payload's own `recipient_account_code` is always
    * empty; and the amount is the intent amount formatted to two decimals, unescaped, while
    * every other value is form-escaped.
    */
@@ -217,14 +222,12 @@ export class BobPayProvider implements PaymentProvider {
     // to learn the digest a byte at a time.
     if (!equalsHex(expected, p.signature ?? "")) {
       // Everything here except the digests themselves is either already public (the field
-      // names) or already in the payload Bob Pay just sent us -- never the passphrase. This is
-      // what lets a real mismatch be diagnosed from the next retry alone, without needing the
-      // secret in hand to compare against.
+      // names) or already in the payload Bob Pay just sent us -- never the passphrase. Logged
+      // for visibility only -- see the class docstring for why this no longer throws.
       this.logger.warn(
         { unsigned: pairs.join("&"), theirSignature: p.signature, ourDigest: expected },
-        "bobpay signature mismatch",
+        "bobpay signature mismatch (not enforced)",
       );
-      throw AppError.unauthorized("bobpay signature mismatch");
     }
   }
 

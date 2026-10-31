@@ -6,7 +6,12 @@ import type { TopUp } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { dateTime, rands } from "@/lib/money";
 
-/** Finance: match EFTs on the bank statement and confirm them; cancel stale requests. */
+/**
+ * Finance: match a pending top-up on the bank statement and confirm it, or cancel a stale
+ * request. Works for any provider, not just manual EFT — a provider's own webhook is the normal
+ * path, but its confirmation can't be assumed reliable, so finance can always step in and
+ * confirm by hand once they've matched the payment themselves.
+ */
 export default function AdminTopUps() {
   const qc = useQueryClient();
   const pending = useQuery({
@@ -75,7 +80,7 @@ export default function AdminTopUps() {
               <td className="px-5 py-2 text-right">
                 <button
                   onClick={() => confirm.mutate(t)}
-                  disabled={t.provider !== "manual_eft"}
+                  disabled={confirm.isPending}
                   className="rounded-full bg-ink px-3 py-1 text-xs text-white disabled:opacity-30"
                 >
                   Confirm
