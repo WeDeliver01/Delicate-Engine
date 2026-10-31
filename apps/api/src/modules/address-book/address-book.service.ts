@@ -4,14 +4,14 @@ import {
   Address,
   Contact,
   IMPORT_COLUMNS,
-  type BookedAddress,
+  type CollectionPoint,
   type ImportAddressesRequest,
   type ImportAddressesResult,
   type ImportRowResult,
   type SavedAddress,
   type UpsertSavedAddressRequest,
 } from "@delicate/contracts";
-import { bookings, savedAddresses, shipments, type DbExecutor } from "@delicate/db";
+import { bookings, savedAddresses, type DbExecutor } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { Clock } from "../../infra/clock.js";
@@ -62,67 +62,49 @@ export class AddressBookService {
   }
 
   /**
-   * Where this account's parcels have actually gone from and to, newest first.
+   * Where we have actually collected from for this account, most recent first.
    *
-   * Read off the bookings rather than the address book because the address book is what someone
-   * remembered to save, and this is what was really used. Ops asking "where do we collect from
-   * here" needs an answer from the first booking onwards, not only once a customer has curated
-   * a list.
+   * Read off the bookings rather than the address book, because the address book is what
+   * somebody remembered to save and this is where the van really went. Ops asking "where do we
+   * collect from here" needs an answer from the first booking onwards.
+   *
+   * Collapsed to one row per distinct address in SQL rather than in memory: an account with a
+   * thousand bookings from one bakery should cost one row, not a thousand rows filtered down
+   * afterwards.
    */
-  async booked(accountId: string, limit = 20): Promise<BookedAddress[]> {
+  async collectionPoints(accountId: string, limit = 50): Promise<CollectionPoint[]> {
+    const formatted = sql`${bookings.collection} -> 'address' ->> 'formatted'`;
     const rows = await this.dbs.db
-      .select({
-        bookingId: bookings.id,
-        reference: bookings.reference,
+      .selectDistinctOn([sql`${formatted}`], {
         collection: bookings.collection,
+        reference: bookings.reference,
         createdAt: bookings.createdAt,
-        waybill: shipments.waybill,
-        deliveryAddress: shipments.deliveryAddress,
-        recipient: shipments.recipient,
+        timesUsed: sql<number>`count(*) over (partition by ${formatted})::int`,
       })
       .from(bookings)
-      .leftJoin(shipments, eq(shipments.bookingId, bookings.id))
-      .where(eq(bookings.accountId, accountId))
-      .orderBy(desc(bookings.createdAt), shipments.waybill)
+      .where(and(eq(bookings.accountId, accountId), sql`${formatted} is not null`))
+      // DISTINCT ON keeps the first row of each group, so the ordering picks which booking
+      // represents the address: the latest one.
+      .orderBy(sql`${formatted}`, desc(bookings.createdAt))
       .limit(limit);
 
-    const out: BookedAddress[] = [];
-    const seenCollection = new Set<string>();
-    for (const row of rows) {
-      const usedAt = row.createdAt.toISOString();
-      const collection = row.collection as {
-        address?: Address;
-        contact?: Contact | null;
-        instructions?: string | null;
-      } | null;
-      // One collection per booking, not one per drop: the join above repeats it for each.
-      if (collection?.address && !seenCollection.has(row.bookingId)) {
-        seenCollection.add(row.bookingId);
-        out.push({
-          bookingId: row.bookingId,
-          bookingReference: row.reference,
-          role: "collection",
-          waybill: null,
+    return rows
+      .map((row) => {
+        const collection = row.collection as {
+          address: Address;
+          contact?: Contact | null;
+          instructions?: string | null;
+        };
+        return {
           address: collection.address,
           contact: collection.contact ?? null,
           instructions: collection.instructions ?? null,
-          usedAt,
-        });
-      }
-      if (row.deliveryAddress && row.waybill) {
-        out.push({
-          bookingId: row.bookingId,
-          bookingReference: row.reference,
-          role: "delivery",
-          waybill: row.waybill,
-          address: row.deliveryAddress as Address,
-          contact: (row.recipient as Contact | null) ?? null,
-          instructions: null,
-          usedAt,
-        });
-      }
-    }
-    return out;
+          timesUsed: row.timesUsed,
+          lastUsedAt: row.createdAt.toISOString(),
+          lastBookingReference: row.reference,
+        };
+      })
+      .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
   }
 
   async get(accountId: string, id: string): Promise<SavedAddress> {

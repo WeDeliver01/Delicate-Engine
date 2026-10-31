@@ -197,22 +197,33 @@ describe("bookings & shipments", () => {
       .get(`/v1/admin/accounts/${accountId}/addresses`)
       .set("Authorization", `Bearer ${dispatcher}`);
     expect(res.status).toBe(200);
-    const { saved, booked } = res.body as AccountAddresses;
+    const { saved, collectionPoints } = res.body as AccountAddresses;
     expect(saved).toEqual([]);
 
     // One collection for the whole booking, not one per drop.
-    const collection = booked.filter((b) => b.role === "collection");
-    expect(collection).toHaveLength(1);
-    expect(collection[0]!.address.formatted).toBe("Honey Bee, Menlyn");
-    expect(collection[0]!.contact?.phone).toBe("0821111111");
+    expect(collectionPoints).toHaveLength(1);
+    expect(collectionPoints[0]!.address.formatted).toBe("Honey Bee, Menlyn");
+    expect(collectionPoints[0]!.contact?.phone).toBe("0821111111");
+    expect(collectionPoints[0]!.timesUsed).toBe(1);
+    expect(collectionPoints[0]!.lastBookingReference).toMatch(/^BK-/);
+  });
 
-    const deliveries = booked.filter((b) => b.role === "delivery");
-    expect(deliveries.map((d) => d.address.formatted).sort()).toEqual([
-      "12 Oak St, Centurion",
-      "5 Burnett St, Hatfield",
-    ]);
-    // Each drop carries the waybill, so ops can tie an address to the parcel that went there.
-    expect(deliveries.every((d) => d.waybill)).toBe(true);
+  it("counts a collection point once however many times it is booked", async () => {
+    // Otherwise an account that sends from the same bakery every day buries ops in identical
+    // rows, which is the whole reason this is grouped rather than listed.
+    await wallet.adjust(accountId, 300_000, "test funds");
+    for (let i = 0; i < 3; i++) {
+      const q = await quote("on_demand");
+      await h.http().post("/v1/account/bookings").set(asOwner()).send({ quoteId: q.id });
+    }
+
+    const res = await h
+      .http()
+      .get(`/v1/admin/accounts/${accountId}/addresses`)
+      .set("Authorization", `Bearer ${dispatcher}`);
+    const { collectionPoints } = res.body as AccountAddresses;
+    expect(collectionPoints).toHaveLength(1);
+    expect(collectionPoints[0]!.timesUsed).toBe(3);
   });
 
   it("standard needs a slot; on-demand does not; a full slot rejects and records", async () => {

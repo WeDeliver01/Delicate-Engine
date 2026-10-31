@@ -32,29 +32,32 @@ export const SavedAddress = z.object({
 export type SavedAddress = z.infer<typeof SavedAddress>;
 
 /**
- * An address a booking actually used, read back off the booking itself.
+ * A place we have actually collected from, read back off the bookings themselves.
  *
- * The address book is what a customer saved; this is where their parcels have really gone from
- * and to. Ops answering "where do we collect from this account" needs the second, which exists
- * from the first booking onwards whether or not anybody ever saved anything.
+ * Collapsed to one entry per address rather than one per booking: an account that sends from
+ * the same bakery every day has one collection point and several hundred bookings, and the
+ * list ops reads is the former.
+ *
+ * Deliberately no matching list of delivery addresses. Those are mostly one-off destinations,
+ * one per drop forever, so the list would grow without limit and say nothing — the drops that
+ * matter are on the booking they belong to.
  */
-export const BookedAddress = z.object({
-  bookingId: Uuid,
-  bookingReference: z.string(),
-  role: z.enum(["collection", "delivery"]),
-  /** The delivery leg's waybill; null on the collection, which belongs to the whole booking. */
-  waybill: z.string().nullable(),
+export const CollectionPoint = z.object({
   address: Address,
   contact: Contact.nullable(),
   instructions: z.string().nullable(),
-  usedAt: z.string().datetime(),
+  /** How many of this account's bookings were collected from here. */
+  timesUsed: z.number().int(),
+  lastUsedAt: z.string().datetime(),
+  /** The most recent booking collected from here, so ops can open it. */
+  lastBookingReference: z.string(),
 });
-export type BookedAddress = z.infer<typeof BookedAddress>;
+export type CollectionPoint = z.infer<typeof CollectionPoint>;
 
-/** Everywhere an account collects from and delivers to: what they saved, and what they used. */
+/** Where an account collects from: what they saved, and where we have really been. */
 export const AccountAddresses = z.object({
   saved: z.array(SavedAddress),
-  booked: z.array(BookedAddress),
+  collectionPoints: z.array(CollectionPoint),
 });
 export type AccountAddresses = z.infer<typeof AccountAddresses>;
 

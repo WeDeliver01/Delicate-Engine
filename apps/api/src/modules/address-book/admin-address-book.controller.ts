@@ -24,10 +24,10 @@ export class AdminAddressBookController {
 
   @Get(":id/addresses")
   async addresses(@Params(AccountParam) p: { id: string }): Promise<AccountAddresses> {
-    const [saved, booked] = await Promise.all([
+    const [saved, collectionPoints] = await Promise.all([
       this.book.list(p.id, { includeArchived: false }),
-      this.book.booked(p.id),
+      this.book.collectionPoints(p.id),
     ]);
-    return { saved, booked };
+    return { saved, collectionPoints };
   }
 }
