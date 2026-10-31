@@ -44,6 +44,8 @@ export interface EmailLayoutInput {
   };
   /** Absolute base URL of the portal, for the logo and links. */
   webUrl: string;
+  /** Where the parcels are picked up. Rendered above the consignment. */
+  collection?: CollectionBlock | null;
   /** What is actually being delivered, one row per parcel. Rendered as a table. */
   consignment?: ConsignmentRow[] | null;
   /** Proof that it arrived: the photograph, who signed, and where it was left. */
@@ -64,9 +66,25 @@ export interface EmailLayoutInput {
  * Structured rather than prose because it is a table: a customer checking a confirmation is
  * scanning down a column for the one that is wrong, not reading a sentence.
  */
+/**
+ * Where a booking is collected from.
+ *
+ * Shown in full, not as a suburb: the whole point of printing it back is so the customer can
+ * catch a wrong address before a driver is standing outside it, and "Newlands" cannot be
+ * checked against anything.
+ */
+export interface CollectionBlock {
+  address: string;
+  contact: string | null;
+  phone: string | null;
+  instructions: string | null;
+  /** "Thu 7 Nov, morning" — when we are coming, where the booking says so. */
+  when: string | null;
+}
+
 export interface ConsignmentRow {
   waybill: string;
-  /** Where it is going — suburb, or the full address when there is no suburb. */
+  /** Where it is going, in full, for the same reason the collection address is in full. */
   destination: string;
   recipient: string | null;
   /** "1 x Xsmall Cake Box", already counted and named. */
@@ -149,6 +167,8 @@ export function renderEmailHtml(input: EmailLayoutInput): string {
     <tr><td class="pad" style="padding:34px 40px 8px 40px; font-family:${SANS}; font-size:16px; line-height:1.65; color:#2A2724;">
       ${paragraphs}
     </td></tr>
+
+    ${collectionBlock(input.collection ?? null)}
 
     ${consignmentTable(input.consignment ?? null)}
 
@@ -258,6 +278,32 @@ function whatsAppLink(phone: string | null, subject: string | null): string | nu
   if (!subscriber || !/^(6\d|7[1-9]|8[1-4])\d{7}$/.test(subscriber)) return null;
   const text = subject ? `?text=${encodeURIComponent(`Hi, I need help with: ${subject}`)}` : "";
   return `https://wa.me/27${subscriber}${text}`;
+}
+
+/** Where we are collecting from, as a card above the parcels. */
+function collectionBlock(collection: CollectionBlock | null): string {
+  if (!collection) return "";
+
+  const cell = `font-family:${SANS}; font-size:14px; line-height:1.55; color:#2A2724;`;
+  const head = `font-family:${SANS}; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:${BRAND.muted};`;
+  const label = `font-family:${SANS}; font-size:13px; color:${BRAND.muted};`;
+  const line = (k: string, v: string) =>
+    `<tr><td style="${label} padding:2px 12px 2px 0; white-space:nowrap;" valign="top">${k}</td><td style="${cell} padding:2px 0;" valign="top">${esc(v)}</td></tr>`;
+
+  return `<tr><td class="pad" style="padding:6px 40px 10px 40px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border:1px solid ${BRAND.line}; border-radius:12px;">
+        <tr><td style="padding:18px 20px;">
+          <div style="${head} padding:0 0 12px 0;">Collection from</div>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            ${line("Address", collection.address)}
+            ${collection.contact ? line("Contact", collection.contact) : ""}
+            ${collection.phone ? line("Phone", collection.phone) : ""}
+            ${collection.when ? line("When", collection.when) : ""}
+            ${collection.instructions ? line("Notes", collection.instructions) : ""}
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>`;
 }
 
 /**
@@ -373,6 +419,19 @@ export function proofText(proof: ProofBlock | null): string {
   if (proof.photoCid) lines.push("A photograph taken at the door is attached.");
   if (proof.mapUrl) lines.push(`Where it was delivered: ${proof.mapUrl}`);
   return lines.join("\n") + "\n";
+}
+
+/** The collection address for the plain-text part, appended as the consignment table is. */
+export function collectionText(collection: CollectionBlock | null): string {
+  if (!collection) return "";
+  const lines = [
+    `  Address: ${collection.address}`,
+    collection.contact ? `  Contact: ${collection.contact}` : null,
+    collection.phone ? `  Phone: ${collection.phone}` : null,
+    collection.when ? `  When: ${collection.when}` : null,
+    collection.instructions ? `  Notes: ${collection.instructions}` : null,
+  ].filter(Boolean);
+  return `\n\nCollection from:\n${lines.join("\n")}`;
 }
 
 export function consignmentText(rows: ConsignmentRow[] | null): string {

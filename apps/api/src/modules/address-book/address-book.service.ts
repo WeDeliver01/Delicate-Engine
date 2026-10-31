@@ -4,13 +4,14 @@ import {
   Address,
   Contact,
   IMPORT_COLUMNS,
+  type BookedAddress,
   type ImportAddressesRequest,
   type ImportAddressesResult,
   type ImportRowResult,
   type SavedAddress,
   type UpsertSavedAddressRequest,
 } from "@delicate/contracts";
-import { savedAddresses, type DbExecutor } from "@delicate/db";
+import { bookings, savedAddresses, shipments, type DbExecutor } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { Clock } from "../../infra/clock.js";
@@ -58,6 +59,70 @@ export class AddressBookService {
       .orderBy(desc(savedAddresses.useCount), savedAddresses.label)
       .limit(500);
     return rows.map(toSavedAddress);
+  }
+
+  /**
+   * Where this account's parcels have actually gone from and to, newest first.
+   *
+   * Read off the bookings rather than the address book because the address book is what someone
+   * remembered to save, and this is what was really used. Ops asking "where do we collect from
+   * here" needs an answer from the first booking onwards, not only once a customer has curated
+   * a list.
+   */
+  async booked(accountId: string, limit = 20): Promise<BookedAddress[]> {
+    const rows = await this.dbs.db
+      .select({
+        bookingId: bookings.id,
+        reference: bookings.reference,
+        collection: bookings.collection,
+        createdAt: bookings.createdAt,
+        waybill: shipments.waybill,
+        deliveryAddress: shipments.deliveryAddress,
+        recipient: shipments.recipient,
+      })
+      .from(bookings)
+      .leftJoin(shipments, eq(shipments.bookingId, bookings.id))
+      .where(eq(bookings.accountId, accountId))
+      .orderBy(desc(bookings.createdAt), shipments.waybill)
+      .limit(limit);
+
+    const out: BookedAddress[] = [];
+    const seenCollection = new Set<string>();
+    for (const row of rows) {
+      const usedAt = row.createdAt.toISOString();
+      const collection = row.collection as {
+        address?: Address;
+        contact?: Contact | null;
+        instructions?: string | null;
+      } | null;
+      // One collection per booking, not one per drop: the join above repeats it for each.
+      if (collection?.address && !seenCollection.has(row.bookingId)) {
+        seenCollection.add(row.bookingId);
+        out.push({
+          bookingId: row.bookingId,
+          bookingReference: row.reference,
+          role: "collection",
+          waybill: null,
+          address: collection.address,
+          contact: collection.contact ?? null,
+          instructions: collection.instructions ?? null,
+          usedAt,
+        });
+      }
+      if (row.deliveryAddress && row.waybill) {
+        out.push({
+          bookingId: row.bookingId,
+          bookingReference: row.reference,
+          role: "delivery",
+          waybill: row.waybill,
+          address: row.deliveryAddress as Address,
+          contact: (row.recipient as Contact | null) ?? null,
+          instructions: null,
+          usedAt,
+        });
+      }
+    }
+    return out;
   }
 
   async get(accountId: string, id: string): Promise<SavedAddress> {

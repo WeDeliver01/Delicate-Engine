@@ -31,6 +31,33 @@ export const SavedAddress = z.object({
 });
 export type SavedAddress = z.infer<typeof SavedAddress>;
 
+/**
+ * An address a booking actually used, read back off the booking itself.
+ *
+ * The address book is what a customer saved; this is where their parcels have really gone from
+ * and to. Ops answering "where do we collect from this account" needs the second, which exists
+ * from the first booking onwards whether or not anybody ever saved anything.
+ */
+export const BookedAddress = z.object({
+  bookingId: Uuid,
+  bookingReference: z.string(),
+  role: z.enum(["collection", "delivery"]),
+  /** The delivery leg's waybill; null on the collection, which belongs to the whole booking. */
+  waybill: z.string().nullable(),
+  address: Address,
+  contact: Contact.nullable(),
+  instructions: z.string().nullable(),
+  usedAt: z.string().datetime(),
+});
+export type BookedAddress = z.infer<typeof BookedAddress>;
+
+/** Everywhere an account collects from and delivers to: what they saved, and what they used. */
+export const AccountAddresses = z.object({
+  saved: z.array(SavedAddress),
+  booked: z.array(BookedAddress),
+});
+export type AccountAddresses = z.infer<typeof AccountAddresses>;
+
 export const UpsertSavedAddressRequest = z.object({
   label: z.string().min(1).max(120),
   address: Address,

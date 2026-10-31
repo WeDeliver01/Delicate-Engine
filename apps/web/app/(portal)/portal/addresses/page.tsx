@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ImportAddressesResult, SavedAddress } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
+import { AddressForm } from "@/components/portal/address-form";
 
 /** The places a customer sends to, and a way to bring an existing list in one file. */
 export default function PortalAddresses() {
@@ -11,6 +12,8 @@ export default function PortalAddresses() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  /** null = closed, "new" = adding, otherwise the address being edited. */
+  const [editing, setEditing] = useState<SavedAddress | "new" | null>(null);
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["portal", "address-book"] });
 
@@ -36,14 +39,42 @@ export default function PortalAddresses() {
             The places you send to. Saved addresses are offered when you book, most-used first.
           </p>
         </div>
-        <button onClick={() => setImporting(!importing)} className="btn btn-primary">
-          {importing ? "Close" : "Import a list"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => {
+              setEditing(editing ? null : "new");
+              setImporting(false);
+            }}
+            className="btn btn-primary"
+          >
+            {editing ? "Close" : "Add an address"}
+          </button>
+          <button
+            onClick={() => {
+              setImporting(!importing);
+              setEditing(null);
+            }}
+            className="btn btn-secondary"
+          >
+            {importing ? "Close" : "Import a list"}
+          </button>
+        </div>
       </header>
 
       {error && <p className="alert-error">{error}</p>}
 
       {importing && <Importer onDone={invalidate} onError={onError} />}
+
+      {editing && (
+        <AddressForm
+          existing={editing === "new" ? undefined : editing}
+          onDone={() => {
+            setEditing(null);
+            invalidate();
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
 
       <div className="flex items-center gap-3">
         <input
@@ -82,8 +113,14 @@ export default function PortalAddresses() {
             <div className="text-right text-xs text-muted">
               {a.useCount > 0 ? `used ${a.useCount}×` : "not used yet"}
               <button
+                onClick={() => setEditing(a)}
+                className="mt-1 block w-full text-right text-muted hover:text-ink hover:underline"
+              >
+                edit
+              </button>
+              <button
                 onClick={() => archive.mutate(a.id)}
-                className="mt-1 block text-muted hover:text-[#C13B73] hover:underline"
+                className="block w-full text-right text-muted hover:text-[#C13B73] hover:underline"
               >
                 remove
               </button>
@@ -92,7 +129,7 @@ export default function PortalAddresses() {
         ))}
         {list.data?.length === 0 && (
           <li className="panel p-8 text-center text-sm text-muted">
-            No saved addresses yet. Import your list, or save one while booking.
+            No saved addresses yet. Add one, import your list, or save one while booking.
           </li>
         )}
       </ul>

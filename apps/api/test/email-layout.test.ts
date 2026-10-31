@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectionText,
   consignmentText,
   proofText,
   renderEmailHtml,
+  type CollectionBlock,
   type ConsignmentRow,
   type ProofBlock,
 } from "../src/modules/notifications/email-layout.js";
@@ -127,6 +129,59 @@ Track it: ${WEB}/track?waybill=DCW-1`);
     });
     expect(out).not.toContain("wa.me");
     expect(out).toContain("0800 000 000");
+  });
+
+  describe("the collection address", () => {
+    const COLLECTION = {
+      address: "110 Paprika Avenue, Newlands, Pretoria, 0311, South Africa",
+      contact: "Perlas Cakery",
+      phone: "0740663308",
+      instructions: "Ring the bell at the side gate",
+      when: "2026-11-07 std_midday",
+    };
+    const withCollection = (collection: CollectionBlock | null) =>
+      renderEmailHtml({
+        heading: "Booking DC-7 confirmed",
+        body: "Your booking is confirmed.",
+        company: COMPANY,
+        webUrl: WEB,
+        collection,
+      });
+
+    it("prints the street address in full, which is the only version that can be checked", () => {
+      const out = withCollection(COLLECTION);
+      expect(out).toContain("Collection from");
+      expect(out).toContain("110 Paprika Avenue, Newlands, Pretoria, 0311");
+      expect(out).toContain("Perlas Cakery");
+      expect(out).toContain("0740663308");
+      expect(out).toContain("Ring the bell at the side gate");
+    });
+
+    it("leaves out what the booking did not carry, rather than printing empty labels", () => {
+      const out = withCollection({
+        ...COLLECTION,
+        contact: null,
+        phone: null,
+        instructions: null,
+        when: null,
+      });
+      expect(out).toContain("110 Paprika Avenue");
+      expect(out).not.toContain(">Phone</td>");
+      expect(out).not.toContain(">Notes</td>");
+    });
+
+    it("adds nothing at all without one", () => {
+      expect(withCollection(null)).not.toContain("Collection from");
+      expect(collectionText(null)).toBe("");
+    });
+
+    it("carries the same facts in the text part", () => {
+      const text = collectionText(COLLECTION);
+      expect(text).toContain("Collection from:");
+      expect(text).toContain("110 Paprika Avenue, Newlands, Pretoria, 0311, South Africa");
+      expect(text).toContain("Perlas Cakery");
+      expect(text).toContain("0740663308");
+    });
   });
 
   describe("the consignment", () => {

@@ -5,6 +5,7 @@ import { formatCents, formatOperatingDateTime } from "@delicate/contracts";
 import {
   accounts,
   assignments,
+  bookings,
   drivers,
   memberships,
   packageTypes,
@@ -20,7 +21,7 @@ import { EventHandlerRegistry } from "../../worker/event-handlers.js";
 import { BookingModule } from "../bookings/booking.module.js";
 import { TrackingTokenService } from "../bookings/tracking-token.service.js";
 import { NotificationService } from "./notification.service.js";
-import type { ConsignmentRow } from "./email-layout.js";
+import type { CollectionBlock, ConsignmentRow } from "./email-layout.js";
 import { NotificationDispatcher } from "./notification.dispatcher.js";
 import {
   AccountNotificationController,
@@ -95,6 +96,9 @@ export class NotificationModule implements OnModuleInit {
             waybills: e.payload.shipments.map((s) => s.waybill).join("\n"),
             total: formatCents(e.payload.totalCents),
             trackUrl: `${this.webUrl()}/portal/bookings/${e.payload.bookingId}`,
+            // Both addresses are printed back in full so a wrong one is caught here, by the
+            // people who know, rather than by a driver standing outside the wrong gate.
+            collection: await this.collection(tx, e.payload.bookingId),
             // What is actually in the van. Rendered as a table by the email layout rather
             // than substituted into the words, because it is a table.
             consignment: await this.consignment(
@@ -559,6 +563,33 @@ export class NotificationModule implements OnModuleInit {
   }
 
   /**
+   * Where a booking is collected from, in full.
+   *
+   * Read off the booking rather than the account's address book: the booking is what was
+   * actually agreed, and a customer who later edits a saved address has not changed where this
+   * particular van is going.
+   */
+  private async collection(tx: DbExecutor, bookingId: string): Promise<CollectionBlock | null> {
+    const row = await tx.query.bookings.findFirst({ where: eq(bookings.id, bookingId) });
+    const collection = row?.collection as {
+      address?: { formatted?: string | null };
+      contact?: { name?: string | null; phone?: string | null } | null;
+      instructions?: string | null;
+    } | null;
+    const address = collection?.address?.formatted;
+    if (!address) return null;
+    return {
+      address,
+      contact: collection?.contact?.name ?? null,
+      phone: collection?.contact?.phone ?? null,
+      instructions: collection?.instructions ?? null,
+      when: row?.slotDate
+        ? `${row.slotDate}${row.slotWindowKey ? ` ${row.slotWindowKey}` : ""}`.trim()
+        : null,
+    };
+  }
+
+  /**
    * The parcels on a booking, named and counted.
    *
    * Package types are looked up by id because the shipment stores the id, and "1 x Xsmall
@@ -587,11 +618,13 @@ export class NotificationModule implements OnModuleInit {
         weightKg: number | null;
       }[];
       const address = row.deliveryAddress as { suburb?: string | null; formatted?: string };
+      // The full address, not the suburb it used to show: a customer can only check an address
+      // they can actually read back, and "Newlands" matches half of Pretoria.
       const recipient = row.recipient as { name?: string | null };
       const kg = parcels.reduce((sum, par) => sum + (par.weightKg ?? 0) * (par.quantity || 1), 0);
       return {
         waybill: row.waybill,
-        destination: address.suburb ?? address.formatted ?? "the destination",
+        destination: address.formatted ?? address.suburb ?? "the destination",
         recipient: recipient.name ?? null,
         contents:
           parcels

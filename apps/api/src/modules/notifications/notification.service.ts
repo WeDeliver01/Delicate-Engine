@@ -25,9 +25,11 @@ import {
 import { DbService } from "../../infra/db.module.js";
 import { AuditService } from "../../infra/audit.service.js";
 import {
+  collectionText,
   consignmentText,
   proofText,
   renderEmailHtml,
+  type CollectionBlock,
   type ConsignmentRow,
   type ProofBlock,
 } from "./email-layout.js";
@@ -383,6 +385,7 @@ export class NotificationService {
         // moved on by the time a retry sends: the message must say what was true when the
         // thing happened, not when the mail host finally answered.
         const consignment = (row.payload as { consignment?: ConsignmentRow[] }).consignment ?? null;
+        const collection = (row.payload as { collection?: CollectionBlock }).collection ?? null;
         // The photograph is fetched now rather than carried on the row: a few hundred
         // kilobytes of base64 in a jsonb column would be paid for on every read of every
         // message, and the file is immutable, so a retry attaches the same bytes anyway.
@@ -394,7 +397,10 @@ export class NotificationService {
           // The parcels and the proof follow the words in the text part, as they do in the HTML.
           body:
             row.channel === "email"
-              ? row.body + consignmentText(consignment) + proofText(proof?.block ?? null)
+              ? row.body +
+                collectionText(collection) +
+                consignmentText(consignment) +
+                proofText(proof?.block ?? null)
               : row.body,
           fromName,
           attachments: proof?.attachments,
@@ -415,6 +421,7 @@ export class NotificationService {
                     waSubject: row.subject,
                   },
                   webUrl: this.webUrl,
+                  collection,
                   consignment,
                   proof: proof?.block ?? null,
                 })

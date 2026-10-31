@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { bookings, deliverySlots, outboxMessages, users } from "@delicate/db";
 import type {
+  AccountAddresses,
   Booking,
   CatalogResponse,
   Quote,
@@ -182,6 +183,36 @@ describe("bookings & shipments", () => {
       .send({ quoteId: q.id, slot: SLOT, idempotencyKey: "another-attempt-1" });
     expect(again.status).toBe(409);
     expect(again.body.code).toBe("quote_used");
+  });
+
+  it("shows ops where this account collects from, read off the booking itself", async () => {
+    // The address book is empty here and stays empty: a customer who has never saved anything
+    // still has to be answerable when a driver asks where to go.
+    await wallet.adjust(accountId, 100_000, "test funds");
+    const q = await quote("standard", 2);
+    await h.http().post("/v1/account/bookings").set(asOwner()).send({ quoteId: q.id, slot: SLOT });
+
+    const res = await h
+      .http()
+      .get(`/v1/admin/accounts/${accountId}/addresses`)
+      .set("Authorization", `Bearer ${dispatcher}`);
+    expect(res.status).toBe(200);
+    const { saved, booked } = res.body as AccountAddresses;
+    expect(saved).toEqual([]);
+
+    // One collection for the whole booking, not one per drop.
+    const collection = booked.filter((b) => b.role === "collection");
+    expect(collection).toHaveLength(1);
+    expect(collection[0]!.address.formatted).toBe("Honey Bee, Menlyn");
+    expect(collection[0]!.contact?.phone).toBe("0821111111");
+
+    const deliveries = booked.filter((b) => b.role === "delivery");
+    expect(deliveries.map((d) => d.address.formatted).sort()).toEqual([
+      "12 Oak St, Centurion",
+      "5 Burnett St, Hatfield",
+    ]);
+    // Each drop carries the waybill, so ops can tie an address to the parcel that went there.
+    expect(deliveries.every((d) => d.waybill)).toBe(true);
   });
 
   it("standard needs a slot; on-demand does not; a full slot rejects and records", async () => {
