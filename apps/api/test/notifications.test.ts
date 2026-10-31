@@ -169,7 +169,7 @@ describe("notifications", () => {
       .from(notificationsTable)
       .where(eq(notificationsTable.id, confirm.id));
     const { consignment, collection } = raw!.payload as {
-      consignment: { waybill: string; destination: string; contents: string }[];
+      consignment: { waybill: string; destination: string; contents: string; trackUrl: string }[];
       collection: { address: string; contact: string | null; phone: string | null } | null;
     };
     expect(consignment).toHaveLength(b.shipments.length);
@@ -183,6 +183,16 @@ describe("notifications", () => {
     // And where we are collecting from, which the email never used to say at all.
     expect(collection?.address).toBe("Honey Bee, Menlyn");
     expect(collection?.phone).toBe("0821111111");
+
+    /*
+      Every parcel carries a link anyone can open. This used to point at
+      /portal/bookings/<uuid>, which asked the reader to sign in -- useless to the person
+      actually waiting for the parcel, who is not our customer.
+    */
+    for (const row of consignment) {
+      expect(row.trackUrl).toBe(`http://localhost:3000/tracking/${row.waybill}`);
+      expect(row.trackUrl).not.toContain("/portal/");
+    }
   });
 
   it("redacts contact details in the admin list", async () => {

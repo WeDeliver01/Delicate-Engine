@@ -84,6 +84,11 @@ export interface CollectionBlock {
 
 export interface ConsignmentRow {
   waybill: string;
+  /**
+   * Public tracking link for this parcel. Carried per row because a multi-drop booking has no
+   * single thing to track, and the waybill is the natural place to click.
+   */
+  trackUrl?: string | null;
   /** Where it is going, in full, for the same reason the collection address is in full. */
   destination: string;
   recipient: string | null;
@@ -332,7 +337,7 @@ function consignmentTable(rows: ConsignmentRow[] | null): string {
           ${rows
             .map(
               (r) => `<tr>
-            <td valign="top" style="${cell} padding:8px 0 0 0; border-top:1px solid ${BRAND.line};"><strong style="color:${BRAND.ink};">${esc(r.waybill)}</strong></td>
+            <td valign="top" style="${cell} padding:8px 0 0 0; border-top:1px solid ${BRAND.line};">${waybillCell(r)}</td>
             <td valign="top" style="${cell} padding:8px 0 0 12px; border-top:1px solid ${BRAND.line};">${esc(r.destination)}${r.recipient ? `<br /><span style="color:${BRAND.muted};">${esc(r.recipient)}</span>` : ""}</td>
             <td valign="top" style="${cell} padding:8px 0 0 12px; border-top:1px solid ${BRAND.line};">${esc(r.contents)}${r.weight ? `<br /><span style="color:${BRAND.muted};">${esc(r.weight)}</span>` : ""}</td>
           </tr>`,
@@ -350,13 +355,26 @@ function consignmentTable(rows: ConsignmentRow[] | null): string {
     </td></tr>`;
 }
 
+/**
+ * The waybill, as a tracking link where we have one.
+ *
+ * Bold plain text otherwise, so a message built before tracking links existed still renders.
+ */
+function waybillCell(r: ConsignmentRow): string {
+  const strong = `<strong style="color:${BRAND.ink};">${esc(r.waybill)}</strong>`;
+  return r.trackUrl
+    ? `<a href="${esc(r.trackUrl)}" style="color:${BRAND.ink}; text-decoration:underline;">${strong}</a>`
+    : strong;
+}
+
 /** One parcel, as labelled facts rather than a one-row table. */
 function labelled(r: ConsignmentRow, cell: string): string {
   const label = `font-family:${SANS}; font-size:13px; color:${BRAND.muted};`;
-  const line = (k: string, v: string) =>
-    `<tr><td style="${label} padding:2px 12px 2px 0; white-space:nowrap;" valign="top">${k}</td><td style="${cell} padding:2px 0;" valign="top">${esc(v)}</td></tr>`;
+  const lineHtml = (k: string, v: string) =>
+    `<tr><td style="${label} padding:2px 12px 2px 0; white-space:nowrap;" valign="top">${k}</td><td style="${cell} padding:2px 0;" valign="top">${v}</td></tr>`;
+  const line = (k: string, v: string) => lineHtml(k, esc(v));
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0">
-          ${line("Waybill", r.waybill)}
+          ${lineHtml("Waybill", waybillCell(r))}
           ${line("To", r.destination)}
           ${r.recipient ? line("Recipient", r.recipient) : ""}
           ${line("Contents", r.contents)}
@@ -442,7 +460,10 @@ export function consignmentText(rows: ConsignmentRow[] | null): string {
         `  ${r.waybill}`,
         `    To: ${r.destination}${r.recipient ? ` (${r.recipient})` : ""}`,
         `    Contents: ${r.contents}${r.weight ? ` — ${r.weight}` : ""}`,
-      ].join("\n"),
+        r.trackUrl ? `    Track: ${r.trackUrl}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     )
     .join("\n\n");
   const title = rows.length === 1 ? "Your parcel" : `Your parcels (${rows.length})`;

@@ -95,7 +95,20 @@ export class NotificationModule implements OnModuleInit {
               : "today",
             waybills: e.payload.shipments.map((s) => s.waybill).join("\n"),
             total: formatCents(e.payload.totalCents),
-            trackUrl: `${this.webUrl()}/portal/bookings/${e.payload.bookingId}`,
+            /*
+              A tracking link anyone can open, not the portal.
+
+              This pointed at /portal/bookings/<uuid>, which is behind the sign-in: the
+              customer had to log in to see where their own parcel was, and the person
+              waiting for it -- who is usually not our customer at all -- could do nothing
+              with the link. On a multi-drop booking there is no single parcel to track, so
+              the waybills in the table below carry their own links and this one opens the
+              lookup.
+            */
+            trackUrl:
+              e.payload.shipments.length === 1
+                ? this.trackUrl(e.payload.shipments[0]!.waybill)
+                : `${this.webUrl()}/track`,
             // Both addresses are printed back in full so a wrong one is caught here, by the
             // people who know, rather than by a driver standing outside the wrong gate.
             collection: await this.collection(tx, e.payload.bookingId),
@@ -624,6 +637,7 @@ export class NotificationModule implements OnModuleInit {
       const kg = parcels.reduce((sum, par) => sum + (par.weightKg ?? 0) * (par.quantity || 1), 0);
       return {
         waybill: row.waybill,
+        trackUrl: this.trackUrl(row.waybill),
         destination: address.formatted ?? address.suburb ?? "the destination",
         recipient: recipient.name ?? null,
         contents:
@@ -701,7 +715,7 @@ export class NotificationModule implements OnModuleInit {
         recipientName: recipient.name ?? "there",
         waybill: shipment.waybill,
         destination: address.suburb ?? address.city ?? "the destination",
-        trackUrl: `${this.webUrl()}/track?waybill=${shipment.waybill}`,
+        trackUrl: this.trackUrl(shipment.waybill),
         liveUrl,
       },
     };
@@ -734,6 +748,16 @@ export class NotificationModule implements OnModuleInit {
 
   private webUrl(): string {
     return process.env["WEB_PUBLIC_URL"] ?? "http://localhost:3000";
+  }
+
+  /**
+   * The public tracking link for one waybill.
+   *
+   * Short on purpose: it gets read off a phone screen, forwarded to whoever is actually
+   * waiting, and sometimes typed in by hand, so it is the waybill and nothing else.
+   */
+  private trackUrl(waybill: string): string {
+    return `${this.webUrl()}/tracking/${encodeURIComponent(waybill)}`;
   }
 }
 

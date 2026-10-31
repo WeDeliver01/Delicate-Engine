@@ -201,6 +201,28 @@ Track it: ${WEB}/track?waybill=DCW-1`);
         consignment: rows,
       });
 
+    it("makes each waybill its own tracking link, which is how a multi-drop is tracked", () => {
+      const out = withRows([
+        { ...parcel, trackUrl: "https://delicatecourier.co.za/tracking/DCW-0000412" },
+        {
+          ...parcel,
+          waybill: "DCW-0000413",
+          trackUrl: "https://delicatecourier.co.za/tracking/DCW-0000413",
+        },
+      ]);
+      expect(out).toContain('href="https://delicatecourier.co.za/tracking/DCW-0000412"');
+      expect(out).toContain('href="https://delicatecourier.co.za/tracking/DCW-0000413"');
+      expect(
+        consignmentText([{ ...parcel, trackUrl: "https://x.test/tracking/DCW-0000412" }]),
+      ).toContain("Track: https://x.test/tracking/DCW-0000412");
+    });
+
+    it("still renders a parcel that carries no tracking link", () => {
+      const out = withRows([parcel]);
+      expect(out).toContain("DCW-0000412");
+      expect(out).not.toContain('<a href="https://delicatecourier.co.za/tracking');
+    });
+
     it("labels a single parcel instead of putting a header row above it", () => {
       const out = withRows([parcel]);
       expect(out).toContain("Your parcel");
