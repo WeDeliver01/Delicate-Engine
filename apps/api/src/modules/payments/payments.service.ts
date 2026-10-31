@@ -212,6 +212,9 @@ export class PaymentsService {
       .where(
         and(
           eq(settlements.driverId, driverId),
+          // Settled, not merely pre-settled: money moves at booking, but nobody is paid for
+          // a delivery that has not happened yet.
+          isNotNull(settlements.settledAt),
           upTo ? lte(settlements.settledAt, upTo) : undefined,
           last?.executedAt ? sql`${settlements.settledAt} > ${last.executedAt}` : undefined,
         ),
@@ -224,7 +227,7 @@ export class PaymentsService {
         shipmentId: r.shipmentId,
         waybill: r.waybill,
         amountCents: r.amount,
-        settledAt: r.settledAt.toISOString(),
+        settledAt: r.settledAt!.toISOString(),
       }));
     const listed = items.reduce((s, i) => s + i.amountCents, 0);
     return {
@@ -630,6 +633,13 @@ export class PaymentsService {
       cashClearingCents: await this.ledger.balance("CASH_CLEARING", "company", null),
       driverEarningsOwedCents: rows.reduce((s, r) => s + r.earningsOwedCents, 0),
       fuelCardOwedCents: rows.reduce((s, r) => s + r.fuelOwedCents, 0),
+      // Credits are negative in the ledger; what is owed is the other way up.
+      unassignedFuelCents: -(await this.ledger.balance("FUEL_PAYABLE", "company", null)),
+      unassignedEarningsCents: -(await this.ledger.balance(
+        "DRIVER_EARNINGS_PAYABLE",
+        "company",
+        null,
+      )),
       committedCents: Number(committed?.total ?? 0),
       drivers: rows,
       vendors: wallets.map((w) => ({

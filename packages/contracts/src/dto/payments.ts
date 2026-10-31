@@ -133,6 +133,16 @@ export const PayablesSummary = z.object({
   cashClearingCents: Cents,
   driverEarningsOwedCents: Cents,
   fuelCardOwedCents: Cents,
+  /**
+   * Fuel and driver cost already paid for by customers but not yet owed to a named driver.
+   *
+   * Money moves when a booking is paid for, and a booking weeks out has no driver on it yet,
+   * so its cost sits against the company until the job is done and the payable moves to
+   * whoever did it. Without this the committed cash is invisible and the page reads zero
+   * while the bank balance quietly carries work that is already sold.
+   */
+  unassignedFuelCents: Cents,
+  unassignedEarningsCents: Cents,
   /** Total of every proposal awaiting approval or execution. */
   committedCents: Cents,
   drivers: z.array(

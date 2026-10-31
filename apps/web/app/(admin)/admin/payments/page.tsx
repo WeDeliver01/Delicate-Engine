@@ -77,13 +77,38 @@ export default function AdminPayments() {
       </header>
 
       {p && (
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Stat label="In the bank" value={rands(p.bankBalanceCents)} />
-          <Stat label="Awaiting bank sweep" value={rands(p.cashClearingCents)} />
-          <Stat label="Owed to drivers" value={rands(p.driverEarningsOwedCents)} />
-          <Stat label="Owed to fuel cards" value={rands(p.fuelCardOwedCents)} />
-          <Stat label="Already committed" value={rands(p.committedCents)} tone="warn" />
-        </section>
+        <>
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Stat label="In the bank" value={rands(p.bankBalanceCents)} />
+            <Stat label="Awaiting bank sweep" value={rands(p.cashClearingCents)} />
+            <Stat label="Owed to drivers" value={rands(p.driverEarningsOwedCents)} />
+            <Stat label="Owed to fuel cards" value={rands(p.fuelCardOwedCents)} />
+            <Stat label="Already committed" value={rands(p.committedCents)} tone="warn" />
+          </section>
+
+          {/*
+            Work sold but not yet driven. Separate from the row above because nobody can be
+            paid it yet -- there is no driver on a booking that has not gone out -- but it is
+            spent money all the same, and treating it as free cash is how a fuel card runs
+            dry on a Monday.
+          */}
+          <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Stat
+              label="Fuel on booked work"
+              value={rands(p.unassignedFuelCents)}
+              tone={p.unassignedFuelCents > 0 ? "warn" : undefined}
+            />
+            <Stat
+              label="Driver pay on booked work"
+              value={rands(p.unassignedEarningsCents)}
+              tone={p.unassignedEarningsCents > 0 ? "warn" : undefined}
+            />
+            <Stat
+              label="Free after booked work"
+              value={rands(p.bankBalanceCents - p.unassignedFuelCents - p.unassignedEarningsCents)}
+            />
+          </section>
+        </>
       )}
 
       <section className="flex flex-wrap items-center gap-2 panel p-4">

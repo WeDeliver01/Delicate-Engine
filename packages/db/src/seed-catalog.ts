@@ -50,10 +50,18 @@ export const CATALOG_SEED = {
      * zero, and are worth checking against real tracking data before the floor goes live.
      */
     "pricing.cost_model": {
-      fuelPriceCentsPerLitre: 0,
+      /*
+        Real figures, not zeros.
+
+        Shipping zeros made `directCostCents` zero, which made the cost floor unreachable --
+        the protection against selling below cost was present in the code and inert in every
+        install that never filled this in. A wrong-but-plausible fuel price fails loudly in a
+        quote; a zero fails silently forever.
+      */
+      fuelPriceCentsPerLitre: 3_100,
       fuelConsumptionL100km: 7.5,
-      vehicleWearCentsPerKm: 0,
-      driverCostCentsPerHour: 0,
+      vehicleWearCentsPerKm: 75,
+      driverCostCentsPerHour: 4_500,
       effectiveSpeedKmh: 35,
       collectionMinutes: 15,
       dropMinutes: 10,

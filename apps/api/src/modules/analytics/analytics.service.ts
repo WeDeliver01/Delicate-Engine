@@ -233,6 +233,7 @@ export class AnalyticsService {
         .select({
           waybill: shipments.waybill,
           settledAt: settlements.settledAt,
+          presettledAt: settlements.presettledAt,
           account: accounts.name,
           driver: drivers.fullName,
           revenue: settlements.revenueCents,
@@ -265,7 +266,7 @@ export class AnalyticsService {
         ],
         rows.map((r) => [
           r.waybill,
-          r.settledAt.toISOString(),
+          (r.settledAt ?? r.presettledAt).toISOString(),
           r.account,
           r.driver ?? "",
           money(r.revenue),

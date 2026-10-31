@@ -19,6 +19,7 @@ import {
   bookings,
   shipmentEvents,
   shipments,
+  walletHolds,
   waybillCounters,
   type DbExecutor,
 } from "@delicate/db";
@@ -435,10 +436,24 @@ export class BookingService {
           { dedupeKey: `shipment:${s.id}:cancelled` },
         );
       }
+      /*
+        The hold may already be captured.
+
+        Money moves at booking now, so by the time anyone cancels, the hold has usually been
+        taken rather than merely reserved -- and releasing a captured hold throws. Releasing is
+        therefore only for a booking cancelled before the worker pre-settled it. Reversing the
+        journals and refunding the cash is the fleet module's job, off the cancellation event,
+        because settlement lives there and reaching across for it would be a circular import.
+      */
       let holdReleased = false;
       if (booking.holdId) {
-        await this.wallet.releaseHold(tx, booking.holdId);
-        holdReleased = true;
+        const hold = await tx.query.walletHolds.findFirst({
+          where: eq(walletHolds.id, booking.holdId),
+        });
+        if (hold?.status === "active") {
+          await this.wallet.releaseHold(tx, booking.holdId);
+          holdReleased = true;
+        }
       }
       if (booking.slotDate && booking.slotWindowKey) {
         await this.scheduling.release(tx, {

@@ -1,7 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { PinoLogger } from "nestjs-pino";
-import { haversineKm, type Assignment, type LatLng, type Shipment } from "@delicate/contracts";
+import {
+  fuelCostCentsPerKm,
+  haversineKm,
+  type Assignment,
+  type LatLng,
+  type Shipment,
+} from "@delicate/contracts";
 import {
   assignments,
   bookings,
@@ -304,6 +310,7 @@ export class AssignmentService {
     plannedKm: number,
   ): Promise<void> {
     const rules = await this.settings.get("settlement.rules");
+    const costModel = await this.settings.get("pricing.cost_model");
     const booking = await tx.query.bookings.findFirst({ where: eq(bookings.id, s.bookingId) });
     const breakdown = booking!.breakdown as { subtotalCents: number };
     const dropCount = await tx.$count(
@@ -311,7 +318,7 @@ export class AssignmentService {
       and(eq(shipments.bookingId, s.bookingId), sql`${shipments.status} <> 'cancelled'`),
     );
     const revenueCents = Math.round(breakdown.subtotalCents / Math.max(1, dropCount));
-    const fuelCostCents = Math.round(plannedKm * rules.fuelCostPerKmCents);
+    const fuelCostCents = Math.round(plannedKm * fuelCostCentsPerKm(costModel));
     const driverEarningCents =
       rules.driverEarningPerDropCents + Math.round(plannedKm * rules.driverEarningPerKmCents);
     await tx.insert(settlementForecasts).values({

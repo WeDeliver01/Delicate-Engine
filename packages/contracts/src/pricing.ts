@@ -133,9 +133,19 @@ export const CostModel = z.object({
 });
 export type CostModel = z.infer<typeof CostModel>;
 
+/**
+ * Fuel alone, per kilometre, in cents — what actually has to be loaded onto a fuel card.
+ *
+ * Separate from `variableCostCentsPerKm` because wear is a real cost but nobody invoices us
+ * for it per kilometre; it accrues against the vehicle instead of being paid at a pump.
+ */
+export function fuelCostCentsPerKm(m: CostModel): number {
+  return (m.fuelConsumptionL100km / 100) * m.fuelPriceCentsPerLitre;
+}
+
 /** c_var: fuel plus wear, per kilometre, in cents. Derived — never entered directly. */
 export function variableCostCentsPerKm(m: CostModel): number {
-  return (m.fuelConsumptionL100km / 100) * m.fuelPriceCentsPerLitre + m.vehicleWearCentsPerKm;
+  return fuelCostCentsPerKm(m) + m.vehicleWearCentsPerKm;
 }
 
 /** What the job actually cost: every kilometre driven, priced at c_var, plus driver time. */

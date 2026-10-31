@@ -580,28 +580,54 @@ function SettlementCard({
           onChange={(x) => setV({ ...v, driverEarningPerKmCents: x })}
           hint={`${rands(v.driverEarningPerKmCents)} per km`}
         />
-        <Num
-          label="Fuel cost per km (cents)"
-          value={v.fuelCostPerKmCents}
-          onChange={(x) => setV({ ...v, fuelCostPerKmCents: x })}
-          hint={`${rands(v.fuelCostPerKmCents)} per km, loaded to the fuel card`}
-        />
       </div>
-      <label className="mt-4 flex items-center gap-3 text-sm">
-        <input
-          type="checkbox"
-          checked={v.chargeFailedAttempts}
-          onChange={(e) => setV({ ...v, chargeFailedAttempts: e.target.checked })}
-          className="h-4 w-4"
-        />
-        Charge the customer (and pay the driver) for a failed delivery attempt
-      </label>
+
+      {/*
+        Fuel is not edited here any more: it comes from the cost model above, so pricing and
+        settlement cannot drift apart on what a kilometre costs.
+      */}
+      <fieldset className="mt-4">
+        <legend className="label-mini">When a delivery fails</legend>
+        <p className="mb-2 text-xs text-[#6B6661]">
+          We drove there either way. A recipient who was out, gave a wrong address or sent it back
+          has had the work done; something we damaged is ours to refund.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(
+            [
+              ["recipient_unavailable", "Nobody there"],
+              ["wrong_address", "Wrong address given"],
+              ["refused", "Refused on arrival"],
+              ["damaged", "Damaged by us"],
+              ["other", "Something else"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="flex items-center justify-between gap-3 text-sm">
+              <span>{label}</span>
+              <select
+                value={v.failurePolicy[key]}
+                onChange={(e) =>
+                  setV({
+                    ...v,
+                    failurePolicy: { ...v.failurePolicy, [key]: e.target.value },
+                  })
+                }
+                className="input px-2 py-1 text-xs"
+              >
+                <option value="charge">Keep the money</option>
+                <option value="refund">Refund it</option>
+                <option value="review">Hold for review</option>
+              </select>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <p className="mt-4 rounded-xl bg-[#FAFAF9] p-3 text-xs text-[#6B6661]">
         A 20 km drop earns the driver{" "}
         <span className="font-mono">
           {rands(v.driverEarningPerDropCents + v.driverEarningPerKmCents * 20)}
         </span>{" "}
-        and costs <span className="font-mono">{rands(v.fuelCostPerKmCents * 20)}</span> in fuel.
+        . Fuel for that drop comes from the cost model above.
       </p>
     </Card>
   );

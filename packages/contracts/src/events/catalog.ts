@@ -264,6 +264,28 @@ export const SettlementPosted = defineEvent(
   }),
 );
 
+/**
+ * A pre-settled shipment corrected once it really happened: the driver is now known and the
+ * kilometres are the ones that were driven. A separate event from `settlement.posted` so a
+ * handler that acts on money arriving does not act twice on the same delivery.
+ */
+export const SettlementTruedUp = defineEvent(
+  "settlement.trued_up",
+  z.object({
+    shipmentId: z.string().uuid(),
+    bookingId: z.string().uuid(),
+    accountId: z.string().uuid(),
+    driverId: z.string().uuid().nullable(),
+    journalId: z.string().uuid(),
+    revenueCents: Cents,
+    vatCents: Cents,
+    fuelCostCents: Cents,
+    driverEarningCents: Cents,
+    marginCents: Cents,
+    actualKm: z.number(),
+  }),
+);
+
 export const BookingCharged = defineEvent(
   "booking.charged",
   z.object({
@@ -493,6 +515,7 @@ export const DomainEvent = z.discriminatedUnion("type", [
   DeliveryFailed,
   FuelLogged,
   SettlementPosted,
+  SettlementTruedUp,
   BookingCharged,
   TreasuryAllocated,
   PaymentProposed,

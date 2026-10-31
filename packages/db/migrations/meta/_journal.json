@@ -260,6 +260,13 @@
       "when": 1792708608328,
       "tag": "0036_vat_not_registered",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793433652832,
+      "tag": "0037_white_warhawk",
+      "breakpoints": true
     }
   ]
 }

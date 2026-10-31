@@ -175,7 +175,15 @@ describe("timed windows", () => {
     // The framework exists; the business rule is off, so the price is unchanged.
     expect(timed.breakdown.totalCents).toBe(plain.breakdown.totalCents);
 
-    await priceWindowSurcharge(5_000);
+    /*
+      Large enough to clear the cost floor.
+
+      The floor is a minimum on the whole subtotal, so a surcharge smaller than the gap
+      between the rate card's price and the floor is absorbed by it and the customer pays
+      exactly the floor either way. That is the documented design -- the flat minimum fee
+      behaves the same -- but it means a surcharge only shows up once it clears the floor.
+    */
+    await priceWindowSurcharge(20_000);
     const priced = await quote({
       collection: null,
       delivery: { startMinute: 600, endMinute: 660 },

@@ -106,14 +106,35 @@ export const settlements = pgTable(
     driverEarningCents: bigint("driver_earning_cents", { mode: "number" }).notNull(),
     marginCents: bigint("margin_cents", { mode: "number" }).notNull(),
     plannedKm: numeric("planned_km", { precision: 8, scale: 2 }).notNull(),
-    actualKm: numeric("actual_km", { precision: 8, scale: 2 }).notNull(),
+    /** Null until the delivery happens: a pre-settled row knows only what was planned. */
+    actualKm: numeric("actual_km", { precision: 8, scale: 2 }),
+    /** The booking-time journal. Always present — the row is born with it. */
     journalId: uuid("journal_id").notNull(),
+    /** The delivery-time true-up journal, posted only when actual km differ from planned. */
+    trueUpJournalId: uuid("true_up_journal_id"),
+    /** Reverses the lot when a booking is cancelled, or a failure is our fault. */
+    reversalJournalId: uuid("reversal_journal_id"),
     rulesSnapshot: jsonb("rules_snapshot").notNull(),
-    settledAt: timestamp("settled_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    /** `delivered` | `failed` once it has happened; null while the van is still coming. */
+    outcome: text("outcome"),
+    /**
+     * When the money moved, which is at booking — not at delivery.
+     *
+     * The cash is in the bank the day the customer pays, so that is the day it is recognised
+     * and earmarked. Waiting for a delivery five months out to recognise money already banked
+     * left every forward booking invisible to the people deciding what they can spend today.
+     */
+    presettledAt: timestamp("presettled_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    /** When the delivery actually resolved and the figures were trued up. */
+    settledAt: timestamp("settled_at", { withTimezone: true, mode: "date" }),
+    reversedAt: timestamp("reversed_at", { withTimezone: true, mode: "date" }),
   },
   (t) => [
     index("settlements_driver_idx").on(t.driverId, t.settledAt),
     index("settlements_account_idx").on(t.accountId, t.settledAt),
+    index("settlements_presettled_idx").on(t.presettledAt),
   ],
 );
 

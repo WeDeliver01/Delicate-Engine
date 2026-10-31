@@ -175,8 +175,15 @@ export const Settlement = z.object({
   driverEarningCents: Cents,
   marginCents: Cents,
   plannedKm: z.number(),
-  actualKm: z.number(),
+  /** Null until it has actually been delivered; a pre-settled row knows only the plan. */
+  actualKm: z.number().nullable(),
   journalId: Uuid,
-  settledAt: z.string().datetime(),
+  /** When the money moved: at booking. Always set. */
+  presettledAt: z.string().datetime(),
+  /** When the delivery resolved and the figures were corrected. Null while it is still coming. */
+  settledAt: z.string().datetime().nullable(),
+  outcome: z.enum(["delivered", "failed"]).nullable(),
+  /** Set when the booking was cancelled and the money given back. */
+  reversedAt: z.string().datetime().nullable(),
 });
 export type Settlement = z.infer<typeof Settlement>;

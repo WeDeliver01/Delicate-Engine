@@ -220,11 +220,13 @@ describe("operator settings", () => {
       .http()
       .put("/v1/admin/settings/settlement-rules")
       .set(asAdmin())
-      .send({ ...before, driverEarningPerDropCents: 6_000, fuelCostPerKmCents: 145 })
+      .send({ ...before, driverEarningPerDropCents: 6_000 })
       .expect(200);
     const rules = await settings.get("settlement.rules");
     expect(rules.driverEarningPerDropCents).toBe(6_000);
-    expect(rules.fuelCostPerKmCents).toBe(145);
+    // Fuel is no longer a settlement setting: it comes from the cost model, so there is one
+    // answer to what a kilometre costs rather than two that drift apart.
+    expect(rules.failurePolicy.damaged).toBe("refund");
     // snapshotting onto each settlement is what protects history; see dispatch.test.ts
   });
 

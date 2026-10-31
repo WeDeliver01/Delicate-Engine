@@ -216,16 +216,46 @@ export const SettingKey = z.enum([
   "loyalty.program",
 ]);
 
-/** How money splits per delivered shipment. Admin-editable; snapshotted into every settlement. */
+/**
+ * What happens to the money when a delivery does not arrive.
+ *
+ * Not one flag, because "failed" covers two different things. We drove there either way, so a
+ * recipient who was out, gave the wrong address or sent the food back has had the work done
+ * and is charged for it. A parcel we damaged is our mistake and is refunded. `other` is not
+ * guessable, so it is held for a person to decide rather than silently charged or refunded.
+ */
+export const FailureCharge = z.enum(["charge", "refund", "review"]);
+export type FailureCharge = z.infer<typeof FailureCharge>;
+
+export const FailurePolicy = z.object({
+  recipient_unavailable: FailureCharge.default("charge"),
+  wrong_address: FailureCharge.default("charge"),
+  refused: FailureCharge.default("charge"),
+  damaged: FailureCharge.default("refund"),
+  other: FailureCharge.default("review"),
+});
+export type FailurePolicy = z.infer<typeof FailurePolicy>;
+
+/**
+ * How money splits per shipment. Admin-editable; snapshotted into every settlement.
+ *
+ * Fuel is deliberately absent: it is derived from `pricing.cost_model` (litres per 100 km times
+ * the pump price), so there is one answer to what a kilometre costs rather than a pricing
+ * number and a settlement number that drift apart. Vehicle wear is a cost but not a fuel-card
+ * payable, so it is not part of this.
+ */
 export const SettlementRules = z.object({
   /** Driver earning per completed drop, in cents. */
   driverEarningPerDropCents: NonNegativeCents,
   /** Optional per-km component of driver earning. */
   driverEarningPerKmCents: NonNegativeCents,
-  /** Fuel cost recognised per actual km, in cents (loaded to the driver fuel card). */
-  fuelCostPerKmCents: NonNegativeCents,
-  /** Whether a failed delivery attempt is charged to the customer and paid to the driver. */
-  chargeFailedAttempts: z.boolean(),
+  failurePolicy: FailurePolicy.default({
+    recipient_unavailable: "charge",
+    wrong_address: "charge",
+    refused: "charge",
+    damaged: "refund",
+    other: "review",
+  }),
 });
 export type SettlementRules = z.infer<typeof SettlementRules>;
 export type SettingKey = z.infer<typeof SettingKey>;

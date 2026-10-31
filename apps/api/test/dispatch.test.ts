@@ -28,6 +28,8 @@ const addr = (formatted: string, location: { lat: number; lng: number }, suburb:
   location,
   placeId: null,
 });
+/** Fuel is derived from the seeded cost model: 7.5 L/100 km at 3 100 c/L. */
+const FUEL_CENTS_PER_KM = (7.5 / 100) * 3_100;
 const PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const DRIVER_USER = {
@@ -217,6 +219,66 @@ describe("fleet, dispatch & settlement", () => {
     A small fleet does not want a scoring function choosing for it: one person is out all day
     doing the work, and the dispatcher moves a stop off them when there is a reason to.
   */
+  describe("money moves when the booking is paid for", () => {
+    /*
+      The cash is in the bank the day the customer pays, so it is recognised that day.
+
+      Waiting for the delivery meant a booking months out contributed nothing to any view
+      until the van arrived -- money already banked, invisible to the people deciding what
+      they could spend on fuel this morning.
+    */
+    it("recognises revenue and earmarks the cost at booking, before anyone drives", async () => {
+      const b = await book("standard", 2);
+      expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+
+      // The wallet is charged now, not held indefinitely against a delivery that has not run.
+      const w = (await h.http().get("/v1/account/wallet").set(asOwner())).body as WalletSummary;
+      expect(w.balanceCents).toBe(500_000 - b.totalCents);
+      expect(w.heldCents).toBe(0);
+
+      expect(await ledger.balance("REVENUE", "company", null)).toBe(-b.breakdown.subtotalCents);
+      expect((await ledger.trialBalance()).totalCents).toBe(0);
+
+      // The cost is owed to nobody in particular yet: no driver has been given the job.
+      const pooledFuel = -(await ledger.balance("FUEL_PAYABLE", "company", null));
+      const pooledEarnings = -(await ledger.balance("DRIVER_EARNINGS_PAYABLE", "company", null));
+      expect(pooledFuel).toBeGreaterThan(0);
+      expect(pooledEarnings).toBeGreaterThan(0);
+
+      const settled = (
+        await h
+          .http()
+          .get(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/settlement`)
+          .set(asDispatcher())
+      ).body.settlement as Settlement;
+      // Pre-settled: the money has moved, the delivery has not happened.
+      expect(settled.settledAt).toBeNull();
+      expect(settled.actualKm).toBeNull();
+      expect(settled.driverId).toBeNull();
+      expect(settled.presettledAt).not.toBeNull();
+    });
+
+    it("gives all of it back when the booking is cancelled", async () => {
+      const b = await book("standard", 2);
+      expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+
+      await h
+        .http()
+        .post(`/v1/account/bookings/${b.id}/cancel`)
+        .set(asOwner())
+        .send({ reason: "customer changed their mind" })
+        .expect(201);
+      await h.dispatcher.tick();
+
+      // Recognising money at booking is only safe if cancelling unrecognises it.
+      const w = (await h.http().get("/v1/account/wallet").set(asOwner())).body as WalletSummary;
+      expect(w.balanceCents).toBe(500_000);
+      expect(await ledger.balance("REVENUE", "company", null)).toBeCloseTo(0);
+      expect(-(await ledger.balance("FUEL_PAYABLE", "company", null))).toBeCloseTo(0);
+      expect((await ledger.trialBalance()).totalCents).toBe(0);
+    });
+  });
+
   describe("the main driver", () => {
     it("takes new work, whoever is nearer", async () => {
       // Somebody closer to the collection, so the scoring would not pick our main driver.
@@ -351,7 +413,8 @@ describe("fleet, dispatch & settlement", () => {
       Math.floor(b.breakdown.subtotalCents / 2) + Math.floor(b.breakdown.vatCents / 2),
     );
     expect(s1.driverEarningCents).toBe(4_500);
-    expect(s1.fuelCostCents).toBe(Math.round(s1.actualKm * 120));
+    expect(s1.fuelCostCents).toBe(Math.round(s1.actualKm! * FUEL_CENTS_PER_KM));
+
     expect(s1.marginCents).toBe(s1.revenueCents - s1.fuelCostCents - s1.driverEarningCents);
     let w = (await h.http().get("/v1/account/wallet").set(asOwner())).body as WalletSummary;
     expect(w).toMatchObject({ balanceCents: 500_000, heldCents: b.totalCents });
