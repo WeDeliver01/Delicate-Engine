@@ -55,7 +55,7 @@ The {{companyName}} Team
 
 Your booking {{reference}} is confirmed — {{dropCount}} for {{slot}}.
 
-Total: {{total}} (incl. VAT), held against your wallet and charged as each drop is completed.
+Total: {{total}}, held against your wallet and charged as each drop is completed.
 
 Track it any time at {{trackUrl}}.
 
