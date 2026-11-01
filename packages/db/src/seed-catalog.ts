@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { DbExecutor } from "./client.js";
 import {
   allocationWallets,
+  membershipPlans,
   packageTypes,
   rateCards,
   serviceLevels,
@@ -265,6 +266,45 @@ export const CATALOG_SEED = {
     weddingVenueFeeCents: 12_000,
     roadFactorBps: 13_000,
   },
+  /** The membership tiers from the marketing page. */
+  membershipPlans: [
+    {
+      code: "starter",
+      name: "Starter",
+      priceCents: 99_900,
+      discountBps: 1_500,
+      suitedFromDeliveries: 20,
+      includesApiAccess: true,
+      prioritySupport: true,
+      sortOrder: 1,
+    },
+    {
+      code: "growth",
+      name: "Growth",
+      priceCents: 199_900,
+      discountBps: 2_500,
+      suitedFromDeliveries: 35,
+      freeShipmentsPerPeriod: 1,
+      waivesHolidaySurcharge: true,
+      includesApiAccess: true,
+      prioritySupport: true,
+      sortOrder: 2,
+    },
+    {
+      code: "enterprise",
+      name: "Enterprise",
+      priceCents: 349_900,
+      discountBps: 4_000,
+      suitedFromDeliveries: 55,
+      freeShipmentsPerPeriod: 1,
+      waivesHolidaySurcharge: true,
+      waivesAllSurcharges: true,
+      includesApiAccess: true,
+      prioritySupport: true,
+      dedicatedManager: true,
+      sortOrder: 3,
+    },
+  ],
   serviceLevels: [
     {
       code: "standard",
@@ -459,6 +499,21 @@ export const CATALOG_SEED = {
 } as const;
 
 export async function seedCatalog(tx: DbExecutor): Promise<void> {
+  /*
+    The membership tiers.
+
+    Also inserted by migration 0039 so an existing install gets them without reseeding; here
+    as well because a test database is truncated between cases and would otherwise have no
+    plans for anything to subscribe to. Both are conflict-tolerant, so whichever runs second
+    does nothing.
+  */
+  for (const plan of CATALOG_SEED.membershipPlans) {
+    await tx
+      .insert(membershipPlans)
+      .values(plan)
+      .onConflictDoNothing({ target: membershipPlans.code });
+  }
+
   for (const [key, value] of Object.entries(CATALOG_SEED.settings)) {
     await tx.insert(settings).values({ key, value }).onConflictDoNothing();
   }

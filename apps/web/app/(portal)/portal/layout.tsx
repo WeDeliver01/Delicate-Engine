@@ -35,6 +35,7 @@ const NAV: NavSection[] = [
       { href: "/portal/invoices", label: "Invoices", icon: "description" },
       { href: "/portal/quotes", label: "Quotes", icon: "request_quote" },
       { href: "/portal/rewards", label: "Rewards", icon: "loyalty" },
+      { href: "/portal/membership", label: "Membership", icon: "card_membership" },
     ],
   },
   {

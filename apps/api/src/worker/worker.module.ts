@@ -2,6 +2,7 @@ import { Global, Module, type OnModuleInit } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { EventHandlerRegistry } from "./event-handlers.js";
 import { OutboxDispatcher } from "./outbox-dispatcher.js";
+import { Scheduler } from "./scheduler.js";
 
 /**
  * Registers Phase 0 consumers. Each later domain module contributes its own handlers by
@@ -9,8 +10,8 @@ import { OutboxDispatcher } from "./outbox-dispatcher.js";
  */
 @Global()
 @Module({
-  providers: [EventHandlerRegistry, OutboxDispatcher],
-  exports: [EventHandlerRegistry, OutboxDispatcher],
+  providers: [EventHandlerRegistry, OutboxDispatcher, Scheduler],
+  exports: [EventHandlerRegistry, OutboxDispatcher, Scheduler],
 })
 export class WorkerModule implements OnModuleInit {
   constructor(

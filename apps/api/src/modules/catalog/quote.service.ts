@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import {
   dateFlagsFor,
+  NO_MEMBERSHIP,
   priceQuote,
   toCustomerBreakdown,
   type EstimateRequest,
@@ -61,7 +62,7 @@ export class QuoteService {
       billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
       // A public estimate has no signed-in account, so no membership to discount it.
-      membershipDiscountBps: 0,
+      membership: NO_MEMBERSHIP,
       rateCard,
       serviceLevel,
       costModel,
@@ -82,7 +83,7 @@ export class QuoteService {
 
   /** Full quote for an account: persisted, bookable for 24h. */
   async create(accountId: string, input: QuoteRequest): Promise<Quote> {
-    const [rateCard, serviceLevel, vatBps, depot, limits, costModel, membershipDiscountBps] =
+    const [rateCard, serviceLevel, vatBps, depot, limits, costModel, membership] =
       await Promise.all([
         this.catalog.rateCardFor(accountId),
         this.catalog.serviceLevelByCode(input.serviceLevelCode),
@@ -90,7 +91,7 @@ export class QuoteService {
         this.settings.get("company.depot_address"),
         this.settings.get("booking.limits"),
         this.settings.get("pricing.cost_model"),
-        this.membership.discountBpsFor(accountId),
+        this.membership.pricingFor(accountId),
       ]);
     const packageTypeIds = input.drops.flatMap((d) => d.parcels.map((p) => p.packageTypeId));
     const packageTypeMap = await this.catalog.packageTypesByIds([...new Set(packageTypeIds)]);
@@ -165,7 +166,7 @@ export class QuoteService {
       legsKm,
       billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
-      membershipDiscountBps,
+      membership,
       rateCard,
       serviceLevel,
       costModel,

@@ -164,6 +164,28 @@ export function costFloorCents(m: CostModel, cost: Cents): Cents {
   return Math.round(cost / (1 - marginFraction));
 }
 
+/**
+ * The pricing-relevant half of a membership.
+ *
+ * A narrow shape rather than the whole subscription: pricing has no business knowing when
+ * somebody's renewal is due, and passing the lot would make this function impossible to call
+ * from a test without inventing a billing period.
+ */
+export interface MembershipPricing {
+  discountBps: number;
+  /** Public holiday delivery at no surcharge. */
+  waivesHolidaySurcharge: boolean;
+  /** Weekend, holiday and timed window, all waived. */
+  waivesAllSurcharges: boolean;
+}
+
+/** Everyone who is not on a plan. */
+export const NO_MEMBERSHIP: MembershipPricing = {
+  discountBps: 0,
+  waivesHolidaySurcharge: false,
+  waivesAllSurcharges: false,
+};
+
 export interface PricingInput {
   /** Road kilometres for each leg of the loop, in order. Must have at least 2 legs. */
   legsKm: number[];
@@ -186,12 +208,13 @@ export interface PricingInput {
   /** What this job must never be priced below, whatever the rate card says. */
   costModel: CostModel;
   /**
-   * The member's discount, in basis points. Zero for everyone who is not on a plan.
+   * What the customer's membership buys them on this delivery.
    *
    * Carried into pricing rather than applied to the answer afterwards, so the discount shows
-   * as its own line in the breakdown and a customer can see what their membership saved them.
+   * as its own line and the waived surcharges never appear at all -- a member should not be
+   * shown a public-holiday fee and then a credit undoing it.
    */
-  membershipDiscountBps: Bps;
+  membership: MembershipPricing;
   parcels: { packageType: PackageType; quantity: number }[];
   options: QuoteOptions;
   vatBps: Bps; // 0 when not VAT registered
@@ -413,12 +436,14 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   // until someone sets them: the framework exists, the business rule is off. Turning it on is
   // a pricing decision with its own release, not a side effect of this code being here.
   const dateFlags = input.dateFlags ?? NO_DATE_FLAGS;
-  if (dateFlags.weekend) {
+  const waivesHoliday =
+    input.membership.waivesAllSurcharges || input.membership.waivesHolidaySurcharge;
+  if (dateFlags.weekend && !input.membership.waivesAllSurcharges) {
     const amount =
       applyBps(baseCents, rateCard.weekendSurchargeBps) + rateCard.weekendSurchargeCents;
     if (amount > 0) lines.push({ code: "weekend", label: "Weekend delivery", amountCents: amount });
   }
-  if (dateFlags.publicHoliday) {
+  if (dateFlags.publicHoliday && !waivesHoliday) {
     const amount =
       applyBps(baseCents, rateCard.publicHolidaySurchargeBps) +
       rateCard.publicHolidaySurchargeCents;
@@ -429,7 +454,7 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
 
   // A promise to be somewhere inside an hour, rather than inside half a day. Zero until the
   // business prices it, like the surcharges above.
-  if (input.timedWindow) {
+  if (input.timedWindow && !input.membership.waivesAllSurcharges) {
     const amount =
       applyBps(baseCents, rateCard.timedWindowSurchargeBps) + rateCard.timedWindowSurchargeCents;
     if (amount > 0) {
@@ -485,8 +510,8 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
     40% off a price set at cost ÷ 0.35 still clears about 42% margin.
   */
   let membershipDiscountCents = 0;
-  if (input.membershipDiscountBps > 0 && subtotalCents > 0) {
-    membershipDiscountCents = applyBps(subtotalCents, input.membershipDiscountBps);
+  if (input.membership.discountBps > 0 && subtotalCents > 0) {
+    membershipDiscountCents = applyBps(subtotalCents, input.membership.discountBps);
     if (membershipDiscountCents > 0) {
       lines.push({
         code: "membership_discount",

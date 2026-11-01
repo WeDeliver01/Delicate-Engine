@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   costFloorCents,
+  NO_MEMBERSHIP,
   type CostModel,
   dateFlagsFor,
   directCostCents,
@@ -94,7 +95,7 @@ const base: PricingInput = {
   rateCard: card,
   serviceLevel: standard,
   costModel: inertCostModel,
-  membershipDiscountBps: 0,
+  membership: NO_MEMBERSHIP,
   parcels: [],
   options: {
     liabilityCover: false,
@@ -588,7 +589,10 @@ describe("membership", () => {
 
   it("takes the discount off after the floor, so a member always gets what they pay for", () => {
     const full = priceQuote(withCost);
-    const member = priceQuote({ ...withCost, membershipDiscountBps: 4_000 });
+    const member = priceQuote({
+      ...withCost,
+      membership: { ...NO_MEMBERSHIP, discountBps: 4_000 },
+    });
 
     // The floor binds on this route, which is exactly the case that used to swallow a
     // surcharge whole. The discount has to survive it or the membership is a lie.
@@ -601,15 +605,66 @@ describe("membership", () => {
   it("still clears the direct cost at the deepest tier", () => {
     // 40% off a price set at cost ÷ 0.35 leaves about 42%. If this ever goes negative the
     // business is paying people to take deliveries.
-    const member = priceQuote({ ...withCost, membershipDiscountBps: 4_000 });
+    const member = priceQuote({
+      ...withCost,
+      membership: { ...NO_MEMBERSHIP, discountBps: 4_000 },
+    });
     expect(member.subtotalCents).toBeGreaterThan(member.directCostCents);
   });
 
   it("shows the customer what their membership saved them", () => {
-    const member = priceQuote({ ...withCost, membershipDiscountBps: 2_500 });
+    const member = priceQuote({
+      ...withCost,
+      membership: { ...NO_MEMBERSHIP, discountBps: 2_500 },
+    });
     const line = member.lines.find((l) => l.code === "membership_discount");
     expect(line).toBeDefined();
     expect(line!.amountCents).toBeLessThan(0);
+  });
+
+  it("waives the holiday surcharge for a tier that promises it, rather than crediting it back", () => {
+    const holiday = { weekend: false, publicHoliday: true };
+    const surcharged = { ...card, publicHolidaySurchargeCents: 5_000 };
+    const nonMember = priceQuote({ ...withCost, rateCard: surcharged, dateFlags: holiday });
+    const member = priceQuote({
+      ...withCost,
+      rateCard: surcharged,
+      dateFlags: holiday,
+      membership: { ...NO_MEMBERSHIP, waivesHolidaySurcharge: true },
+    });
+    expect(nonMember.lines.some((l) => l.code === "public_holiday")).toBe(true);
+    // Absent, not refunded: showing a fee and then undoing it invites the question.
+    expect(member.lines.some((l) => l.code === "public_holiday")).toBe(false);
+  });
+
+  it("waives every surcharge at the tier that promises zero of them", () => {
+    const card2 = {
+      ...card,
+      weekendSurchargeCents: 4_000,
+      publicHolidaySurchargeCents: 5_000,
+      timedWindowSurchargeCents: 3_000,
+    };
+    const both = { weekend: true, publicHoliday: true };
+    const member = priceQuote({
+      ...withCost,
+      rateCard: card2,
+      dateFlags: both,
+      timedWindow: true,
+      membership: { ...NO_MEMBERSHIP, waivesAllSurcharges: true },
+    });
+    for (const code of ["weekend", "public_holiday", "timed_window"]) {
+      expect(member.lines.some((l) => l.code === code)).toBe(false);
+    }
+  });
+
+  it("leaves the weekend surcharge alone for a tier that only covers holidays", () => {
+    const member = priceQuote({
+      ...withCost,
+      rateCard: { ...card, weekendSurchargeCents: 4_000 },
+      dateFlags: { weekend: true, publicHoliday: false },
+      membership: { ...NO_MEMBERSHIP, waivesHolidaySurcharge: true },
+    });
+    expect(member.lines.some((l) => l.code === "weekend")).toBe(true);
   });
 
   it("changes nothing at all for someone who is not a member", () => {

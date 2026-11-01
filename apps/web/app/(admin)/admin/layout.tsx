@@ -35,6 +35,7 @@ const NAV: NavSection[] = [
       { href: "/admin/payments", label: "Payments", icon: "payments" },
       { href: "/admin/billing", label: "Billing", icon: "request_quote" },
       { href: "/admin/top-ups", label: "Top-ups", icon: "add_card" },
+      { href: "/admin/membership", label: "Membership", icon: "card_membership" },
       { href: "/admin/ledger", label: "Ledger", icon: "account_balance" },
       { href: "/admin/reports", label: "Reports", icon: "monitoring" },
       { href: "/admin/reconciliation", label: "Reconciliation", icon: "rule" },
