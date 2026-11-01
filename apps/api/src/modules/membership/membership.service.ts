@@ -6,6 +6,7 @@ import {
   type MembershipPlan,
   type MembershipPricing,
   type StartMembershipRequest,
+  type UpsertMembershipPlanRequest,
 } from "@delicate/contracts";
 import {
   accountMemberships,
@@ -91,6 +92,99 @@ export class MembershipService {
       .from(membershipPlans)
       .orderBy(membershipPlans.sortOrder, membershipPlans.priceCents);
     return rows.filter((p) => includeInactive || p.active).map(toPlan);
+  }
+
+  /**
+   * Create a plan, or change one.
+   *
+   * What this does and does not reach is the whole point, and it is not uniform, so it is
+   * worth stating rather than discovering:
+   *
+   * - **Price and discount do not move for anybody already on the plan.** Both are copied onto
+   *   the membership row at sign-up, so putting Growth up to R2,499 charges the new price to
+   *   whoever joins next and leaves everybody already on it exactly where they were. That is
+   *   deliberate -- silently raising a running subscription is the kind of thing that ends up
+   *   in a chargeback -- and `start()` says the same thing from the other side.
+   * - **The benefits do move, immediately, for everyone.** Surcharge waivers, free shipments
+   *   and API access are read live from the plan on every quote. Taking `waivesAllSurcharges`
+   *   off Enterprise changes what an existing Enterprise member pays on their next booking.
+   *
+   * The asymmetry is real and this comment exists because it is not obvious. Snapshotting the
+   * benefits too would be defensible; it is a product decision, not a tidy-up, so it is not
+   * being made quietly here.
+   *
+   * `code` identifies a plan for ever: it is what `start()` is called with and what the
+   * marketing page keys off, so it can be set at creation and not changed afterwards.
+   */
+  async upsertPlan(input: UpsertMembershipPlanRequest, id?: string): Promise<MembershipPlan> {
+    return this.dbs.transaction(async (tx) => {
+      const existing = id
+        ? await tx.query.membershipPlans.findFirst({ where: eq(membershipPlans.id, id) })
+        : await tx.query.membershipPlans.findFirst({
+            where: eq(membershipPlans.code, input.code),
+          });
+      if (id && !existing) throw AppError.notFound("membership plan");
+      if (!id && existing) {
+        throw AppError.conflict("plan_code_taken", `a plan with code ${input.code} already exists`);
+      }
+      if (existing && existing.code !== input.code) {
+        throw AppError.conflict(
+          "plan_code_immutable",
+          "a plan's code cannot change: memberships and the marketing page are keyed on it",
+        );
+      }
+
+      const values = {
+        code: input.code,
+        name: input.name,
+        priceCents: input.priceCents,
+        discountBps: input.discountBps,
+        suitedFromDeliveries: input.suitedFromDeliveries ?? existing?.suitedFromDeliveries ?? 0,
+        freeShipmentsPerPeriod:
+          input.freeShipmentsPerPeriod ?? existing?.freeShipmentsPerPeriod ?? 0,
+        waivesHolidaySurcharge:
+          input.waivesHolidaySurcharge ?? existing?.waivesHolidaySurcharge ?? false,
+        waivesAllSurcharges: input.waivesAllSurcharges ?? existing?.waivesAllSurcharges ?? false,
+        includesApiAccess: input.includesApiAccess ?? existing?.includesApiAccess ?? false,
+        prioritySupport: input.prioritySupport ?? existing?.prioritySupport ?? false,
+        dedicatedManager: input.dedicatedManager ?? existing?.dedicatedManager ?? false,
+        sortOrder: input.sortOrder ?? existing?.sortOrder ?? 0,
+        active: input.active ?? existing?.active ?? true,
+      };
+
+      const [row] = existing
+        ? await tx
+            .update(membershipPlans)
+            .set(values)
+            .where(eq(membershipPlans.id, existing.id))
+            .returning()
+        : await tx.insert(membershipPlans).values(values).returning();
+
+      await this.audit.record(tx, {
+        action: existing ? "membership.plan.update" : "membership.plan.create",
+        entityType: "membership_plan",
+        entityId: row!.id,
+        before: existing ? toPlan(existing) : null,
+        after: toPlan(row!),
+      });
+      return toPlan(row!);
+    });
+  }
+
+  /**
+   * How many live memberships are on a plan.
+   *
+   * The console asks before letting somebody edit, because "15% off" is an abstraction until
+   * you know it is nine paying customers.
+   */
+  async membersOn(planId: string): Promise<number> {
+    const [row] = await this.dbs.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(accountMemberships)
+      .where(
+        and(eq(accountMemberships.planId, planId), inArray(accountMemberships.status, [...LIVE])),
+      );
+    return row?.n ?? 0;
   }
 
   /**

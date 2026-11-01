@@ -230,6 +230,96 @@ describe("membership", () => {
     expect(second).toBe(false);
   });
 
+  it("creates a plan, and refuses a second one on the same code", async () => {
+    const made = await h
+      .http()
+      .post("/v1/admin/membership/plans")
+      .set(asAdmin())
+      .send({ code: "courier_plus", name: "Courier Plus", priceCents: 49_900, discountBps: 500 })
+      .expect(201);
+    expect(made.body.code).toBe("courier_plus");
+
+    const again = await h
+      .http()
+      .post("/v1/admin/membership/plans")
+      .set(asAdmin())
+      .send({ code: "courier_plus", name: "Clash", priceCents: 1, discountBps: 0 });
+    expect(again.status).toBe(409);
+  });
+
+  it("reprices a plan for whoever joins next, and leaves existing members alone", async () => {
+    await h.http().post("/v1/account/membership").set(asOwner()).send({ planCode: "starter" });
+    const plans = (await h.http().get("/v1/admin/membership/plans").set(asAdmin())).body;
+    const starter = (plans as MembershipPlan[]).find((p) => p.code === "starter")!;
+
+    await h
+      .http()
+      .put(`/v1/admin/membership/plans/${starter.id}`)
+      .set(asAdmin())
+      .send({ ...starter, priceCents: 149_900, discountBps: 2_000 })
+      .expect(200);
+
+    // The whole reason price is copied onto the membership at sign-up.
+    const mine = (await h.http().get("/v1/account/membership").set(asOwner())).body
+      .membership as Membership;
+    expect(mine.priceCents).toBe(99_900);
+    expect((await memberships.pricingFor(accountId)).discountBps).toBe(1_500);
+  });
+
+  it("changes a benefit for everyone already on the plan, because those are read live", async () => {
+    await h.http().post("/v1/account/membership").set(asOwner()).send({ planCode: "starter" });
+    expect((await memberships.pricingFor(accountId)).waivesAllSurcharges).toBe(false);
+
+    const plans = (await h.http().get("/v1/admin/membership/plans").set(asAdmin())).body;
+    const starter = (plans as MembershipPlan[]).find((p) => p.code === "starter")!;
+    await h
+      .http()
+      .put(`/v1/admin/membership/plans/${starter.id}`)
+      .set(asAdmin())
+      .send({ ...starter, waivesAllSurcharges: true })
+      .expect(200);
+
+    // Deliberate asymmetry with the price above, and the console warns before it is saved.
+    expect((await memberships.pricingFor(accountId)).waivesAllSurcharges).toBe(true);
+  });
+
+  it("refuses to change a plan's code, which memberships are keyed on", async () => {
+    const plans = (await h.http().get("/v1/admin/membership/plans").set(asAdmin())).body;
+    const starter = (plans as MembershipPlan[]).find((p) => p.code === "starter")!;
+    const res = await h
+      .http()
+      .put(`/v1/admin/membership/plans/${starter.id}`)
+      .set(asAdmin())
+      .send({ ...starter, code: "renamed" });
+    expect(res.status).toBe(409);
+  });
+
+  it("counts who is on a plan, so repricing is not done blind", async () => {
+    const plans = (await h.http().get("/v1/admin/membership/plans").set(asAdmin())).body;
+    const starter = (plans as MembershipPlan[]).find((p) => p.code === "starter")!;
+    expect(
+      (await h.http().get(`/v1/admin/membership/plans/${starter.id}/members`).set(asAdmin())).body
+        .count,
+    ).toBe(0);
+
+    await h.http().post("/v1/account/membership").set(asOwner()).send({ planCode: "starter" });
+    expect(
+      (await h.http().get(`/v1/admin/membership/plans/${starter.id}/members`).set(asAdmin())).body
+        .count,
+    ).toBe(1);
+  });
+
+  it("does not let a customer set their own price", async () => {
+    const plans = (await h.http().get("/v1/admin/membership/plans").set(asAdmin())).body;
+    const starter = (plans as MembershipPlan[]).find((p) => p.code === "starter")!;
+    await h
+      .http()
+      .put(`/v1/admin/membership/plans/${starter.id}`)
+      .set(asOwner())
+      .send({ ...starter, priceCents: 1 })
+      .expect(403);
+  });
+
   it("lets ops see and change somebody's plan, and refuses everyone else", async () => {
     await h
       .http()

@@ -6,6 +6,8 @@ import Link from "next/link";
 import type { Membership, MembershipPlan } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { dateTime, rands } from "@/lib/money";
+import { PlanEditor } from "@/components/admin/plan-editor";
+import { useMe } from "@/components/use-me";
 
 /**
  * Memberships: who is on a plan, what it buys them, and what is about to fall due.
@@ -18,6 +20,10 @@ export default function AdminMembershipPage() {
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [dueOnly, setDueOnly] = useState(true);
+  const [editing, setEditing] = useState<MembershipPlan | null | undefined>(undefined);
+  const me = useMe();
+  // Prices are a super-admin decision; finance can read this board but not reprice it.
+  const canEdit = me.data?.user.platformRole === "super_admin";
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["admin", "membership"] });
 
@@ -55,9 +61,16 @@ export default function AdminMembershipPage() {
       <section className="grid gap-3 sm:grid-cols-3">
         {plans.data?.map((p) => (
           <div key={p.id} className="panel p-5">
-            <div className="flex items-baseline justify-between">
+            <div className="flex items-baseline justify-between gap-2">
               <h2 className="section-title">{p.name}</h2>
-              {!p.active && <span className="chip chip-warn">off</span>}
+              <div className="flex items-center gap-2">
+                {!p.active && <span className="chip chip-warn">off</span>}
+                {canEdit && (
+                  <button onClick={() => setEditing(p)} className="link-quiet text-xs">
+                    Edit
+                  </button>
+                )}
+              </div>
             </div>
             <p className="mt-1 font-mono text-2xl">{rands(p.priceCents)}</p>
             <p className="text-xs text-muted">per month</p>
@@ -80,6 +93,13 @@ export default function AdminMembershipPage() {
           </div>
         ))}
       </section>
+
+      {canEdit && (
+        <button onClick={() => setEditing(null)} className="btn btn-secondary btn-sm">
+          Add a plan
+        </button>
+      )}
+      {editing !== undefined && <PlanEditor plan={editing} onClose={() => setEditing(undefined)} />}
 
       <section className="panel">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3">

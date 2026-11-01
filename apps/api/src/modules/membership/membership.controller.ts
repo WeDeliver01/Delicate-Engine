@@ -1,7 +1,7 @@
-import { Controller, Delete, Get, Post } from "@nestjs/common";
+import { Controller, Delete, Get, Post, Put } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
-import { StartMembershipRequest, Uuid } from "@delicate/contracts";
+import { StartMembershipRequest, UpsertMembershipPlanRequest, Uuid } from "@delicate/contracts";
 import {
   AccountRoles,
   ActiveAccountId,
@@ -82,6 +82,33 @@ export class AdminMembershipController {
     },
   ) {
     return this.membership.plans(q.includeInactive ?? true);
+  }
+
+  /**
+   * Create a plan, or change one.
+   *
+   * `super_admin` rather than finance: this sets what every future member pays, and the
+   * benefit flags change what existing members are charged on their next booking.
+   */
+  @Post("membership/plans")
+  @PlatformRoles("super_admin")
+  createPlan(@Body(UpsertMembershipPlanRequest) body: UpsertMembershipPlanRequest) {
+    return this.membership.upsertPlan(body);
+  }
+
+  @Put("membership/plans/:id")
+  @PlatformRoles("super_admin")
+  updatePlan(
+    @Params(AccountParam) p: { id: string },
+    @Body(UpsertMembershipPlanRequest) body: UpsertMembershipPlanRequest,
+  ) {
+    return this.membership.upsertPlan(body, p.id);
+  }
+
+  /** How many people this plan's price actually applies to. */
+  @Get("membership/plans/:id/members")
+  async planMembers(@Params(AccountParam) p: { id: string }) {
+    return { count: await this.membership.membersOn(p.id) };
   }
 
   /** Everyone on a plan, for the renewals board. */
