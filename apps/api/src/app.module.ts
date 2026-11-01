@@ -27,6 +27,7 @@ import { LoyaltyModule } from "./modules/loyalty/loyalty.module.js";
 import { MembershipModule } from "./modules/membership/membership.module.js";
 import { AnalyticsModule } from "./modules/analytics/analytics.module.js";
 import { SystemEventsModule } from "./modules/system-events/system-events.module.js";
+import { TelemetryModule } from "./modules/telemetry/telemetry.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -83,6 +84,7 @@ export class AppModule {
         LoyaltyModule,
         MembershipModule,
         AnalyticsModule,
+        TelemetryModule,
       ],
       controllers: [HealthController],
       providers: [{ provide: APP_FILTER, useClass: GlobalExceptionFilter }],

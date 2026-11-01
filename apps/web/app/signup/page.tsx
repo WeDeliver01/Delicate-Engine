@@ -7,6 +7,7 @@ import { supabaseEnabled } from "@/lib/env";
 import { getSupabase, supabaseMisconfigured } from "@/lib/supabase";
 import { AuthShell, Divider, Field, GoogleButton, safeNext } from "@/components/auth/auth-ui";
 import { useAuthProviders } from "@/components/auth/use-auth-providers";
+import { track } from "@/lib/telemetry";
 
 export default function SignUpPage() {
   return (
@@ -55,7 +56,10 @@ function SignUpForm() {
     if (error) return fail(error.message);
 
     // Confirmations switched off on the project: they are already signed in.
-    if (data.session) return router.replace(next);
+    if (data.session) {
+      track("signup_completed", { method: "password" });
+      return router.replace(next);
+    }
 
     /*
       Otherwise a confirmation email is on its way — and we say exactly that whether or not the
@@ -63,6 +67,7 @@ function SignUpForm() {
       for an address it already knows, rather than an error, because "that email is taken" on a
       public form tells a stranger who banks with us. We keep that property.
     */
+    track("signup_started", { method: "password" });
     setSentTo(email.trim());
   }
 

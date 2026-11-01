@@ -38,6 +38,7 @@ const NAV: NavSection[] = [
       { href: "/admin/membership", label: "Membership", icon: "card_membership" },
       { href: "/admin/ledger", label: "Ledger", icon: "account_balance" },
       { href: "/admin/reports", label: "Reports", icon: "monitoring" },
+      { href: "/admin/site-analytics", label: "Site analytics", icon: "insights" },
       { href: "/admin/reconciliation", label: "Reconciliation", icon: "rule" },
     ],
   },

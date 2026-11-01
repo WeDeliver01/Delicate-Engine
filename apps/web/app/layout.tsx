@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { Telemetry } from "@/components/telemetry";
 
 export const metadata: Metadata = {
   title: "Delicate Courier | Same-Day Delivery for Perishables",
@@ -26,7 +27,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-ZA" className="scroll-smooth">
       <body className="bg-white text-[#0A0A0A] antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          <Telemetry />
+          {children}
+        </Providers>
       </body>
     </html>
   );
