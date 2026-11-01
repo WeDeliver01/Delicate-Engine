@@ -91,7 +91,12 @@ describe("in-platform analytics", () => {
         app: "portal",
         events: [
           { type: "pageview", name: "/portal/book", path: "/portal/book" },
-          { type: "custom", name: "booking_confirmed", path: "/portal/book", props: { bookingId: "x" } },
+          {
+            type: "custom",
+            name: "booking_confirmed",
+            path: "/portal/book",
+            props: { bookingId: "x" },
+          },
         ],
       })
       .expect(201);
@@ -110,11 +115,18 @@ describe("in-platform analytics", () => {
 
   it("rejects a batch with no events and a batch over the cap", async () => {
     const base = { visitorId: randomUUID(), sessionId: randomUUID(), app: "marketing" as const };
-    await h.http().post("/v1/telemetry/events").send({ ...base, events: [] }).expect(422);
     await h
       .http()
       .post("/v1/telemetry/events")
-      .send({ ...base, events: Array.from({ length: 26 }, () => ({ type: "pageview", name: "/" })) })
+      .send({ ...base, events: [] })
+      .expect(422);
+    await h
+      .http()
+      .post("/v1/telemetry/events")
+      .send({
+        ...base,
+        events: Array.from({ length: 26 }, () => ({ type: "pageview", name: "/" })),
+      })
       .expect(422);
   });
 });
