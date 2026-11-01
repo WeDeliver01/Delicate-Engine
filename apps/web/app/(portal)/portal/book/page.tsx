@@ -22,6 +22,7 @@ import { Breakdown } from "@/components/booking/breakdown";
 import { SlotCalendar } from "@/components/booking/slot-calendar";
 import { PayShortfall } from "@/components/booking/pay-shortfall";
 import { useCollectionPoint } from "@/components/booking/use-collection-point";
+import { track } from "@/lib/telemetry";
 
 /** One kind of thing at one address: three cupcake boxes is one line, not three. */
 type Parcel = {
@@ -486,6 +487,7 @@ function Book() {
         },
       });
       await qc.invalidateQueries({ queryKey: ["account", account?.id] });
+      track("booking_confirmed", { bookingId: b.id, priceCents: quote.breakdown.totalCents });
       router.replace(`/portal/bookings/${b.id}?new=1`);
     } catch (err) {
       setError(err instanceof ApiRequestError ? describeError(err) : String(err));

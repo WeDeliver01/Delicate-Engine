@@ -281,6 +281,13 @@
       "when": 1793521633779,
       "tag": "0039_woozy_hiroim",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793538900932,
+      "tag": "0040_funny_hellcat",
+      "breakpoints": true
     }
   ]
 }
