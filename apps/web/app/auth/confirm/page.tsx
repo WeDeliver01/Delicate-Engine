@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { AuthShell, safeNext } from "@/components/auth/auth-ui";
+import { track } from "@/lib/telemetry";
 
 /**
  * Completes a sign-up confirmation, password reset or resend from a token hash rather than a
@@ -48,6 +49,7 @@ function Confirm() {
           console.error("auth/confirm: verifyOtp failed:", error.message);
           setFailed(true);
         } else {
+          if (type === "signup") track("signup_completed", { method: "email_confirm" });
           router.replace(next);
         }
       });

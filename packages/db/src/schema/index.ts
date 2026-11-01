@@ -17,3 +17,4 @@ export * from "./workspace.js";
 export * from "./service-access.js";
 export * from "./geo.js";
 export * from "./operations.js";
+export * from "./telemetry.js";

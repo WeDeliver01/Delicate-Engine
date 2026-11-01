@@ -19,6 +19,8 @@ export interface Harness {
 }
 
 const TRUNCATE = [
+  "site_events",
+  "site_sessions",
   "trip_stops",
   "trips",
   "window_bands",
