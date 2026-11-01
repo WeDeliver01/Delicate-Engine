@@ -21,6 +21,8 @@ import {
 import { requireUser, type Principal } from "../../auth/principal.js";
 import { Body, Params, Query } from "../../common/zod.js";
 import { DbService } from "../../infra/db.module.js";
+import { AppError } from "../../common/errors.js";
+import { SystemEventsService } from "../system-events/system-events.service.js";
 import { WalletService } from "./wallet.service.js";
 import { TopUpService } from "./topup.service.js";
 
@@ -71,7 +73,10 @@ export class WalletController {
 @ApiTags("webhooks")
 @Controller("v1/webhooks")
 export class PaymentWebhooksController {
-  constructor(private readonly topUps: TopUpService) {}
+  constructor(
+    private readonly topUps: TopUpService,
+    private readonly events: SystemEventsService,
+  ) {}
 
   @Public()
   @Post(":provider")
@@ -81,13 +86,38 @@ export class PaymentWebhooksController {
     @Req() req: Request & { rawBody?: Buffer },
   ) {
     const params = flatten(req.body);
-    const result = await this.topUps.handleNotification(p.provider, {
-      rawBody: req.rawBody?.toString("utf8") ?? "",
-      params,
-      headers: req.headers,
-      sourceIp: req.ip,
-    });
-    return result;
+    try {
+      const result = await this.topUps.handleNotification(p.provider, {
+        rawBody: req.rawBody?.toString("utf8") ?? "",
+        params,
+        headers: req.headers,
+        sourceIp: req.ip,
+      });
+      return result;
+    } catch (err) {
+      /*
+        Recorded here rather than in each provider, because every provider refuses a payload
+        the same way -- by throwing -- and this is the one place all three pass through.
+
+        This is the line item Phase 8 was written for. A Bob Pay notification was rejected on
+        every single payment for two weeks, and the only trace was two hundred hours of
+        container log; nobody could have found it from a screen, because there was no screen.
+        The payload goes in the context deliberately: without it the row says a webhook was
+        refused and leaves the next person exactly where we were.
+      */
+      await this.events.recordAndWait({
+        level: "error",
+        category: `webhook.${p.provider}`,
+        message: `${p.provider} notification refused: ${err instanceof Error ? err.message : String(err)}`,
+        context: {
+          provider: p.provider,
+          code: err instanceof AppError ? err.code : "unknown",
+          sourceIp: req.ip,
+          params,
+        },
+      });
+      throw err;
+    }
   }
 }
 

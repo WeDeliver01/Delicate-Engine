@@ -24,6 +24,7 @@ import {
   type DbExecutor,
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
+import { SystemEventsService } from "../system-events/system-events.service.js";
 import { AuditService } from "../../infra/audit.service.js";
 import { OutboxService } from "../../infra/outbox.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
@@ -56,6 +57,7 @@ export class BookingService {
     private readonly quotes: QuoteService,
     private readonly catalog: CatalogService,
     private readonly scheduling: SchedulingService,
+    private readonly events: SystemEventsService,
   ) {}
 
   async create(accountId: string, input: CreateBookingRequest): Promise<Booking> {
@@ -355,7 +357,7 @@ export class BookingService {
     reason: string,
     details?: unknown,
   ): Promise<void> {
-    await this.dbs.transaction(async (tx) => {
+    const bookingId = await this.dbs.transaction(async (tx) => {
       const req = quote.request as QuoteRequest;
       const [row] = await tx
         .insert(bookings)
@@ -386,7 +388,34 @@ export class BookingService {
         },
         { dedupeKey: `booking:${row!.id}:rejected` },
       );
-      void details;
+      return row!.id;
+    });
+
+    /*
+      Outside the transaction, deliberately, and after it rather than inside it.
+
+      Phase 8 is explicit about this: a rejection's trace has to survive even when the thing
+      being explained wrote nothing, and an event recorded inside a transaction that rolls
+      back is an event about nothing. The service writes on its own connection, so awaiting it
+      here cannot take the rejection down with it either.
+
+      `details` is the reason this is worth doing at all. It carries the shortfall on an
+      insufficient-funds refusal and the contested slot on an unavailable one, and until now it
+      was discarded one line below where it arrived -- so "why could this customer not book"
+      had no answer anywhere, which is the whole complaint Phase 8 was written about.
+    */
+    await this.events.recordAndWait({
+      level: "warning",
+      category: "booking.rejected",
+      message: `${status.replace("rejected_", "").replace(/_/g, " ")}: ${reason}`,
+      accountId,
+      context: {
+        bookingId,
+        quoteId: quote.id,
+        reason: status,
+        totalCents: quote.breakdown.totalCents,
+        details: details ?? null,
+      },
     });
   }
 

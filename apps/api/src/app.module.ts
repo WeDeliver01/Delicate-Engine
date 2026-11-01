@@ -26,6 +26,7 @@ import { AddressBookModule } from "./modules/address-book/address-book.module.js
 import { LoyaltyModule } from "./modules/loyalty/loyalty.module.js";
 import { MembershipModule } from "./modules/membership/membership.module.js";
 import { AnalyticsModule } from "./modules/analytics/analytics.module.js";
+import { SystemEventsModule } from "./modules/system-events/system-events.module.js";
 import { WorkerModule } from "./worker/worker.module.js";
 
 /**
@@ -61,6 +62,7 @@ export class AppModule {
           },
         }),
         InfraModule,
+        SystemEventsModule,
         AuthModule,
         WorkerModule,
         LedgerModule,

@@ -13,6 +13,7 @@ import { PAYMENT_PROVIDERS } from "./payments/payment.provider.js";
 import { ManualEftProvider } from "./payments/manual-eft.provider.js";
 import { YocoProvider } from "./payments/yoco.provider.js";
 import { BobPayProvider } from "./payments/bobpay.provider.js";
+import { SystemEventsService } from "../system-events/system-events.service.js";
 import { PayFastProvider } from "./payments/payfast.provider.js";
 
 @Module({
@@ -22,12 +23,17 @@ import { PayFastProvider } from "./payments/payfast.provider.js";
     TopUpService,
     {
       provide: PAYMENT_PROVIDERS,
-      inject: [ENV, SettingsService, PinoLogger],
-      useFactory: (env: Env, settings: SettingsService, logger: PinoLogger) => [
+      inject: [ENV, SettingsService, PinoLogger, SystemEventsService],
+      useFactory: (
+        env: Env,
+        settings: SettingsService,
+        logger: PinoLogger,
+        events: SystemEventsService,
+      ) => [
         new ManualEftProvider(env, settings),
         new PayFastProvider(env),
         new YocoProvider(env),
-        new BobPayProvider(env, logger),
+        new BobPayProvider(env, logger, events),
       ],
     },
   ],

@@ -291,7 +291,7 @@ the ledger. No Phase 7 event moves money: invariant 7 holds unchanged. Timed win
 the one part that touches pricing and the booking transaction, and the exception lane has
 nothing to measure against until they land.
 
-### Phase 8 — System events (proposed, not yet signed off)
+### Phase 8 — System events (delivered 2026-11-01)
 
 Added 2026-10-25, from Ashley's own Overview page next to a screenshot of ShipLogic's Tools menu
 and a description of Sentry. The gap those point at is real: `outbox_messages` already counts
@@ -308,24 +308,46 @@ aggregator with issue grouping and release tracking either; that is what a real 
 whenever it is wired up per the Observability row in §2) is for. This is a narrower, in-console
 log built from events the engine already decides are worth a human knowing about.
 
-| Item                                                                                                                                                                   | State    |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `system_events` table: level (`info`\|`warning`\|`error`), category, message, context (jsonb), request_id, created_at                                                  | Proposed |
-| `GlobalExceptionFilter` writes a row for every 5xx (and 4xx categories worth seeing in bulk, e.g. repeated `validation_failed`), alongside the existing structured log | Proposed |
-| Outbox dispatcher writes a row when a message dead-letters, carrying the event type and the last error                                                                 | Proposed |
-| Webhook handlers (PayFast/Yoco/BobPay) write a row on a signature failure or an unrecognised payload, before they reject the request                                   | Proposed |
-| Booking rejections (`rejected_slot_unavailable`, `insufficient_funds`, etc.) write a row rather than only living on the `bookings` row itself                          | Proposed |
-| Admin console page: filterable feed (level, category, date range) with a detail view for the context JSON                                                              | Proposed |
-| Retention: rows older than 90 days pruned by a scheduled job (no scheduled-job runner exists yet — see §2's "later" on pg-boss)                                        | Proposed |
-| Access: `super_admin` to start; broadened to `dispatcher`/`finance` once it is clear which categories they need                                                        | Proposed |
+| Item                                                                                                                                                                                                                                                                         | State |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `system_events` table: level (`info`\|`warning`\|`error`), category, message, context (jsonb), request_id, created_at                                                                                                                                                        | Built |
+| `GlobalExceptionFilter` writes a row for every 5xx, and folds the 4xx worth watching in bulk (`validation_failed`, `unauthorized`, `forbidden`, `not_found`) by code and route                                                                                               | Built |
+| Outbox dispatcher writes a row when a message dead-letters, carrying the event type and the last error                                                                                                                                                                       | Built |
+| Webhook refusals are recorded centrally, where all three providers pass through, with the payload. **Reworded:** a BobPay signature failure no longer rejects — it is a `warning` that the payment was accepted on a weaker check, which matters more than the rejection did | Built |
+| Booking rejections (`rejected_slot_unavailable`, `insufficient_funds`, etc.) write a row rather than only living on the `bookings` row itself                                                                                                                                | Built |
+| Admin console page: filterable feed (level, category, date range) with a detail view for the context JSON                                                                                                                                                                    | Built |
+| Retention: rows older than 90 days pruned nightly at 03:15 by a pg-boss job. **Unblocked:** the scheduled-job runner §2 deferred now exists                                                                                                                                  | Built |
+| Access: `super_admin` to start; broadened to `dispatcher`/`finance` once it is clear which categories they need                                                                                                                                                              | Built |
 
-Written from inside the same request/transaction where practical (the exception filter, the
-webhook handler) but **never inside a domain transaction that can roll back** — a booking
-rejection's event row must survive even though the rejection itself writes nothing else, and an
-outbox dead-letter's row is written by the worker after the attempt, not inside it. No new
-domain event is added to the catalog for this: these are operational facts for a human reading a
-screen, not business facts another module reacts to, so they do not go through the outbox
-themselves.
+**Never inside a domain transaction that can roll back** — a booking rejection's event row must
+survive even though the rejection itself writes nothing else, and an outbox dead-letter's row is
+written by the worker after the attempt, not inside it. As built this is stronger than the
+proposal: `SystemEventsService` never joins the caller's transaction at all, on any path. It
+writes on its own connection, so there is no call site that can get this wrong. No new domain
+event is added to the catalog for this: these are operational facts for a human reading a screen,
+not business facts another module reacts to, so they do not go through the outbox themselves.
+
+Three rules in `SystemEventsService` that the table above does not capture, each of which exists
+because the alternative is worse:
+
+- **It never throws.** A logger that can fail the request it is describing breaks the error path
+  first, which is already the least-tested code in the system. Failures go to the structured log
+  and stop there. The cost is real — a bad `ON CONFLICT` target silently wrote nothing during
+  development, and only a test asserting the row existed caught it — so the tests assert on rows,
+  never on the absence of a throw.
+- **A repeated fault folds.** Rows sharing a `dedupe_key` within the same hour become one row with
+  a count. Without it, one wedged integration buries everything else and the feed becomes a thing
+  people mute. The hour bucket makes the fold roll over on its own, rather than merging a fault in
+  January with the same fault in June.
+- **Redaction is central, not per call site.** Any key that looks like a credential (password,
+  passphrase, secret, token, signature, authorization, api key, cookie) is replaced before the
+  insert, at any depth. Callers pass whole webhook payloads, so this cannot be something thirty
+  call sites each remember. It over-redacts deliberately: that costs a support person one
+  question, where under-redacting puts a live secret in a table a page then renders.
+
+`category` is free text rather than an enum, so a new failure worth surfacing costs one line at
+the call site instead of a migration; the admin page builds its category filter from whatever the
+rows actually contain.
 
 The ShipLogic Tools screenshots are a separate idea living in the same message — a searchable grid
 of operational utilities (bulk import, address book, barcode generator, route planning). That is

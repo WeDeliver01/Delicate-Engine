@@ -5,6 +5,7 @@ import { DomainEvent } from "@delicate/contracts";
 import { outboxMessages } from "@delicate/db";
 import { ENV, type Env } from "../config/env.js";
 import { DbService } from "../infra/db.module.js";
+import { SystemEventsService } from "../modules/system-events/system-events.service.js";
 import { EventHandlerRegistry } from "./event-handlers.js";
 
 /**
@@ -25,6 +26,7 @@ export class OutboxDispatcher {
     private readonly dbs: DbService,
     private readonly registry: EventHandlerRegistry,
     private readonly logger: PinoLogger,
+    private readonly events: SystemEventsService,
   ) {
     this.logger.setContext(OutboxDispatcher.name);
   }
@@ -140,6 +142,28 @@ export class OutboxDispatcher {
         { id: row.id, type: row.eventType, attempt, dead, err: message },
         dead ? "message dead-lettered" : "delivery failed; will retry",
       );
+      /*
+        Only the dead-lettering goes on the feed, not every failed attempt.
+
+        A retry that will succeed on the next pass is the machinery working, and putting it on
+        a screen trains whoever reads that screen to ignore it. Giving up is different: the
+        event is never going to reach its handler now, and somebody has to re-arm it by hand.
+        Written after the attempt rather than inside it, as Phase 8 requires.
+      */
+      if (dead) {
+        await this.events.recordAndWait({
+          level: "error",
+          category: "outbox.dead_letter",
+          message: `${row.eventType} gave up after ${attempt} attempts: ${message}`,
+          context: {
+            outboxId: row.id,
+            eventId: row.eventId,
+            eventType: row.eventType,
+            attempts: attempt,
+            lastError: message,
+          },
+        });
+      }
     }
   }
 

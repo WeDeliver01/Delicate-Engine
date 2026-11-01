@@ -7,6 +7,7 @@ import { Inject } from "@nestjs/common";
 /** The jobs that exist. Named rather than free-form so a typo is a compile error. */
 export const JOBS = {
   membershipRenewals: "membership.renewals",
+  systemEventsPrune: "system-events.prune",
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

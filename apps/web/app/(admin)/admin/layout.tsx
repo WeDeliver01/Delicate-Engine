@@ -54,6 +54,7 @@ const NAV: NavSection[] = [
   {
     group: "Engine",
     items: [
+      { href: "/admin/system-events", label: "System events", icon: "warning" },
       { href: "/admin/outbox", label: "Outbox", icon: "outbox" },
       { href: "/admin/audit", label: "Audit log", icon: "history" },
     ],

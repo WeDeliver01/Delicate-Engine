@@ -147,3 +147,64 @@ export const idempotencyKeys = pgTable(
   },
   (t) => [uniqueIndex("idempotency_scope_key_uq").on(t.scope, t.key)],
 );
+
+export const systemEventLevelEnum = pgEnum("system_event_level", ["info", "warning", "error"]);
+
+/**
+ * Operational events worth a human knowing about: why a webhook was refused, why a booking was
+ * turned away, what 500'd.
+ *
+ * Deliberately not the audit log, which answers who changed a setting, and deliberately not the
+ * outbox, which answers how a domain event reached its handlers. This sits beside both and
+ * records the failures that happen around them, so the answer to "what just went wrong" is a
+ * screen rather than an SSH session. Phase 8 exists because a BobPay webhook rejected every
+ * payment for two weeks and the only trace was 200 hours of container log.
+ *
+ * `category` is a free-text dotted string rather than an enum on purpose: a new failure worth
+ * surfacing should cost one line at the call site, not a migration. The admin feed lists the
+ * categories it actually finds.
+ */
+export const systemEvents = pgTable(
+  "system_events",
+  {
+    id: id(),
+    level: systemEventLevelEnum("level").notNull(),
+    /** Dotted and coarse-to-fine, e.g. `webhook.bobpay`, `booking.rejected`, `http.5xx`. */
+    category: text("category").notNull(),
+    /** One line, for the list. Written for whoever is on support, not for a parser. */
+    message: text("message").notNull(),
+    /** Everything else, for the detail view. Never secrets: see `SystemEventsService.record`. */
+    context: jsonb("context"),
+    requestId: text("request_id"),
+    /**
+     * Set when the event belongs to one customer, so an account's own troubles can be pulled
+     * out of a feed that is mostly everybody else's.
+     */
+    accountId: uuid("account_id"),
+    /**
+     * Collapses a repeated failure instead of writing the same row ten thousand times. Rows
+     * sharing a key are one event with a count and a last-seen, which is the difference
+     * between a feed somebody reads and a feed somebody mutes.
+     *
+     * The service buckets this by the hour before it gets here, so the collapsing rolls over
+     * on its own: the same fault in January and in June are two rows, not one row with a
+     * count of two and a six-month-old `created_at`.
+     */
+    dedupeKey: text("dedupe_key"),
+    count: integer("count").notNull().default(1),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The feed's own query: newest first, usually narrowed by level or category.
+    index("system_events_recent_idx").on(t.createdAt),
+    index("system_events_level_idx").on(t.level, t.createdAt),
+    index("system_events_category_idx").on(t.category, t.createdAt),
+    index("system_events_account_idx").on(t.accountId, t.createdAt),
+    uniqueIndex("system_events_dedupe_uq")
+      .on(t.dedupeKey)
+      .where(sql`${t.dedupeKey} is not null`),
+  ],
+);

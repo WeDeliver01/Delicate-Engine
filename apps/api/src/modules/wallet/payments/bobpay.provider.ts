@@ -3,6 +3,7 @@ import { PinoLogger } from "nestjs-pino";
 import type { TopUp, TopUpInstructions } from "@delicate/contracts";
 import type { Env } from "../../../config/env.js";
 import { AppError } from "../../../common/errors.js";
+import { SystemEventsService } from "../../system-events/system-events.service.js";
 import type { PaymentProvider, VerifiedPayment } from "./payment.provider.js";
 
 /**
@@ -44,6 +45,7 @@ export class BobPayProvider implements PaymentProvider {
   constructor(
     private readonly env: Env,
     private readonly logger: PinoLogger,
+    private readonly events: SystemEventsService,
   ) {
     this.logger.setContext(BobPayProvider.name);
   }
@@ -228,6 +230,32 @@ export class BobPayProvider implements PaymentProvider {
         { unsigned: pairs.join("&"), theirSignature: p.signature, ourDigest: expected },
         "bobpay signature mismatch (not enforced)",
       );
+      /*
+        A warning, not an error, and worth more attention than the rejection it replaced.
+
+        Phase 8's line item assumed a signature failure refuses the request. It no longer does
+        -- we stopped enforcing it because Bob Pay never sends one, and three customers had
+        sat unpaid waiting for a check that could not pass. So the payment now succeeds on the
+        strength of Bob Pay's own confirmation alone, which is a weaker guarantee than we
+        designed for, and that is exactly the kind of quiet standing compromise that should be
+        visible on a screen rather than remembered.
+
+        `signature` and `ourDigest` are named so the service's own redaction strips them: the
+        digests are not a secret, but the rule that nothing matching /signature/ reaches the
+        table is worth more than this one field, and the useful fact is that it mismatched.
+      */
+      this.events.record({
+        level: "warning",
+        category: "webhook.bobpay",
+        message: "payment accepted without a valid signature (signature check is not enforced)",
+        context: {
+          paymentId: p.custom_payment_id,
+          theirSignature: p.signature ?? null,
+          ourDigest: expected,
+          note: "accepted on bobpay's own confirmation instead",
+        },
+        dedupeKey: "bobpay:unsigned",
+      });
     }
   }
 

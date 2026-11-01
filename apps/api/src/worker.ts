@@ -7,6 +7,7 @@ import { NotificationDispatcher } from "./modules/notifications/notification.dis
 import { RiskDispatcher } from "./modules/operations/risk.dispatcher.js";
 import { JOBS, Scheduler } from "./worker/scheduler.js";
 import { MembershipService } from "./modules/membership/membership.service.js";
+import { SystemEventsService } from "./modules/system-events/system-events.service.js";
 
 /**
  * Worker entrypoint: same module graph as the API, no HTTP listener. Runs the outbox
@@ -45,13 +46,28 @@ async function main(): Promise<void> {
       const done = await memberships.renewDue();
       if (done > 0) app.get(Logger).log(`renewed ${done} membership(s)`);
     });
+
+    /*
+      Retention for the operational feed, which Phase 8 asks for at 90 days.
+
+      It needs a window, not a date: the feed is written to from the error path of every
+      request, so left alone it is the one table that grows without anybody booking anything.
+      Pruning at 03:15 rather than alongside the renewals at 02:15 only so that a slow delete
+      is not holding a connection while the billing sweep wants one.
+    */
+    const events = app.get(SystemEventsService);
+    await scheduler.schedule(JOBS.systemEventsPrune, "15 3 * * *", async () => {
+      const pruned = await events.prune(90);
+      if (pruned > 0) app.get(Logger).log(`pruned ${pruned} system event(s)`);
+    });
   } catch (err) {
     /*
       Deliberately swallowed. A membership that renews a day late is a billing question
-      somebody can answer by hand from the membership board; an outbox that stops dispatching
-      is every email, every settlement and every status change in the platform. Letting a
-      failure to register a cron kill this process trades the second for the first, which is
-      the wrong way round -- and did exactly that in production once.
+      somebody can answer by hand from the membership board, and a feed that keeps its rows
+      an extra week costs disk; an outbox that stops dispatching is every email, every
+      settlement and every status change in the platform. Letting a failure to register a cron
+      kill this process trades the second for the first, which is the wrong way round -- and
+      did exactly that in production once.
     */
     app.get(Logger).error({ err }, "could not register scheduled jobs; continuing without them");
   }
