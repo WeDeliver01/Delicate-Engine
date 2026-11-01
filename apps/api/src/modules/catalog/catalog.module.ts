@@ -6,8 +6,10 @@ import {
   PublicCatalogController,
   QuotesController,
 } from "./catalog.controller.js";
+import { MembershipModule } from "../membership/membership.module.js";
 
 @Module({
+  imports: [MembershipModule],
   controllers: [PublicCatalogController, QuotesController, AdminCatalogController],
   providers: [CatalogService, QuoteService],
   exports: [CatalogService, QuoteService],

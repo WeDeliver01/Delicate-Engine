@@ -185,6 +185,13 @@ export interface PricingInput {
   serviceLevel: ServiceLevel;
   /** What this job must never be priced below, whatever the rate card says. */
   costModel: CostModel;
+  /**
+   * The member's discount, in basis points. Zero for everyone who is not on a plan.
+   *
+   * Carried into pricing rather than applied to the answer afterwards, so the discount shows
+   * as its own line in the breakdown and a customer can see what their membership saved them.
+   */
+  membershipDiscountBps: Bps;
   parcels: { packageType: PackageType; quantity: number }[];
   options: QuoteOptions;
   vatBps: Bps; // 0 when not VAT registered
@@ -241,6 +248,8 @@ export const QuoteBreakdown = z.object({
   costFloorCents: Cents.default(0),
   /** True when the rate card's own price fell short and the floor lifted it. */
   costFloorApplied: z.boolean().default(false),
+  /** What a membership took off. Zero for a non-member. */
+  membershipDiscountCents: Cents.default(0),
   /** Gross margin on the subtotal, for internal display only. */
   marginBps: Bps,
 });
@@ -465,6 +474,29 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
     costFloorApplied = true;
   }
 
+  /*
+    The membership discount, last of all.
+
+    Deliberately after the cost floor rather than before it. The floor protects the price we
+    would have charged anyone; the member then gets their percentage off that, so the discount
+    they pay for is always real. Applying it first would let the floor swallow it whole on
+    exactly the routes where it binds, and a member would pay full price with no way of seeing
+    why. At the current 65% target even the deepest tier leaves the delivery profitable --
+    40% off a price set at cost ÷ 0.35 still clears about 42% margin.
+  */
+  let membershipDiscountCents = 0;
+  if (input.membershipDiscountBps > 0 && subtotalCents > 0) {
+    membershipDiscountCents = applyBps(subtotalCents, input.membershipDiscountBps);
+    if (membershipDiscountCents > 0) {
+      lines.push({
+        code: "membership_discount",
+        label: "Membership discount",
+        amountCents: -membershipDiscountCents,
+      });
+      subtotalCents -= membershipDiscountCents;
+    }
+  }
+
   const vatCents = applyBps(subtotalCents, vatBps);
   const totalCents = subtotalCents + vatCents;
   const marginBps =
@@ -484,6 +516,7 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
     directCostCents: directCost,
     costFloorCents: floor,
     costFloorApplied,
+    membershipDiscountCents,
     marginBps: Math.max(0, Math.min(10_000, marginBps)),
   };
 }

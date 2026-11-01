@@ -12,6 +12,7 @@ export * from "./billing.js";
 export * from "./notifications.js";
 export * from "./address-book.js";
 export * from "./loyalty.js";
+export * from "./membership.js";
 export * from "./workspace.js";
 export * from "./service-access.js";
 export * from "./geo.js";

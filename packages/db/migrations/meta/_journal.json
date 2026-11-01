@@ -274,6 +274,13 @@
       "when": 1793445635881,
       "tag": "0038_curvy_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793521633779,
+      "tag": "0039_woozy_hiroim",
+      "breakpoints": true
     }
   ]
 }

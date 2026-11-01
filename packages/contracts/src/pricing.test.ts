@@ -94,6 +94,7 @@ const base: PricingInput = {
   rateCard: card,
   serviceLevel: standard,
   costModel: inertCostModel,
+  membershipDiscountBps: 0,
   parcels: [],
   options: {
     liabilityCover: false,
@@ -565,5 +566,55 @@ describe("the cost floor in a quote", () => {
     expect(served.lines).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "cost_floor_adjustment" })]),
     );
+  });
+});
+
+describe("membership", () => {
+  /*
+    The cost model that actually binds, so the floor is in play. Without it the discount would
+    be tested against a price nothing was protecting, which is the easy case.
+  */
+  const realCost: CostModel = {
+    fuelPriceCentsPerLitre: 3_100,
+    fuelConsumptionL100km: 7.5,
+    vehicleWearCentsPerKm: 75,
+    driverCostCentsPerHour: 1_500,
+    effectiveSpeedKmh: 80,
+    collectionMinutes: 15,
+    dropMinutes: 10,
+    targetMarginBps: 6_500,
+  };
+  const withCost = { ...base, costModel: realCost };
+
+  it("takes the discount off after the floor, so a member always gets what they pay for", () => {
+    const full = priceQuote(withCost);
+    const member = priceQuote({ ...withCost, membershipDiscountBps: 4_000 });
+
+    // The floor binds on this route, which is exactly the case that used to swallow a
+    // surcharge whole. The discount has to survive it or the membership is a lie.
+    expect(full.costFloorApplied).toBe(true);
+    expect(member.subtotalCents).toBe(full.subtotalCents - member.membershipDiscountCents);
+    expect(member.membershipDiscountCents).toBe(Math.round(full.subtotalCents * 0.4));
+    expect(member.subtotalCents).toBeLessThan(full.subtotalCents);
+  });
+
+  it("still clears the direct cost at the deepest tier", () => {
+    // 40% off a price set at cost ÷ 0.35 leaves about 42%. If this ever goes negative the
+    // business is paying people to take deliveries.
+    const member = priceQuote({ ...withCost, membershipDiscountBps: 4_000 });
+    expect(member.subtotalCents).toBeGreaterThan(member.directCostCents);
+  });
+
+  it("shows the customer what their membership saved them", () => {
+    const member = priceQuote({ ...withCost, membershipDiscountBps: 2_500 });
+    const line = member.lines.find((l) => l.code === "membership_discount");
+    expect(line).toBeDefined();
+    expect(line!.amountCents).toBeLessThan(0);
+  });
+
+  it("changes nothing at all for someone who is not a member", () => {
+    const q = priceQuote(withCost);
+    expect(q.membershipDiscountCents).toBe(0);
+    expect(q.lines.some((l) => l.code === "membership_discount")).toBe(false);
   });
 });

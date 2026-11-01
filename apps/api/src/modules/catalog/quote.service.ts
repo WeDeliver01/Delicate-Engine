@@ -19,6 +19,7 @@ import { GEO_PROVIDER, type GeoProvider } from "../../infra/geo/geo.provider.js"
 import { AppError } from "../../common/errors.js";
 import { CatalogService } from "./catalog.service.js";
 import { Clock } from "../../infra/clock.js";
+import { MembershipService } from "../membership/membership.service.js";
 
 const QUOTE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -35,6 +36,7 @@ export class QuoteService {
     private readonly settings: SettingsService,
     @Inject(GEO_PROVIDER) private readonly geo: GeoProvider,
     private readonly clock: Clock,
+    private readonly membership: MembershipService,
   ) {}
 
   /** Public, unsaved estimate for the marketing site. Uses the default rate card. */
@@ -58,6 +60,8 @@ export class QuoteService {
       legsKm,
       billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
+      // A public estimate has no signed-in account, so no membership to discount it.
+      membershipDiscountBps: 0,
       rateCard,
       serviceLevel,
       costModel,
@@ -78,14 +82,16 @@ export class QuoteService {
 
   /** Full quote for an account: persisted, bookable for 24h. */
   async create(accountId: string, input: QuoteRequest): Promise<Quote> {
-    const [rateCard, serviceLevel, vatBps, depot, limits, costModel] = await Promise.all([
-      this.catalog.rateCardFor(accountId),
-      this.catalog.serviceLevelByCode(input.serviceLevelCode),
-      this.settings.vatBps(),
-      this.settings.get("company.depot_address"),
-      this.settings.get("booking.limits"),
-      this.settings.get("pricing.cost_model"),
-    ]);
+    const [rateCard, serviceLevel, vatBps, depot, limits, costModel, membershipDiscountBps] =
+      await Promise.all([
+        this.catalog.rateCardFor(accountId),
+        this.catalog.serviceLevelByCode(input.serviceLevelCode),
+        this.settings.vatBps(),
+        this.settings.get("company.depot_address"),
+        this.settings.get("booking.limits"),
+        this.settings.get("pricing.cost_model"),
+        this.membership.discountBpsFor(accountId),
+      ]);
     const packageTypeIds = input.drops.flatMap((d) => d.parcels.map((p) => p.packageTypeId));
     const packageTypeMap = await this.catalog.packageTypesByIds([...new Set(packageTypeIds)]);
 
@@ -159,6 +165,7 @@ export class QuoteService {
       legsKm,
       billable: billableFrom(legsKm, input.drops.length),
       dropCount: input.drops.length,
+      membershipDiscountBps,
       rateCard,
       serviceLevel,
       costModel,
