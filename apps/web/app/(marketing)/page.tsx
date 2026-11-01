@@ -1,5 +1,8 @@
 import SiteNav from "@/components/marketing/SiteNav";
 import Footer from "@/components/marketing/Footer";
+import type { MembershipPlan } from "@delicate/contracts";
+import { fetchPublic } from "@/lib/server-api";
+import { POPULAR, featuresOf, priceLabel, suitedLine } from "@/lib/membership-copy";
 
 const TRUST = [
   {
@@ -21,40 +24,6 @@ const TRUST = [
     body: "We use the latest technology and best practices so your goods arrive safely and securely.",
   },
 ] as const;
-
-const PLANS = [
-  {
-    name: "Starter",
-    price: "R999",
-    popular: false,
-    body: "Ideal for clients doing 20+ deliveries a month.",
-    features: ["15% off default rates", "API integration", "Flat-rate pricing", "Priority support"],
-  },
-  {
-    name: "Growth",
-    price: "R1999",
-    popular: true,
-    body: "Ideal for clients doing 35+ deliveries a month.",
-    features: [
-      "All Starter Pack benefits",
-      "25% off default rates",
-      "One free monthly shipment",
-      "Public holiday delivery",
-    ],
-  },
-  {
-    name: "Enterprise",
-    price: "R3499",
-    popular: false,
-    body: "Ideal for clients doing 55+ deliveries a month.",
-    features: [
-      "All Growth Pack benefits",
-      "40% off default rates",
-      "Zero surcharges",
-      "Dedicated account manager",
-    ],
-  },
-];
 
 const BAKERIES = [
   {
@@ -141,7 +110,21 @@ const BAKERIES = [
 
 const WHITE = { backgroundColor: "#ffffff" };
 
-export default function Home() {
+/**
+ * Rendered per request, not at build time.
+ *
+ * These pages read their prices from the engine, and the engine is not reachable while the
+ * image is being built -- so a statically prerendered copy bakes in an empty pricing section
+ * and ISR then serves that to whoever arrives first after a deploy. A landing page with no
+ * prices on it is a worse failure than a page that costs one small fetch to render, and the
+ * fetch itself is cached for a minute inside `fetchPublic`.
+ */
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  // The tiers were typed out here and had already drifted from the console. Null when the
+  // engine is unreachable, so the home page degrades to no plan cards rather than a 500.
+  const plans = (await fetchPublic<MembershipPlan[]>("/v1/public/membership/plans")) ?? [];
   return (
     <>
       <SiteNav />
@@ -358,39 +341,42 @@ export default function Home() {
             you.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12 items-start">
-            {PLANS.map((p) => (
+            {plans.map((p) => (
               <div
-                key={p.name}
-                className={`relative rounded-xl p-6 ${p.popular ? "bg-[#0A0A0A] text-white" : "bg-white border border-[#ECEAE6]"}`}
+                key={p.id}
+                className={`relative rounded-xl p-6 ${p.code === POPULAR ? "bg-[#0A0A0A] text-white" : "bg-white border border-[#ECEAE6]"}`}
               >
-                {p.popular && (
+                {p.code === POPULAR && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#E84A8A] text-white text-[10px] font-bold uppercase tracking-wide px-3 py-1 rounded-full">
                     Most popular
                   </span>
                 )}
                 <p className="text-[20px] font-bold">{p.name}</p>
                 <p className="text-[34px] font-extrabold mt-1">
-                  <span className="font-mono">{p.price}</span>
+                  <span className="font-mono">{priceLabel(p.priceCents)}</span>
                   <span
                     className="text-sm font-normal"
-                    style={{ color: p.popular ? "#B8B3AC" : "#86817A" }}
+                    style={{ color: p.code === POPULAR ? "#B8B3AC" : "#86817A" }}
                   >
                     /mo
                   </span>
                 </p>
-                <p className="text-sm mt-2" style={{ color: p.popular ? "#B8B3AC" : "#86817A" }}>
-                  {p.body}
+                <p
+                  className="text-sm mt-2"
+                  style={{ color: p.code === POPULAR ? "#B8B3AC" : "#86817A" }}
+                >
+                  {suitedLine(p)}
                 </p>
                 <div
                   className="h-px my-4"
-                  style={{ background: p.popular ? "#262624" : "#F0EDE9" }}
+                  style={{ background: p.code === POPULAR ? "#262624" : "#F0EDE9" }}
                 />
                 <ul className="space-y-1">
-                  {p.features.map((f) => (
+                  {featuresOf(p).map((f) => (
                     <li
                       key={f}
                       className="flex items-center gap-2 py-1 text-sm"
-                      style={{ color: p.popular ? "#F2EFEA" : "#3A3631" }}
+                      style={{ color: p.code === POPULAR ? "#F2EFEA" : "#3A3631" }}
                     >
                       <span
                         aria-hidden="true"
@@ -404,7 +390,7 @@ export default function Home() {
                 </ul>
                 <a
                   href="/membership"
-                  className={`block text-center mt-6 rounded-full py-3 text-[14px] font-medium transition-colors ${p.popular ? "bg-[#E84A8A] text-white" : "bg-[#0A0A0A] text-white hover:bg-[#E84A8A]"}`}
+                  className={`block text-center mt-6 rounded-full py-3 text-[14px] font-medium transition-colors ${p.code === POPULAR ? "bg-[#E84A8A] text-white" : "bg-[#0A0A0A] text-white hover:bg-[#E84A8A]"}`}
                 >
                   Get started
                 </a>

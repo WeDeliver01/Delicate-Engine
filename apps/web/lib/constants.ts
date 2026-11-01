@@ -3,6 +3,7 @@ export const LINKS = {
   login: "/login?next=/portal",
   register: "/login?next=/portal/accounts/new",
   track: "/track",
+  membership: "/membership",
   whatsapp: "https://wa.me/27785746727",
   email: "mailto:support@delicatecourier.co.za",
 };

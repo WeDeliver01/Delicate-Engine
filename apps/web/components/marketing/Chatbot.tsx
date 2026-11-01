@@ -1,11 +1,17 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { MembershipPlan } from "@delicate/contracts";
 import { LINKS, SITE } from "@/lib/constants";
+import { api } from "@/lib/api";
+import { priceLabel } from "@/lib/membership-copy";
 
 interface FAQ {
   keywords: string[];
   answer: string;
+  /** Answered from live data instead of the canned string. See `findAnswer`. */
+  dynamic?: "membership";
 }
 
 const faqs: FAQ[] = [
@@ -23,8 +29,9 @@ const faqs: FAQ[] = [
   },
   {
     keywords: ["membership", "member", "plan", "benefits", "discount", "discounts"],
-    answer:
-      "We offer three membership plans: Starter (R999/month with 15% off), Growth (R1999/month with 25% off), and Enterprise (R3499/month with 40% off). Each plan includes dedicated account support and various perks.",
+    // Filled from the live plans; this is only what gets said if the engine is unreachable.
+    answer: "",
+    dynamic: "membership",
   },
   {
     keywords: ["area", "areas", "gauteng", "cover", "location", "locations", "deliver"],
@@ -137,12 +144,42 @@ export default function Chatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  /*
+    The plans, fetched once the widget is open.
+
+    This answer used to be a sentence with three prices typed into it, which is the worst
+    place for a price to go stale: a customer asks what it costs, and is told something the
+    checkout disagrees with. Fetched lazily rather than on page load, because most visitors
+    never open the chat and this is a marketing page.
+  */
+  const plans = useQuery({
+    queryKey: ["public", "membership", "plans"],
+    queryFn: () => api<MembershipPlan[]>("/v1/public/membership/plans", { account: null }),
+    staleTime: 300_000,
+  });
+
+  const membershipAnswer = (): string => {
+    const live = plans.data;
+    if (!live || live.length === 0) {
+      return (
+        "We offer membership plans with discounted rates for frequent shippers. " +
+        "You can see the current plans and prices at " +
+        LINKS.membership +
+        "."
+      );
+    }
+    const list = live
+      .map((p) => `${p.name} (${priceLabel(p.priceCents)}/month with ${p.discountBps / 100}% off)`)
+      .join(", ");
+    return `We offer ${live.length} membership plan${live.length === 1 ? "" : "s"}: ${list}. Each plan includes dedicated account support and various perks.`;
+  };
+
   const findAnswer = (query: string): string => {
     const lowerQuery = query.toLowerCase();
     for (const faq of faqs) {
       for (const keyword of faq.keywords) {
         if (lowerQuery.includes(keyword.toLowerCase())) {
-          return faq.answer;
+          return faq.dynamic === "membership" ? membershipAnswer() : faq.answer;
         }
       }
     }
