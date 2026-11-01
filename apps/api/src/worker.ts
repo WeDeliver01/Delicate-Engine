@@ -40,10 +40,21 @@ async function main(): Promise<void> {
   */
   const scheduler = app.get(Scheduler);
   const memberships = app.get(MembershipService);
-  await scheduler.schedule(JOBS.membershipRenewals, "15 2 * * *", async () => {
-    const done = await memberships.renewDue();
-    if (done > 0) app.get(Logger).log(`renewed ${done} membership(s)`);
-  });
+  try {
+    await scheduler.schedule(JOBS.membershipRenewals, "15 2 * * *", async () => {
+      const done = await memberships.renewDue();
+      if (done > 0) app.get(Logger).log(`renewed ${done} membership(s)`);
+    });
+  } catch (err) {
+    /*
+      Deliberately swallowed. A membership that renews a day late is a billing question
+      somebody can answer by hand from the membership board; an outbox that stops dispatching
+      is every email, every settlement and every status change in the platform. Letting a
+      failure to register a cron kill this process trades the second for the first, which is
+      the wrong way round -- and did exactly that in production once.
+    */
+    app.get(Logger).error({ err }, "could not register scheduled jobs; continuing without them");
+  }
 
   const shutdown = async (signal: string) => {
     app.get(Logger).log(`${signal} received; draining`);

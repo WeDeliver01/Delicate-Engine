@@ -54,13 +54,26 @@ export class Scheduler implements OnModuleDestroy {
   }
 
   /**
+   * Make sure the queue exists before anything is put on it or taken off it.
+   *
+   * pg-boss 12 no longer conjures a queue out of the first `work` or `send` call: a queue is a
+   * row, and a schedule has a foreign key to it. `create_queue` is `ON CONFLICT DO NOTHING`, so
+   * every process can call this on the way past without racing the others.
+   */
+  private async ensureQueue(name: JobName): Promise<PgBoss> {
+    const boss = await this.start();
+    await boss.createQueue(name);
+    return boss;
+  }
+
+  /**
    * Register the handler for a job and the cron that fires it.
    *
    * `singletonKey` on the schedule is what stops two workers running the same renewal sweep:
    * pg-boss will only have one instance of a named job queued at a time.
    */
   async schedule(name: JobName, cron: string, handler: () => Promise<void>): Promise<void> {
-    const boss = await this.start();
+    const boss = await this.ensureQueue(name);
     await boss.work(name, { batchSize: 1 }, async () => {
       this.logger.info({ job: name }, "job started");
       await handler();
@@ -72,7 +85,7 @@ export class Scheduler implements OnModuleDestroy {
 
   /** Run a job now, outside its schedule. Used by the console when somebody will not wait. */
   async runNow(name: JobName): Promise<void> {
-    const boss = await this.start();
+    const boss = await this.ensureQueue(name);
     await boss.send(name, {}, { singletonKey: `${name}:manual` });
   }
 
