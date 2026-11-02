@@ -8,6 +8,7 @@ import { dateOnly } from "@/lib/money";
 import { Chip, Field, Panel } from "@/components/ui";
 import { AccountPicker } from "@/components/admin/account-picker";
 import {
+  CostFloorExemption,
   leverForm,
   leversToPayload,
   PRICE_FORMULA,
@@ -257,6 +258,7 @@ function GroupRow({
 
             {drafting && (
               <GroupCardEditor
+                key={defaultCard?.id ?? "none"}
                 title="New rates, starting from the house card"
                 initial={leverForm(defaultCard)}
                 submitLabel="Save as draft"
@@ -275,6 +277,7 @@ function GroupRow({
                   title={`Editing ${group.liveRateCard.name} — these numbers are charging people now`}
                   initial={leverForm(group.liveRateCard)}
                   name={group.liveRateCard.name}
+                  exempt={group.liveRateCard.exemptFromCostFloor}
                   submitLabel="Save live rates"
                   onSubmit={(body) =>
                     api<RateCard>(`${base}/cards/${group.liveRateCard!.id}`, {
@@ -304,6 +307,7 @@ function GroupRow({
                   title={`Editing draft ${c.name}`}
                   initial={leverForm(c)}
                   name={c.name}
+                  exempt={c.exemptFromCostFloor}
                   submitLabel="Save draft"
                   onSubmit={(body) =>
                     api<RateCard>(`${base}/cards/${c.id}`, { method: "PUT", json: body })
@@ -386,6 +390,7 @@ function GroupCardEditor({
   title,
   initial,
   name: initialName,
+  exempt: initialExempt = false,
   submitLabel,
   onSubmit,
   onDone,
@@ -394,6 +399,7 @@ function GroupCardEditor({
   title: string;
   initial: LeverForm;
   name?: string;
+  exempt?: boolean;
   submitLabel: string;
   onSubmit: (body: Record<string, unknown>) => Promise<unknown>;
   onDone: () => void;
@@ -401,9 +407,14 @@ function GroupCardEditor({
 }) {
   const [form, setForm] = useState(initial);
   const [name, setName] = useState(initialName ?? "");
+  const [exempt, setExempt] = useState(initialExempt);
   const save = useMutation({
     mutationFn: () =>
-      onSubmit({ ...leversToPayload(form), ...(name.trim() ? { name: name.trim() } : {}) }),
+      onSubmit({
+        ...leversToPayload(form),
+        exemptFromCostFloor: exempt,
+        ...(name.trim() ? { name: name.trim() } : {}),
+      }),
     onSuccess: onDone,
     onError,
   });
@@ -423,6 +434,9 @@ function GroupCardEditor({
       </div>
       <div className="mt-4">
         <RateLevers form={form} onChange={setForm} />
+      </div>
+      <div className="mt-4">
+        <CostFloorExemption checked={exempt} onChange={setExempt} />
       </div>
       <p className="mt-3 text-xs text-muted">{PRICE_FORMULA}</p>
       <button

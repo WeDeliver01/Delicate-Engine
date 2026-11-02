@@ -489,7 +489,10 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   const directCost = directCostCents(input.costModel, distanceKm, input.dropCount);
   const floor = costFloorCents(input.costModel, directCost);
   let costFloorApplied = false;
-  if (subtotalCents < floor) {
+  // An exempt card still has its floor worked out and reported -- the breakdown says what
+  // the job cost either way, so an internal booking priced under it is visible as such
+  // rather than quietly looking like a cheap job.
+  if (!input.rateCard.exemptFromCostFloor && subtotalCents < floor) {
     lines.push({
       code: "cost_floor_adjustment",
       label: "Cost floor adjustment",

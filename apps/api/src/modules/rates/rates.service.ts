@@ -142,11 +142,15 @@ export class RatesService {
         // exactly one default: demote the current one first
         await tx.update(rateCards).set({ isDefault: false }).where(eq(rateCards.isDefault, true));
       }
+      // Never on a house card. The default card prices everyone who has no deal of their
+      // own, so an exemption here would quietly lift the floor off the whole customer book;
+      // a testing card belongs to one account or one group, where its blast radius is named.
+      const values = { ...input, exemptFromCostFloor: false };
       const [row] = id
-        ? await tx.update(rateCards).set(input).where(eq(rateCards.id, id)).returning()
+        ? await tx.update(rateCards).set(values).where(eq(rateCards.id, id)).returning()
         : await tx
             .insert(rateCards)
-            .values({ ...input, scope: "platform", isDefault: input.isDefault ?? false })
+            .values({ ...values, scope: "platform", isDefault: input.isDefault ?? false })
             .returning();
       await this.audit.record(tx, {
         action: id ? "rate_card.update" : "rate_card.create",
@@ -598,6 +602,7 @@ export function toRateCard(r: typeof rateCards.$inferSelect): RateCard {
     timedWindowSurchargeBps: r.timedWindowSurchargeBps,
     timedWindowSurchargeCents: r.timedWindowSurchargeCents,
     roadFactorBps: r.roadFactorBps,
+    exemptFromCostFloor: r.exemptFromCostFloor,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };

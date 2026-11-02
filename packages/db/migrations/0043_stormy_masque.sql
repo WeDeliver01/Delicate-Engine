@@ -1,0 +1,1 @@
+ALTER TABLE "rate_cards" ADD COLUMN "exempt_from_cost_floor" boolean DEFAULT false NOT NULL;

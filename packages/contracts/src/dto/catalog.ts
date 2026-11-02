@@ -146,6 +146,20 @@ export const RateCard = z.object({
   timedWindowSurchargeCents: NonNegativeCents,
   /** Road-distance factor applied to straight-line km when no routing provider is available. */
   roadFactorBps: z.number().int().min(10_000).max(30_000),
+  /**
+   * Let this card price below the cost floor.
+   *
+   * The floor exists because an audit found a third of deliveries cash-negative, and one
+   * shared floor over every card is what stops any single account being priced to a loss.
+   * This is the hole in that, and it is here for one honest reason: an internal account used
+   * to walk the whole booking flow end to end needs to produce a R0 booking, and a floor
+   * derived from fuel and driver time will always lift R0 back to the cost of the trip.
+   *
+   * False on every card unless somebody deliberately sets it. A card with this on is not a
+   * commercial rate and must never be assigned to a paying customer -- it would sell the job
+   * for less than the diesel.
+   */
+  exemptFromCostFloor: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -163,6 +177,8 @@ export const UpsertRateCardRequest = RateCard.omit({
 }).partial({
   isDefault: true,
   active: true,
+  // Optional so that leaving it out can only ever mean "no exemption", never grant one.
+  exemptFromCostFloor: true,
   roadFactorBps: true,
   weekendSurchargeBps: true,
   weekendSurchargeCents: true,

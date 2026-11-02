@@ -8,6 +8,7 @@ import { dateOnly } from "@/lib/money";
 import { Chip, Field, Panel } from "@/components/ui";
 import { AccountPicker, type PickableAccount } from "@/components/admin/account-picker";
 import {
+  CostFloorExemption,
   leverForm,
   leversToPayload,
   PRICE_FORMULA,
@@ -65,6 +66,7 @@ export function AccountRates({
         <div className="border-b border-line px-5 py-4 sm:px-6">
           {picked ? (
             <AccountCardEditor
+              key={`${picked.id}:${defaultCard?.id ?? "none"}`}
               account={picked}
               defaultCard={defaultCard}
               onDone={() => {
@@ -117,6 +119,12 @@ export function AccountRates({
                       <Chip tone="info">house card</Chip>
                     </>
                   )}
+                  {a.rateCard.exemptFromCostFloor && (
+                    <>
+                      {" "}
+                      <Chip tone="bad">below cost</Chip>
+                    </>
+                  )}
                 </td>
                 <td className="font-mono">R{(a.rateCard.costPerKmCents / 100).toFixed(2)}</td>
                 <td className="font-mono">{(a.rateCard.marginBps / 100).toFixed(1)}%</td>
@@ -155,11 +163,16 @@ function AccountCardEditor({
 }) {
   const [form, setForm] = useState<LeverForm>(leverForm(defaultCard));
   const [name, setName] = useState("");
+  const [exempt, setExempt] = useState(false);
   const save = useMutation({
     mutationFn: () =>
       api<RateCard>(`/v1/admin/rates/accounts/${account.id}/card`, {
         method: "POST",
-        json: { ...leversToPayload(form), ...(name.trim() ? { name: name.trim() } : {}) },
+        json: {
+          ...leversToPayload(form),
+          exemptFromCostFloor: exempt,
+          ...(name.trim() ? { name: name.trim() } : {}),
+        },
       }),
     onSuccess: onDone,
     onError,
@@ -188,6 +201,9 @@ function AccountCardEditor({
       </div>
       <div className="mt-4">
         <RateLevers form={form} onChange={setForm} />
+      </div>
+      <div className="mt-4">
+        <CostFloorExemption checked={exempt} onChange={setExempt} />
       </div>
       <p className="mt-3 text-xs text-muted">{PRICE_FORMULA}</p>
       <p className="mt-1 text-xs text-muted">

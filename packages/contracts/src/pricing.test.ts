@@ -35,6 +35,7 @@ const card: RateCard = {
   publicHolidaySurchargeBps: 0,
   publicHolidaySurchargeCents: 0,
   roadFactorBps: 13_000,
+  exemptFromCostFloor: false,
   createdAt: "2026-09-20T00:00:00.000Z",
   updatedAt: "2026-09-20T00:00:00.000Z",
 };
@@ -541,6 +542,49 @@ describe("the cost floor in a quote", () => {
       },
     });
     expect(cheap.costFloorCents).toBeLessThan(expensive.costFloorCents);
+  });
+
+  it("lets an exempt card price below cost, and still says what the job cost", () => {
+    // The internal testing account: a card zeroed to nothing, so the whole booking flow can
+    // be walked without money moving. Without the exemption the floor lifts it straight back
+    // to the cost of the trip, which is the one thing a R0 test booking cannot have.
+    const zeroed = {
+      ...card,
+      costPerKmCents: 0,
+      marginBps: 0,
+      minFeeCents: 0,
+      fuelSurchargeBps: 0,
+      orderValueFeeBps: 0,
+      exemptFromCostFloor: true,
+    };
+    const q = priceQuote({ ...base, legsKm: [40, 35, 40], rateCard: zeroed, costModel: october });
+
+    expect(q.subtotalCents).toBe(0);
+    expect(q.totalCents).toBe(0);
+    expect(q.costFloorApplied).toBe(false);
+    expect(q.lines.some((l) => l.code === "cost_floor_adjustment")).toBe(false);
+    // Still worked out and still recorded: an internal booking priced under cost should be
+    // visible as exactly that, not indistinguishable from a cheap job.
+    expect(q.costFloorCents).toBeGreaterThan(0);
+    expect(q.directCostCents).toBeGreaterThan(0);
+  });
+
+  it("holds every ordinary card to the floor -- the exemption is off unless asked for", () => {
+    // The same zeroed card without the flag. This is the regression that matters: if the
+    // default ever flips, every underpriced card on the platform silently sells at a loss.
+    const zeroed = {
+      ...card,
+      costPerKmCents: 0,
+      marginBps: 0,
+      minFeeCents: 0,
+      fuelSurchargeBps: 0,
+      orderValueFeeBps: 0,
+    };
+    expect(zeroed.exemptFromCostFloor).toBe(false);
+    const q = priceQuote({ ...base, legsKm: [40, 35, 40], rateCard: zeroed, costModel: october });
+    expect(q.costFloorApplied).toBe(true);
+    expect(q.subtotalCents).toBe(q.costFloorCents);
+    expect(q.subtotalCents).toBeGreaterThan(0);
   });
 
   it("records what the job actually cost on every quote, for later audit", () => {

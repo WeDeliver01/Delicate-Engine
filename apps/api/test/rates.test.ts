@@ -407,6 +407,60 @@ describe("rates", () => {
     expect(res.body.code).toBe("rate_card_not_platform");
   });
 
+  it("carries the cost-floor exemption on an account card but never on a house card", async () => {
+    const own = (
+      await h
+        .http()
+        .post(`/v1/admin/rates/accounts/${accountId}/card`)
+        .set(auth(admin))
+        .send(rules({ costPerKmCents: 0, marginBps: 0, minFeeCents: 0, exemptFromCostFloor: true }))
+    ).body as RateCard;
+    expect(own.exemptFromCostFloor).toBe(true);
+
+    // The house card prices everyone without a deal of their own, so the exemption is
+    // refused there however the request asks for it -- silently, as a false, because the
+    // card still saves and the console shows what it saved.
+    const houseUpdate = await h
+      .http()
+      .put(`/v1/admin/rates/cards/${defaultCard.id}`)
+      .set(auth(admin))
+      .send({ ...defaultCard, exemptFromCostFloor: true });
+    expect(houseUpdate.status).toBe(200);
+    expect(houseUpdate.body.exemptFromCostFloor).toBe(false);
+  });
+
+  it("prices an exempt account card at nothing, floor and all", async () => {
+    await h
+      .http()
+      .post(`/v1/admin/rates/accounts/${accountId}/card`)
+      .set(auth(admin))
+      .send(
+        rules({
+          costPerKmCents: 0,
+          marginBps: 0,
+          minFeeCents: 0,
+          fuelSurchargeBps: 0,
+          orderValueFeeBps: 0,
+          exemptFromCostFloor: true,
+        }),
+      );
+
+    const quote = await h
+      .http()
+      .post("/v1/account/quotes")
+      .set(auth(owner))
+      .set("X-Account-Id", accountId)
+      .send({
+        serviceLevelCode: "standard",
+        collection: { address: address("Honey Bee, Menlyn", { lat: -25.7826, lng: 28.2755 }) },
+        drops: [{ address: address("12 Oak St, Centurion", { lat: -25.8603, lng: 28.1894 }) }],
+      });
+
+    expect(quote.status, JSON.stringify(quote.body)).toBe(201);
+    // The whole point of the flag: a test booking that costs nothing end to end.
+    expect(quote.body.breakdown.totalCents).toBe(0);
+  });
+
   it("audits every rate change, because the margin is somebody's invoice", async () => {
     const g = await group("Franchises");
     const card = (

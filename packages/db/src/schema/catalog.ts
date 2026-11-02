@@ -176,6 +176,11 @@ export const rateCards = pgTable(
     signatureFeeCents: integer("signature_fee_cents").notNull().default(0),
     weddingVenueFeeCents: integer("wedding_venue_fee_cents").notNull().default(0),
     roadFactorBps: integer("road_factor_bps").notNull().default(13_000),
+    /**
+     * Price below the cost floor. False everywhere except an internal testing card -- see
+     * the field on the RateCard contract for why the hole exists and what it costs.
+     */
+    exemptFromCostFloor: boolean("exempt_from_cost_floor").notNull().default(false),
     // Date-conditional surcharges. Zero means off, which is how every card ships.
     weekendSurchargeBps: integer("weekend_surcharge_bps").notNull().default(0),
     weekendSurchargeCents: integer("weekend_surcharge_cents").notNull().default(0),

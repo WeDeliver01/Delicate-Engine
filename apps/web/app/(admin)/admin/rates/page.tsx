@@ -10,6 +10,7 @@ import { Chip, Field, Notice, PageHeader, Panel, Toggle } from "@/components/ui"
 import { AccountRates } from "@/components/admin/account-rates";
 import { RateGroups } from "@/components/admin/rate-groups";
 import {
+  describeRateIssue,
   leverForm,
   leversToPayload,
   PRICE_FORMULA,
@@ -55,12 +56,21 @@ export default function AdminRates() {
   });
 
   const invalidate = () => void qc.invalidateQueries({ queryKey: ["admin", "rates"] });
-  const onError = (e: unknown) =>
-    setError(
-      e instanceof ApiRequestError
-        ? `${e.message}${e.error.details ? ` ${JSON.stringify(e.error.details)}` : ""}`
-        : String(e),
-    );
+  /**
+   * The engine's refusal, said in the words on the form.
+   *
+   * A validation failure arrives as a list of Zod issues keyed by the field name in the
+   * contract, and pasting that into the page tells somebody that `roadFactorBps` must be at
+   * least 10000 -- two things they cannot see on screen, in units they never typed.
+   */
+  const onError = (e: unknown) => {
+    if (!(e instanceof ApiRequestError)) return setError(String(e));
+    const issues = Array.isArray(e.error.details) ? e.error.details : [];
+    const said = issues
+      .map((i) => describeRateIssue(i as { path?: unknown[]; message?: string }))
+      .filter((s): s is string => s !== null);
+    setError(said.length > 0 ? said.join(" ") : e.message);
+  };
   const onSaved = () => {
     setError(null);
     invalidate();
