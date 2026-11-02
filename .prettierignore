@@ -1,5 +1,8 @@
 _archive
 _reference
+# Vendored skills: somebody else's documentation, installed as published. Restyling it would
+# make every update a merge conflict over whitespace.
+.claude/skills
 node_modules
 dist
 .next

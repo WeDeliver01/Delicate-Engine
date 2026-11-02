@@ -1,21 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PackageCategory, PackageType, RateCard, ServiceLevel } from "@delicate/contracts";
+import type { PackageCategory, PackageType, ServiceLevel } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { Categories, NewPackageType } from "@/components/admin/packaging";
 
 /**
- * Pricing levers. Money fields are edited in rands and stored in cents; percentages edited as
- * % and stored in basis points. Every save is audited on the engine.
+ * What can be booked and how each option is surcharged. Money fields are edited in rands and
+ * stored in cents; percentages edited as % and stored in basis points. Every save is audited.
+ *
+ * The rate cards themselves live under Rates, which is super admin only: a service level
+ * multiplier is a product decision and this page is finance's too.
  */
 export default function AdminCatalog() {
   const qc = useQueryClient();
-  const cards = useQuery({
-    queryKey: ["admin", "catalog", "rate-cards"],
-    queryFn: () => api<RateCard[]>("/v1/admin/catalog/rate-cards"),
-  });
   const levels = useQuery({
     queryKey: ["admin", "catalog", "service-levels"],
     queryFn: () => api<ServiceLevel[]>("/v1/admin/catalog/service-levels"),
@@ -40,9 +39,6 @@ export default function AdminCatalog() {
   return (
     <div className="space-y-6">
       {error && <p className="alert-error">{error}</p>}
-      {cards.data?.map((c) => (
-        <RateCardForm key={c.id} card={c} onSaved={invalidate} onError={onError} />
-      ))}
       <section className="panel p-5">
         <h2 className="section-title">Service levels</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
@@ -79,120 +75,6 @@ export default function AdminCatalog() {
         </div>
       </section>
     </div>
-  );
-}
-
-const MONEY: (keyof RateCard)[] = [
-  "costPerKmCents",
-  "minFeeCents",
-  "extraDropFeeCents",
-  "liabilityCoverMinCents",
-  "earlyCollectionFeeCents",
-  "signatureFeeCents",
-  "weddingVenueFeeCents",
-  "timedWindowSurchargeCents",
-];
-const PCT: (keyof RateCard)[] = [
-  "marginBps",
-  "fuelSurchargeBps",
-  "liabilityCoverBps",
-  "timedWindowSurchargeBps",
-  "roadFactorBps",
-  // How much of a batched drop's own distance it is charged. 100% prices it like a separate
-  // trip; 0% makes extra drops free of distance, leaving only the flat fee.
-  "extraDropKmFactorBps",
-  // Charged on the declared value of every order that carries one -- an integrated store's
-  // own order total, most of the time. Independent of the liability cover toggle.
-  "orderValueFeeBps",
-];
-const LABELS: Partial<Record<keyof RateCard, string>> = {
-  costPerKmCents: "Cost per km (R)",
-  marginBps: "Gross margin (%)",
-  fuelSurchargeBps: "Fuel surcharge (%)",
-  minFeeCents: "Minimum fee (R)",
-  extraDropFeeCents: "Extra drop fee (R)",
-  liabilityCoverBps: "Liability cover (% of declared)",
-  liabilityCoverMinCents: "Liability cover minimum (R)",
-  earlyCollectionFeeCents: "Early collection (R)",
-  signatureFeeCents: "Signature on delivery (R)",
-  weddingVenueFeeCents: "Wedding venue (R)",
-  roadFactorBps: "Road factor (% of straight line)",
-  extraDropKmFactorBps: "Batched drop distance charged (%)",
-  orderValueFeeBps: "Order value fee (%)",
-  // Zero means a timed window is free. It is on sale the moment capacity allows it, priced or
-  // not, so this is the lever that makes the promise worth making.
-  timedWindowSurchargeCents: "Timed window (R)",
-  timedWindowSurchargeBps: "Timed window (% of distance)",
-};
-
-function RateCardForm({
-  card,
-  onSaved,
-  onError,
-}: {
-  card: RateCard;
-  onSaved: () => void;
-  onError: (e: unknown) => void;
-}) {
-  const [form, setForm] = useState<Record<string, string>>({});
-  useEffect(() => {
-    const f: Record<string, string> = {};
-    for (const k of MONEY) f[k] = (Number(card[k]) / 100).toFixed(2);
-    for (const k of PCT) f[k] = (Number(card[k]) / 100).toFixed(2);
-    setForm(f);
-  }, [card]);
-  const save = useMutation({
-    mutationFn: () => {
-      const body: Record<string, unknown> = {
-        name: card.name,
-        isDefault: card.isDefault,
-        active: card.active,
-      };
-      for (const k of MONEY) body[k] = Math.round(Number(form[k]) * 100);
-      for (const k of PCT) body[k] = Math.round(Number(form[k]) * 100);
-      return api(`/v1/admin/catalog/rate-cards/${card.id}`, { method: "PUT", json: body });
-    },
-    onSuccess: onSaved,
-    onError,
-  });
-  return (
-    <section className="panel p-5">
-      <div className="flex items-center justify-between">
-        <h2 className="section-title">
-          Rate card · {card.name}{" "}
-          {card.isDefault && (
-            <span className="ml-2 rounded-full bg-[#EFE9FF] px-2 py-0.5 text-xs text-[#5B43C9]">
-              default
-            </span>
-          )}
-        </h2>
-        <button
-          onClick={() => save.mutate()}
-          disabled={save.isPending}
-          className="btn btn-primary btn-sm disabled:opacity-40"
-        >
-          Save
-        </button>
-      </div>
-      <p className="mt-1 text-xs text-muted">
-        price = distance × cost/km ÷ (1 − margin) × service multiplier + surcharges, floored at the
-        minimum fee, then VAT.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {[...MONEY, ...PCT].map((k) => (
-          <label key={k} className="block text-sm">
-            <span className="text-[#6B6661]">{LABELS[k]}</span>
-            <input
-              type="number"
-              step="0.01"
-              value={form[k] ?? ""}
-              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-              className="mt-1 w-full input px-2 py-1.5 font-mono"
-            />
-          </label>
-        ))}
-      </div>
-    </section>
   );
 }
 

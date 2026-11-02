@@ -63,12 +63,28 @@ export const PackageType = z.object({
 });
 export type PackageType = z.infer<typeof PackageType>;
 
+/**
+ * Who a card was written for.
+ *
+ * `platform` cards are the house rates and one of them is the default. `group` and `account`
+ * cards are negotiated: nothing reaches them except the group they belong to or the account
+ * they are assigned to, so adding one can never change what anybody else pays.
+ */
+export const RateCardScope = z.enum(["platform", "group", "account"]);
+export type RateCardScope = z.infer<typeof RateCardScope>;
+
 /** The pricing levers. Money in cents, percentages in basis points. */
 export const RateCard = z.object({
   id: Uuid,
   name: z.string().min(2).max(80),
   isDefault: z.boolean(),
+  /** Live. An inactive card prices nothing -- it is a draft, or it has been replaced. */
   active: z.boolean(),
+  scope: RateCardScope,
+  /** The group whose rules these are, on a `group` card. */
+  groupId: Uuid.nullable(),
+  /** Who the card was negotiated with, on an `account` card. */
+  accountId: Uuid.nullable(),
   /** Operating cost per kilometre (fuel + wear), the COGS input. */
   costPerKmCents: NonNegativeCents,
   /** Gross margin target: price = cogs / (1 - margin). */
@@ -139,6 +155,11 @@ export const UpsertRateCardRequest = RateCard.omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  // Scope and ownership are set by the endpoint that creates the card, not by its body:
+  // a group's card is created through the group, an account's through the account.
+  scope: true,
+  groupId: true,
+  accountId: true,
 }).partial({
   isDefault: true,
   active: true,

@@ -397,4 +397,4 @@ engine, and each one is visible in the console under **Settings → What is swit
 | Supabase project        | Development tokens are not safe for real users.                                                                                         | `SUPABASE_URL`, `SUPABASE_JWT_SECRET` |
 | Company tax identity    | The VAT number decides whether documents are tax invoices.                                                                              | Console → Settings                    |
 | Real monthly bills      | The seeded amounts are placeholders, and every allocation decision follows from them.                                                   | Console → Treasury                    |
-| Real rate card          | Seeded from the reference quote formula.                                                                                                | Console → Pricing                     |
+| Real rate card          | Seeded from the reference quote formula.                                                                                                | Console → Rates                       |

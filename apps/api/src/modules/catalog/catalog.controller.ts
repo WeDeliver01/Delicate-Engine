@@ -8,7 +8,6 @@ import {
   RenameQuoteRequest,
   UpsertPackageCategoryRequest,
   UpsertPackageTypeRequest,
-  UpsertRateCardRequest,
   UpsertServiceLevelRequest,
   Uuid,
 } from "@delicate/contracts";
@@ -102,37 +101,17 @@ export class QuotesController {
 
 const IdParam = z.object({ id: Uuid });
 
+/**
+ * What can be booked: service levels and the packaging list. The rate cards themselves moved
+ * to `v1/admin/rates`, which is super admin only — what a customer is charged is a
+ * commercial commitment, and this controller is also read by finance.
+ */
 @ApiTags("admin")
 @ApiBearerAuth()
 @Controller("v1/admin/catalog")
 @PlatformRoles("super_admin", "finance")
 export class AdminCatalogController {
   constructor(private readonly catalog: CatalogService) {}
-
-  @Get("rate-cards")
-  rateCards() {
-    return this.catalog.listRateCards();
-  }
-  @Post("rate-cards")
-  createRateCard(@Body(UpsertRateCardRequest) body: UpsertRateCardRequest) {
-    return this.catalog.upsertRateCard(null, body);
-  }
-  @Put("rate-cards/:id")
-  updateRateCard(
-    @Params(IdParam) p: { id: string },
-    @Body(UpsertRateCardRequest) body: UpsertRateCardRequest,
-  ) {
-    return this.catalog.upsertRateCard(p.id, body);
-  }
-
-  @Put("accounts/:id/rate-card")
-  async assign(
-    @Params(IdParam) p: { id: string },
-    @Body(z.object({ rateCardId: Uuid.nullable() })) body: { rateCardId: string | null },
-  ) {
-    await this.catalog.assignRateCard(p.id, body.rateCardId);
-    return { accountId: p.id, rateCardId: body.rateCardId };
-  }
 
   @Get("service-levels")
   serviceLevels() {

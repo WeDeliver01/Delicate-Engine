@@ -174,18 +174,20 @@ describe("catalog & quotes", () => {
     expect(tooHeavy.status).toBe(422);
   });
 
-  it("lets finance edit the rate card and reprices immediately", async () => {
-    const finance = await h.tokenFor(USERS.admin);
-    await h.http().get("/v1/me").set("Authorization", `Bearer ${finance}`); // JIT-provision, then promote
+  it("lets a super admin edit the house rate card and reprices immediately", async () => {
+    // Rates moved out of the catalog and behind super admin: the margin is a commercial
+    // commitment, and finance reads this console too.
+    const admin = await h.tokenFor(USERS.admin);
+    await h.http().get("/v1/me").set("Authorization", `Bearer ${admin}`); // JIT-provision, then promote
     await h.db.db
       .update(users)
-      .set({ platformRole: "finance" })
+      .set({ platformRole: "super_admin" })
       .where(eq(users.id, USERS.admin.id));
 
     const cards = await h
       .http()
-      .get("/v1/admin/catalog/rate-cards")
-      .set("Authorization", `Bearer ${finance}`);
+      .get("/v1/admin/rates/cards")
+      .set("Authorization", `Bearer ${admin}`);
     expect(cards.status).toBe(200);
     const def = cards.body.find((c: { isDefault: boolean }) => c.isDefault);
 
@@ -200,8 +202,8 @@ describe("catalog & quotes", () => {
     ).body as EstimateResponse;
     const upd = await h
       .http()
-      .put(`/v1/admin/catalog/rate-cards/${def.id}`)
-      .set("Authorization", `Bearer ${finance}`)
+      .put(`/v1/admin/rates/cards/${def.id}`)
+      .set("Authorization", `Bearer ${admin}`)
       .send({ ...def, minFeeCents: 50_000 });
     expect(upd.status).toBe(200);
     const after = (
@@ -219,7 +221,7 @@ describe("catalog & quotes", () => {
     // customers cannot touch the catalog
     const denied = await h
       .http()
-      .put(`/v1/admin/catalog/rate-cards/${def.id}`)
+      .put(`/v1/admin/catalog/service-levels/${def.id}`)
       .set("Authorization", `Bearer ${owner}`)
       .send(def);
     expect(denied.status).toBe(403);

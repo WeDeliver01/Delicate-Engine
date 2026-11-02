@@ -47,6 +47,9 @@ const NAV: NavSection[] = [
     items: [
       { href: "/admin/accounts", label: "Accounts", icon: "apartment" },
       { href: "/admin/catalog", label: "Pricing", icon: "sell" },
+      // Super admins only -- see the filter below. What a customer is charged is a commercial
+      // commitment, so the rate cards sit behind the narrowest role the platform has.
+      { href: "/admin/rates", label: "Rates", icon: "price_change" },
       { href: "/admin/notifications", label: "Notifications", icon: "campaign" },
       { href: "/admin/loyalty", label: "Rewards", icon: "loyalty" },
       { href: "/admin/settings", label: "Settings", icon: "settings" },
@@ -98,7 +101,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       nav={NAV.map((section) => ({
         ...section,
         items: section.items
-          .filter((item) => item.href !== "/admin/book" || platformRole === "super_admin")
+          .filter(
+            (item) =>
+              !["/admin/book", "/admin/rates"].includes(item.href) ||
+              platformRole === "super_admin",
+          )
           .map((item) =>
             item.href === "/admin/changes" ? { ...item, badge: pending.data?.count } : item,
           ),

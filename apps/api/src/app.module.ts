@@ -12,6 +12,7 @@ import { IdentityModule } from "./modules/identity/identity.module.js";
 import { AdminModule } from "./modules/admin/admin.module.js";
 import { ServiceAccessModule } from "./modules/service-access/service-access.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
+import { RatesModule } from "./modules/rates/rates.module.js";
 import { WalletModule } from "./modules/wallet/wallet.module.js";
 import { SchedulingModule } from "./modules/scheduling/scheduling.module.js";
 import { BookingModule } from "./modules/bookings/booking.module.js";
@@ -70,6 +71,7 @@ export class AppModule {
         IdentityModule,
         AdminModule,
         ServiceAccessModule,
+        RatesModule,
         CatalogModule,
         WalletModule,
         SchedulingModule,
