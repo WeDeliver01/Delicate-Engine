@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Uuid } from "./common.js";
+import { absentable, Uuid } from "./common.js";
 import { SlotRef } from "./slots.js";
 import { QuoteOptions } from "../pricing.js";
 import { Address } from "./geo.js";
@@ -208,9 +208,15 @@ export const ServiceBookingRequest = z.object({
     instructions: z.string().max(500).nullable().default(null),
   }),
   drops: z.array(DropInput).min(1).max(20),
-  options: QuoteOptions.default({}),
+  /*
+    Null means "no options", the same as omitting it. Parsed through the schema rather than
+    replaced with a bare `{}`, so the option defaults are still filled in -- which is what
+    `.default({})` was doing before, and dropping it would have silently changed every
+    option to undefined for a caller that sends null.
+  */
+  options: QuoteOptions.nullish().transform((v) => v ?? QuoteOptions.parse({})),
   /** Required when the service level needs a slot (Standard). */
-  slot: SlotRef.optional(),
+  slot: absentable(SlotRef),
   /**
    * A quote this caller already priced and showed its customer, to book at that price.
    *
@@ -218,20 +224,20 @@ export const ServiceBookingRequest = z.object({
    * resolved rather than refused, which is what makes this survive a day of retries. Without
    * it the job is priced fresh at booking time.
    */
-  quoteId: Uuid.optional(),
+  quoteId: absentable(Uuid),
   /**
    * Required, not optional as it is for a human: a retrying job that sends a different key
    * every attempt books the same order twice. Derive it from the caller's own order id.
    */
   idempotencyKey: z.string().min(8).max(120),
   /** The caller's identifier for the job, e.g. `WC-49905`. Searchable, printed on invoices. */
-  customerReference: z.string().trim().max(60).optional(),
+  customerReference: absentable(z.string().trim().max(60)),
   /**
    * Refuse rather than book if the price has moved above this since the caller quoted.
    * A checkout quote and the booking that follows it can be hours apart, and silently
    * charging more than the customer was shown is worse than failing the booking.
    */
-  maxTotalCents: z.number().int().nonnegative().optional(),
+  maxTotalCents: absentable(z.number().int().nonnegative()),
 });
 export type ServiceBookingRequest = z.infer<typeof ServiceBookingRequest>;
 

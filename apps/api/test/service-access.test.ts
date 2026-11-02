@@ -190,6 +190,45 @@ describe("service access", () => {
       expect((res.body as ServiceBookingResponse).booking.accountId).toBe(accountId);
     });
 
+    /*
+      A real integration failed on exactly this for every order it ever sent.
+
+      The caller is a .NET service, and its serialiser writes a nullable property with no value
+      as an explicit `null` rather than leaving the key out. `z.optional()` accepts only a
+      missing key, so `"slot": null` -- which means the same thing -- was a 422. Every booking
+      from that plugin was refused, and the only clue downstream was the string "request failed
+      validation", because the caller logged the message and discarded the issue list.
+    */
+    it("treats an explicitly null optional field as absent, the way other languages send it", async () => {
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({
+          ...bookingBody(),
+          // On-demand needs no slot, and this caller says so with a null rather than a gap.
+          serviceLevelCode: "on_demand",
+          slot: null,
+          maxTotalCents: null,
+          quoteId: null,
+          customerReference: null,
+          options: null,
+        });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+    });
+
+    it("still enforces a price ceiling that was actually given", async () => {
+      // The null handling must not quietly disable the guard when a number is sent.
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({ ...bookingBody(), maxTotalCents: 1 });
+      expect(res.status).toBe(409);
+    });
+
     it("rejects a wrong secret the same way as an unknown key", async () => {
       const client = await newClient();
       const tampered = `${client.secret.slice(0, -4)}zzzz`;
