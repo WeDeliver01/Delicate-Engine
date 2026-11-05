@@ -109,11 +109,40 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         level: "warning",
         category: `http.${body.code}`,
         message: `${body.statusCode} on ${route}`,
-        context: { route, statusCode: body.statusCode, code: body.code, details: body.details },
+        context: {
+          route,
+          statusCode: body.statusCode,
+          code: body.code,
+          details: body.details,
+          /*
+            Only for a validation failure, and only the shape -- never the values.
+
+            An integration that sends a field we do not know about gets it dropped in silence,
+            because object schemas strip what they do not declare. So "the caller says it is
+            sending a delivery date" and "we never received one" can both be true, and from
+            the error alone there is no way to tell which. Key names and types answer it; the
+            values are somebody's address and phone number and are none of this table's
+            business.
+          */
+          ...(body.code === "validation_failed" ? { bodyShape: shapeOf(req.body) } : {}),
+        },
         dedupeKey: `http:${body.code}:${route}`,
       });
     }
   }
+}
+
+/**
+ * The shape of a rejected body: `name:type` for each top-level key, and nothing else.
+ *
+ * Deliberately not the body. This exists to answer "what did they actually send us", which
+ * is a question about keys, not about the customer whose address is in them.
+ */
+function shapeOf(body: unknown): string[] | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return undefined;
+  return Object.entries(body as Record<string, unknown>)
+    .map(([k, v]) => `${k}:${v === null ? "null" : Array.isArray(v) ? "array" : typeof v}`)
+    .slice(0, 60);
 }
 
 /** Enough stack to place the fault, not enough to fill the row. */

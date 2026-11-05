@@ -215,6 +215,32 @@ describe("system events", () => {
     expect(folded[0]!.level).toBe("warning");
   });
 
+  it("records the shape of a rejected body, so a dropped field can be seen", async () => {
+    /*
+      An object schema strips what it does not declare, in silence. So an integration can be
+      certain it sends a delivery date while we are equally certain we never got one, and the
+      error alone cannot settle it. Key names and types can.
+    */
+    await h
+      .http()
+      .post("/v1/account/quotes")
+      .set(asOwner())
+      .send({ deliveryDate: "2026-11-06", deliveryTime: "09:30", slot: null, drops: [] });
+    await new Promise((r) => setTimeout(r, 300));
+
+    const [row] = await h.db.db
+      .select()
+      .from(systemEvents)
+      .where(eq(systemEvents.category, "http.validation_failed"));
+    const shape = (row!.context as { bodyShape?: string[] }).bodyShape ?? [];
+    expect(shape).toContain("deliveryDate:string");
+    expect(shape).toContain("slot:null");
+    expect(shape).toContain("drops:array");
+    // Names and types only: the values are somebody's address and are not this table's business.
+    expect(JSON.stringify(shape)).not.toContain("2026-11-06");
+    expect(JSON.stringify(shape)).not.toContain("09:30");
+  });
+
   it("serves the feed to a super admin and refuses everybody else", async () => {
     await events.recordAndWait({
       level: "error",
