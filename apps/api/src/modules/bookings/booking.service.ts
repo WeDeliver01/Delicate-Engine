@@ -60,7 +60,17 @@ export class BookingService {
     private readonly events: SystemEventsService,
   ) {}
 
-  async create(accountId: string, input: CreateBookingRequest): Promise<Booking> {
+  /**
+   * `overrideCapacity` is set by the service-client path only: an order placed through
+   * somebody's checkout is already paid for and promised to a customer, so a full window is
+   * our scheduling problem rather than a reason to refuse. See `SchedulingService.reserve`
+   * for exactly which refusals it waives -- not the ones that mean we are closed.
+   */
+  async create(
+    accountId: string,
+    input: CreateBookingRequest,
+    opts: { overrideCapacity?: boolean } = {},
+  ): Promise<Booking> {
     const idempotencyKey = input.idempotencyKey ?? `quote:${input.quoteId}`;
 
     // Replay of the same submit returns the original booking.
@@ -210,6 +220,7 @@ export class BookingService {
           await this.scheduling.reserve(tx, slot, {
             immediate: !serviceLevel.requiresSlot,
             serviceLevel: serviceLevel.code,
+            ...(opts.overrideCapacity ? { overrideCapacity: true } : {}),
           });
         if (timedWindow?.collection || timedWindow?.delivery) {
           const windowDate = slot?.date ?? (await this.scheduling.localNow()).date;

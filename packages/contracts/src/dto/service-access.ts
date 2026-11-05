@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { absentable, Uuid } from "./common.js";
-import { SlotRef } from "./slots.js";
+import { ServiceSlotRef } from "./slots.js";
 import { QuoteOptions } from "../pricing.js";
 import { Address } from "./geo.js";
 import { Contact, DropInput, Quote } from "./quotes.js";
@@ -215,8 +215,13 @@ export const ServiceBookingRequest = z.object({
     option to undefined for a caller that sends null.
   */
   options: QuoteOptions.nullish().transform((v) => v ?? QuoteOptions.parse({})),
-  /** Required when the service level needs a slot (Standard). */
-  slot: absentable(SlotRef),
+  /**
+   * Required when the service level needs a slot (Standard, Express).
+   *
+   * Takes `{ date, time }` as readily as `{ date, windowKey }` -- a checkout has the time its
+   * customer chose, not our window names.
+   */
+  slot: absentable(ServiceSlotRef),
   /**
    * A quote this caller already priced and showed its customer, to book at that price.
    *

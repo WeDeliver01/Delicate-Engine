@@ -6,9 +6,11 @@ import type {
   QuoteRequest,
   ServiceBookingRequest,
   ServiceBookingResponse,
+  SlotRef,
 } from "@delicate/contracts";
 import { AppError } from "../../common/errors.js";
 import { Clock } from "../../infra/clock.js";
+import { SchedulingService } from "../scheduling/scheduling.service.js";
 import { QuoteService } from "../catalog/quote.service.js";
 import { BookingService } from "./booking.service.js";
 
@@ -32,26 +34,34 @@ import { BookingService } from "./booking.service.js";
  * it belongs to the caller's order rather than to any quote, so it survives re-pricing, and
  * the unique index on (account, key) is what stops two attempts becoming two bookings.
  */
+/**
+ * A service booking whose slot has been resolved to a concrete window, which is the only
+ * shape the rest of the engine understands.
+ */
+type ResolvedBooking = Omit<ServiceBookingRequest, "slot"> & { slot?: SlotRef };
+
 @Injectable()
 export class ServiceBookingService {
   constructor(
     private readonly quotes: QuoteService,
     private readonly bookings: BookingService,
     private readonly clock: Clock,
+    private readonly scheduling: SchedulingService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ServiceBookingService.name);
   }
 
-  async book(accountId: string, input: ServiceBookingRequest): Promise<ServiceBookingResponse> {
+  async book(accountId: string, raw: ServiceBookingRequest): Promise<ServiceBookingResponse> {
     // Before anything else, and before a routing call we would pay for and discard: has this
     // order already been booked? A day of retries makes this the common path, not the edge.
-    const already = await this.bookings.findByIdempotencyKey(accountId, input.idempotencyKey);
+    const already = await this.bookings.findByIdempotencyKey(accountId, raw.idempotencyKey);
     if (already) {
       const quote = await this.quotes.get(already.quoteId, accountId);
       return { booking: already, quote, replayed: true };
     }
 
+    const input = await this.withResolvedSlot(raw);
     const request = toQuoteRequest(accountId, input);
     let quote = await this.priceable(accountId, request, input);
     this.assertWithinLimit(quote, input.maxTotalCents);
@@ -87,6 +97,26 @@ export class ServiceBookingService {
   }
 
   /**
+   * Turn `{ date, time }` into the `{ date, windowKey }` the rest of the engine speaks.
+   *
+   * A checkout knows the time its customer picked; it does not know our window names, and
+   * making it learn them means it breaks the day we add a window. Resolving here keeps that
+   * detail ours. A caller that did send a windowKey is left exactly as it is.
+   */
+  private async withResolvedSlot(input: ServiceBookingRequest): Promise<ResolvedBooking> {
+    const slot = input.slot;
+    if (!slot) return { ...input, slot: undefined };
+    if (slot.windowKey) return { ...input, slot: { date: slot.date, windowKey: slot.windowKey } };
+
+    const windowKey = await this.scheduling.windowForTime(input.serviceLevelCode, slot.time!);
+    this.logger.info(
+      { serviceLevelCode: input.serviceLevelCode, date: slot.date, time: slot.time, windowKey },
+      "resolved a requested time to a delivery window",
+    );
+    return { ...input, slot: { date: slot.date, windowKey } };
+  }
+
+  /**
    * The quote this booking will be made against.
    *
    * A caller that priced the job at checkout sends that quote, so the customer is charged what
@@ -101,7 +131,7 @@ export class ServiceBookingService {
   private async priceable(
     accountId: string,
     request: QuoteRequest,
-    input: ServiceBookingRequest,
+    input: ResolvedBooking,
   ): Promise<Quote> {
     if (!input.quoteId) return this.quotes.create(accountId, request);
 
@@ -116,13 +146,18 @@ export class ServiceBookingService {
     return this.quotes.create(accountId, request);
   }
 
-  private create(accountId: string, quote: Quote, input: ServiceBookingRequest): Promise<Booking> {
-    return this.bookings.create(accountId, {
-      quoteId: quote.id,
-      ...(input.slot ? { slot: input.slot } : {}),
-      idempotencyKey: input.idempotencyKey,
-      ...(input.customerReference ? { customerReference: input.customerReference } : {}),
-    });
+  private create(accountId: string, quote: Quote, input: ResolvedBooking): Promise<Booking> {
+    return this.bookings.create(
+      accountId,
+      {
+        quoteId: quote.id,
+        ...(input.slot ? { slot: input.slot } : {}),
+        idempotencyKey: input.idempotencyKey,
+        ...(input.customerReference ? { customerReference: input.customerReference } : {}),
+      },
+      // Already sold through somebody's checkout: a full window is ours to solve, not theirs.
+      { overrideCapacity: true },
+    );
   }
 
   /**
@@ -132,7 +167,7 @@ export class ServiceBookingService {
   private async resolveConsumed(
     accountId: string,
     quote: Quote,
-    input: ServiceBookingRequest,
+    input: ResolvedBooking,
   ): Promise<Booking | null> {
     return (
       (await this.bookings.findByIdempotencyKey(accountId, input.idempotencyKey)) ??
@@ -156,7 +191,7 @@ export class ServiceBookingService {
   }
 }
 
-function toQuoteRequest(accountId: string, input: ServiceBookingRequest): QuoteRequest {
+function toQuoteRequest(accountId: string, input: ResolvedBooking): QuoteRequest {
   return {
     serviceLevelCode: input.serviceLevelCode,
     collection: input.collection,

@@ -16,6 +16,7 @@ import { AuditService } from "../../infra/audit.service.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { AppError } from "../../common/errors.js";
 import { Clock } from "../../infra/clock.js";
+import { SystemEventsService } from "../system-events/system-events.service.js";
 
 export interface LocalNow {
   date: string; // YYYY-MM-DD
@@ -34,6 +35,7 @@ export class SchedulingService {
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
     private readonly clock: Clock,
+    private readonly events: SystemEventsService,
   ) {}
 
   async policy(): Promise<SlotPolicy> {
@@ -133,11 +135,59 @@ export class SchedulingService {
     return out;
   }
 
-  /** Consume one space. Throws 409 `slot_unavailable` with the reason. */
+  /**
+   * Which window a wall-clock time falls in, for a caller that has a time and not a key.
+   *
+   * Windows overlap by design -- Standard runs four-hour bands starting every two hours -- so
+   * a time usually sits in more than one. The earliest-starting match wins: a customer who
+   * asked for 11:30 is told "morning", not "afternoon", and the narrower promise is the one
+   * we are more likely to keep.
+   *
+   * Returns the key. Throws a 422 naming the windows this service level actually sells when
+   * the time falls outside all of them, rather than quietly shifting the delivery to a time
+   * nobody asked for.
+   */
+  async windowForTime(serviceLevel: string, time: string): Promise<string> {
+    const policy = await this.policy();
+    const minutes = clockToMinutes(time);
+    const sellable = policy.windows.filter(
+      (w) => w.serviceLevels.length === 0 || w.serviceLevels.includes(serviceLevel),
+    );
+    const match = sellable
+      .filter((w) => minutes >= w.startMinutes && minutes < w.endMinutes)
+      .sort((a, b) => a.startMinutes - b.startMinutes)[0];
+    if (match) return match.key;
+
+    throw AppError.validation([
+      {
+        path: ["slot", "time"],
+        message:
+          sellable.length === 0
+            ? `${serviceLevel} has no delivery windows`
+            : `${time} is outside every ${serviceLevel} window (${sellable
+                .map((w) => `${minutesToClock(w.startMinutes)}-${minutesToClock(w.endMinutes)}`)
+                .join(", ")})`,
+      },
+    ]);
+  }
+
+  /**
+   * Consume one space. Throws 409 `slot_unavailable` with the reason.
+   *
+   * `overrideCapacity` is for a booking that has already been sold: an order placed through
+   * somebody's checkout is paid for and promised before we ever hear about it, and refusing
+   * it leaves them to explain a cancellation we caused. It waives the three refusals that
+   * mean "we would rather not" -- `full`, `lead_time`, `cutoff_passed` -- and the slot is
+   * allowed past its capacity, which dispatch sees as an over-subscribed window rather than
+   * a silently dropped order.
+   *
+   * It deliberately does NOT waive `blackout` or `closed_manual`. Those mean somebody decided
+   * we are not operating that day, and no amount of overbooking puts a driver on the road.
+   */
   async reserve(
     tx: DbExecutor,
     ref: SlotRef,
-    opts: { immediate?: boolean; serviceLevel?: string } = {},
+    opts: { immediate?: boolean; serviceLevel?: string; overrideCapacity?: boolean } = {},
   ): Promise<void> {
     const [policy, now] = await Promise.all([this.policy(), this.localNow()]);
     const window = policy.windows.find((w) => w.key === ref.windowKey);
@@ -195,11 +245,29 @@ export class SchedulingService {
       now,
       immediate: opts.immediate === true,
     });
-    if (reason)
+    const waivable = reason === "full" || reason === "lead_time" || reason === "cutoff_passed";
+    if (reason && !(opts.overrideCapacity && waivable)) {
       throw new AppError("slot_unavailable", `slot is not bookable (${reason})`, 409, {
         reason,
         ...ref,
       });
+    }
+    if (reason && opts.overrideCapacity) {
+      // On the feed, not just the log: an over-subscribed window is dispatch's problem in
+      // the morning, and they need to see it coming rather than count vans on the day.
+      this.events.record({
+        level: "warning",
+        category: "slot.overbooked",
+        message: `${ref.date} ${ref.windowKey} taken past its limit (${reason}) for an already-sold booking`,
+        context: {
+          ...ref,
+          reason,
+          capacity: row.capacity,
+          bookedBefore: row.bookedCount,
+        },
+        dedupeKey: `slot-overbooked:${ref.date}:${ref.windowKey}`,
+      });
+    }
 
     const booked = row.bookedCount + 1;
     await tx
@@ -545,4 +613,14 @@ export function weekday(date: string): number {
 /** Minutes past midnight as a clock a customer can read. */
 function clock(minutes: number): string {
   return `${String(Math.floor(minutes / 60) % 24).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** `HH:MM` to minutes past midnight. The contract has already checked the shape. */
+function clockToMinutes(time: string): number {
+  const [h, m] = time.split(":");
+  return Number(h) * 60 + Number(m);
+}
+
+function minutesToClock(total: number): string {
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }

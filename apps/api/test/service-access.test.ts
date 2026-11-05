@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHmac } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { accounts, auditLog, bookings, quotes, users } from "@delicate/db";
+import { accounts, auditLog, blackoutDates, bookings, quotes, users } from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -227,6 +227,67 @@ describe("service access", () => {
         .set(asService(client.secret))
         .send({ ...bookingBody(), maxTotalCents: 1 });
       expect(res.status).toBe(409);
+    });
+
+    it("books a standard delivery from a date and a time, without knowing our window names", async () => {
+      // What a checkout actually has. Requiring `windowKey` makes every caller hard-code our
+      // window names and break when we add one.
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({ ...bookingBody(), slot: { date: SLOT.date, time: "09:30" } });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      // 09:30 sits in the morning band, not the late one: the earliest match wins.
+      expect((res.body as ServiceBookingResponse).booking.slotWindowKey).toBe("std_morning");
+    });
+
+    it("says which windows exist when the time falls outside all of them", async () => {
+      const client = await newClient();
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({ ...bookingBody(), slot: { date: SLOT.date, time: "23:30" } });
+      expect(res.status).toBe(422);
+      // Naming the windows is the point: the caller cannot guess, and silently moving the
+      // delivery to a time nobody asked for is worse than refusing.
+      expect(JSON.stringify(res.body.details)).toContain("outside every standard window");
+    });
+
+    it("takes an already-sold order into a window that is full", async () => {
+      // A checkout has taken the customer's money before we hear about it. Refusing leaves
+      // somebody else to explain a cancellation we caused.
+      const client = await newClient();
+      const capacity = 6;
+      for (let i = 0; i < capacity; i += 1) {
+        const fill = await h
+          .http()
+          .post("/v1/service/bookings")
+          .set(asService(client.secret))
+          .send({ ...bookingBody(), idempotencyKey: `FILL-${i}-0000`, slot: SLOT });
+        expect(fill.status, JSON.stringify(fill.body)).toBe(201);
+      }
+
+      const overflow = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({ ...bookingBody(), idempotencyKey: "OVERFLOW-0001", slot: SLOT });
+      expect(overflow.status, JSON.stringify(overflow.body)).toBe(201);
+    });
+
+    it("still refuses a day we are closed, which overbooking cannot solve", async () => {
+      const client = await newClient();
+      await h.db.db.insert(blackoutDates).values({ date: SLOT.date, reason: "public holiday" });
+      const res = await h
+        .http()
+        .post("/v1/service/bookings")
+        .set(asService(client.secret))
+        .send({ ...bookingBody(), idempotencyKey: "CLOSED-0001", slot: SLOT });
+      expect(res.status).toBe(409);
+      expect(res.body.details.reason).toBe("blackout");
     });
 
     it("rejects a wrong secret the same way as an unknown key", async () => {

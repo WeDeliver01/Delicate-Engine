@@ -214,6 +214,33 @@ export type AvailabilityQuery = z.infer<typeof AvailabilityQuery>;
 export const SlotRef = z.object({ date: IsoDate, windowKey: z.string().min(2).max(32) });
 export type SlotRef = z.infer<typeof SlotRef>;
 
+/** 24-hour clock time, `HH:MM`. */
+export const ClockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "expected HH:MM");
+export type ClockTime = z.infer<typeof ClockTime>;
+
+/**
+ * A slot as another system knows it.
+ *
+ * A checkout has a date and a time, because that is what it asked its customer for. It does
+ * not have our `windowKey`, and requiring one means every caller hard-codes our window names
+ * and breaks when we add a window. So `time` is accepted as an alternative and resolved to
+ * whichever window of the chosen service level contains it.
+ *
+ * `windowKey` still wins when both are given: a caller that knows exactly which window it
+ * wants is being specific on purpose.
+ */
+export const ServiceSlotRef = z
+  .object({
+    date: IsoDate,
+    windowKey: z.string().min(2).max(32).nullish(),
+    time: ClockTime.nullish(),
+  })
+  .refine((v) => Boolean(v.windowKey ?? v.time), {
+    message: "give a windowKey or a time",
+    path: ["time"],
+  });
+export type ServiceSlotRef = z.infer<typeof ServiceSlotRef>;
+
 export const SetSlotRequest = SlotRef.extend({
   closed: z.boolean().optional(),
   capacity: z.number().int().min(0).max(500).optional(),
