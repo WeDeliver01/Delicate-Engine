@@ -88,7 +88,18 @@ export const BookingConfirmed = defineEvent(
     slotDate: z.string().nullable(),
     slotWindowKey: z.string().nullable(),
     totalCents: Cents,
-    holdId: z.string().uuid(),
+    /*
+      Null when the booking costs nothing, because a hold for R0 is not a thing the wallet
+      will take and not a thing worth taking.
+
+      Widening an existing payload rather than adding a version, which the house rule says
+      not to do. The narrow reason: no handler reads this field -- holdId is looked up from
+      the booking row everywhere it matters -- so nothing can break on it, and the
+      alternative is a zero-priced booking that cannot emit its own event and therefore
+      cannot be made at all. `slotDate` and `slotWindowKey` beside it are already nullable
+      for the same kind of reason.
+    */
+    holdId: z.string().uuid().nullable(),
     shipments: z.array(z.object({ shipmentId: z.string().uuid(), waybill: z.string() })),
   }),
 );

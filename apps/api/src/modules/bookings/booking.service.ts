@@ -233,13 +233,25 @@ export class BookingService {
         }
 
         const reference = await this.nextReference(tx, "BK");
-        const hold = await this.wallet.placeHold(tx, {
-          allowOverdraw: overdraw,
-          accountId,
-          amountCents: quote.breakdown.totalCents,
-          reference,
-          idempotencyKey: `booking:${quote.id}`,
-        });
+        /*
+          No hold when the job costs nothing.
+
+          A rate card may price an internal account at R0, and the wallet refuses a hold of
+          zero -- rightly, there is nothing to reserve. Asking for one anyway is how a free
+          booking fails with "amountCents must be a positive integer", which names a field
+          the caller never sent and cannot act on. Capture and release both already skip a
+          booking with no hold.
+        */
+        const hold =
+          quote.breakdown.totalCents > 0
+            ? await this.wallet.placeHold(tx, {
+                allowOverdraw: overdraw,
+                accountId,
+                amountCents: quote.breakdown.totalCents,
+                reference,
+                idempotencyKey: `booking:${quote.id}`,
+              })
+            : null;
 
         const req = quote.request as QuoteRequest;
         const [booking] = await tx
@@ -259,7 +271,7 @@ export class BookingService {
             options: req.options,
             breakdown: quote.breakdown,
             totalCents: quote.breakdown.totalCents,
-            holdId: hold.id,
+            holdId: hold?.id ?? null,
             idempotencyKey,
             createdByUserId: requestContext.get()?.userId ?? null,
             createdByServiceClientId: requestContext.get()?.serviceClientId ?? null,
@@ -328,7 +340,7 @@ export class BookingService {
             slotDate: slot?.date ?? null,
             slotWindowKey: slot?.windowKey ?? null,
             totalCents: booking!.totalCents,
-            holdId: hold.id,
+            holdId: hold?.id ?? null,
             shipments: created,
           },
           { dedupeKey: `booking:${booking!.id}:confirmed` },
