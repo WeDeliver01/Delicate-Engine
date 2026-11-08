@@ -162,6 +162,127 @@ export class AddressBookService {
     });
   }
 
+  /**
+   * Remember where a booking collected from, so the next one fills itself in.
+   *
+   * The address book was empty for every account on the platform, because nothing ever wrote
+   * to it: it filled only if somebody went to the Addresses page and typed their own kitchen
+   * in, which nobody does. So the booking form kept asking for an address the customer had
+   * already given us, every single time.
+   *
+   * Matched on the formatted address rather than the label, because the label is ours to
+   * invent and the address is the thing that is actually the same. A repeat collection bumps
+   * `useCount`, which is what the booking form sorts by when an account has several.
+   *
+   * The first collection point an account has becomes its default. Later ones do not steal
+   * that: somebody who has chosen a default means it.
+   */
+  async remember(
+    accountId: string,
+    input: {
+      address: SavedAddress["address"];
+      contact: SavedAddress["contact"];
+      instructions?: string | null;
+    },
+  ): Promise<void> {
+    const formatted = input.address.formatted?.trim();
+    if (!formatted) return;
+
+    await this.dbs.transaction(async (tx) => {
+      const existing = await tx.query.savedAddresses.findFirst({
+        where: and(
+          eq(savedAddresses.accountId, accountId),
+          eq(savedAddresses.archived, false),
+          sql`${savedAddresses.address}->>'formatted' = ${formatted}`,
+        ),
+      });
+
+      if (existing) {
+        await tx
+          .update(savedAddresses)
+          .set({
+            useCount: sql`${savedAddresses.useCount} + 1`,
+            // It has now been collected from, whatever it was saved as.
+            isCollectionPoint: true,
+          })
+          .where(eq(savedAddresses.id, existing.id));
+        return;
+      }
+
+      const [{ count } = { count: 0 }] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(savedAddresses)
+        .where(
+          and(
+            eq(savedAddresses.accountId, accountId),
+            eq(savedAddresses.archived, false),
+            eq(savedAddresses.isCollectionPoint, true),
+          ),
+        );
+
+      await tx
+        .insert(savedAddresses)
+        .values({
+          accountId,
+          // Their own words for the place when we have them, the suburb when we do not, and
+          // never a clash: the label is unique per account and a collision would throw.
+          label: await this.freeLabel(tx, accountId, input.address.suburb ?? "Collection"),
+          address: input.address,
+          contact: input.contact,
+          instructions: input.instructions ?? null,
+          isCollectionPoint: true,
+          isDefault: count === 0,
+          useCount: 1,
+        })
+        .onConflictDoNothing();
+    });
+  }
+
+  /**
+   * Remember the collection end of a booking that has just been confirmed.
+   *
+   * Reads the booking rather than taking the address from the event, so the event payload
+   * does not have to grow a copy of something that already exists in a row. Runs
+   * at-least-once like every handler, and `remember` is written to survive that.
+   */
+  async rememberFromBooking(bookingId: string): Promise<void> {
+    const booking = await this.dbs.db.query.bookings.findFirst({
+      where: eq(bookings.id, bookingId),
+      columns: { accountId: true, collection: true },
+    });
+    if (!booking?.collection) return;
+
+    const collection = booking.collection as {
+      address: SavedAddress["address"];
+      contact: SavedAddress["contact"] | null;
+      instructions?: string | null;
+    };
+    // A collection with nobody at it is not worth saving: the form would fill in a blank
+    // name and phone and the customer would have to clear them.
+    if (!collection.address || !collection.contact?.name || !collection.contact?.phone) return;
+
+    await this.remember(booking.accountId, {
+      address: collection.address,
+      contact: collection.contact,
+      instructions: collection.instructions ?? null,
+    });
+  }
+
+  /** A label nobody has used yet: "Menlyn", then "Menlyn 2", and so on. */
+  private async freeLabel(tx: DbExecutor, accountId: string, base: string): Promise<string> {
+    const wanted = base.trim() || "Collection";
+    const taken = await tx
+      .select({ label: savedAddresses.label })
+      .from(savedAddresses)
+      .where(eq(savedAddresses.accountId, accountId));
+    const used = new Set(taken.map((t) => t.label));
+    if (!used.has(wanted)) return wanted;
+    for (let n = 2; n < 100; n += 1) {
+      if (!used.has(`${wanted} ${n}`)) return `${wanted} ${n}`;
+    }
+    return `${wanted} ${Date.now()}`;
+  }
+
   /** Archive rather than delete: old bookings must still be able to say where they went. */
   async archive(accountId: string, id: string): Promise<SavedAddress> {
     return this.dbs.transaction(async (tx) => {

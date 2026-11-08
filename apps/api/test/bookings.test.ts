@@ -6,6 +6,7 @@ import type {
   Booking,
   CatalogResponse,
   Quote,
+  SavedAddress,
   TrackingView,
   WalletSummary,
 } from "@delicate/contracts";
@@ -122,6 +123,54 @@ describe("bookings & shipments", () => {
     // quote is still bookable once funded
     const q2 = (await h.http().get(`/v1/account/quotes/${q.id}`).set(asOwner())).body as Quote;
     expect(q2.status).toBe("priced");
+  });
+
+  it("remembers where it collected from, so the next booking fills itself in", async () => {
+    /*
+      Every account on production had an empty address book, because nothing ever wrote to
+      one: it filled only if somebody went to the Addresses page and typed their own kitchen
+      in. So the booking form asked for an address the customer had already given us, on
+      every booking they ever made.
+    */
+    await wallet.adjust(accountId, 100_000, "test funds");
+    const q = await quote("standard", 1);
+    await h
+      .http()
+      .post("/v1/account/bookings")
+      .set(asOwner())
+      .send({ quoteId: q.id, slot: SLOT })
+      .expect(201);
+    await h.dispatcher.tick();
+
+    const saved = (await h.http().get("/v1/account/address-book").set(asOwner()))
+      .body as SavedAddress[];
+    const point = saved.find((a) => a.isCollectionPoint);
+    expect(point, JSON.stringify(saved)).toBeDefined();
+    expect(point!.address.formatted).toBe("Honey Bee, Menlyn");
+    expect(point!.contact.name).toBe("Baker");
+    // The first one an account has is its default, which is what the booking form reads.
+    expect(point!.isDefault).toBe(true);
+  });
+
+  it("counts a repeat collection rather than saving the same place twice", async () => {
+    await wallet.adjust(accountId, 300_000, "test funds");
+    for (const key of ["one", "two"]) {
+      const q = await quote("standard", 1);
+      await h
+        .http()
+        .post("/v1/account/bookings")
+        .set(asOwner())
+        .send({ quoteId: q.id, slot: SLOT, idempotencyKey: `repeat-${key}` })
+        .expect(201);
+      await h.dispatcher.tick();
+    }
+
+    const saved = (await h.http().get("/v1/account/address-book").set(asOwner()))
+      .body as SavedAddress[];
+    const points = saved.filter((a) => a.isCollectionPoint);
+    expect(points).toHaveLength(1);
+    // Twice used, so it sorts above anywhere they collect from less often.
+    expect(points[0]!.useCount).toBe(2);
   });
 
   it("confirms a funded booking atomically: hold, slot, waybills, events, quote consumed", async () => {
