@@ -15,6 +15,7 @@ import type {
   WalletSummary,
 } from "@delicate/contracts";
 import { useMe } from "@/components/use-me";
+import { InfoHint } from "@/components/ui";
 import { api, ApiRequestError } from "@/lib/api";
 import { rands } from "@/lib/money";
 import { AddressInput } from "@/components/booking/address-input";
@@ -293,6 +294,13 @@ function Book() {
    * long form that they have got something wrong and not a word about what. So the check
    * names each gap, the button stays live, and pressing it marks the fields and says so.
    */
+  /*
+    Somewhere to collect from, and somewhere to take it. The price panel waits for this rather
+    than offering a button that can only fail, and the rest of the form -- names, numbers,
+    options -- is caught by `problems` when it is pressed.
+  */
+  const addressesIn = Boolean(collection) && drops.every((d) => Boolean(d.address));
+
   const problems = useMemo(() => {
     const out: { field: string; message: string }[] = [];
     if (!collection) {
@@ -537,10 +545,7 @@ function Book() {
       {/* ── First, and across the top, because it sets the price of everything below ── */}
       <section className="panel p-5">
         <h2 className="section-title">Choose your speed</h2>
-        <p className="lede mt-1">
-          Every delivery we do is same-day. The only question is whether we fetch it today, or on a
-          day you set aside in advance.
-        </p>
+        <p className="lede mt-1">Every delivery is same-day.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {catalog.data?.serviceLevels.map((s) => {
             const chosen = serviceLevel === s.code;
@@ -560,14 +565,21 @@ function Book() {
                     clearQuote();
                   }}
                 />
-                <span className="block text-[15px] font-semibold">{s.name}</span>
-                <span className="mt-1 block text-sm leading-snug text-[#6B6661]">
-                  {s.description}
-                </span>
-                <span className="mt-2 block text-xs text-muted">
-                  {s.requiresSlot
-                    ? "You pick the day and the time slot."
-                    : "You pick a window today, and we are on our way."}
+                {/*
+                  The name and nothing else. Three cards of prose is a wall of text at the
+                  moment somebody is trying to pick one thing, and the difference between
+                  these is a sentence they only need once.
+                */}
+                <span className="flex items-center gap-1.5 text-[15px] font-semibold">
+                  {s.name}
+                  <InfoHint label={`What ${s.name} means`}>
+                    {s.description}
+                    <span className="mt-1.5 block">
+                      {s.requiresSlot
+                        ? "You pick the day and the time slot."
+                        : "You pick a window today, and we are on our way."}
+                    </span>
+                  </InfoHint>
                 </span>
               </label>
             );
@@ -933,13 +945,22 @@ function Book() {
             {!quote ? (
               <section className="panel p-5">
                 <h2 className="section-title">Your price</h2>
-                <p className="lede mt-1">
-                  Fill in the collection address and each drop, then we will price it on your rate
-                  card.
-                </p>
-                <button disabled={busy} onClick={getQuote} className="btn btn-primary mt-4 w-full">
-                  {busy ? "Pricing…" : "Get my price"}
-                </button>
+                {/*
+                  Nothing but the heading until there is somewhere to collect from and somewhere
+                  to take it. Before that the panel can only restate the form -- "fill in the
+                  addresses" next to the empty addresses -- and a button that cannot work yet.
+                */}
+                {!addressesIn ? (
+                  <p className="lede mt-1">Add the addresses and we will price it.</p>
+                ) : (
+                  <button
+                    disabled={busy}
+                    onClick={getQuote}
+                    className="btn btn-primary mt-4 w-full"
+                  >
+                    {busy ? "Pricing…" : "Price it"}
+                  </button>
+                )}
                 {checked && problems.length > 0 ? (
                   <div className="alert-error mt-3">
                     <p className="font-medium">
@@ -965,12 +986,7 @@ function Book() {
                       ))}
                     </ul>
                   </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted">
-                    Fields marked <span className="text-[#C13B73]">*</span> are needed before we can
-                    price it.
-                  </p>
-                )}
+                ) : null}
               </section>
             ) : (
               <>

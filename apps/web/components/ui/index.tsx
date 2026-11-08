@@ -249,3 +249,44 @@ export function CopyField({
     </div>
   );
 }
+
+/**
+ * A quiet "i" that explains something, for a label that should not need explaining.
+ *
+ * Hover alone would be the obvious build and the wrong one: there is no hover on a phone, and
+ * a tooltip a keyboard cannot reach is a tooltip some people simply never get. So this is a
+ * real button -- it opens on click, on Enter, and on focus, and on hover as well for a mouse.
+ *
+ * It stops the click from travelling, because these sit inside `<label>`s where a stray click
+ * would quietly change the thing the person was only asking about.
+ */
+export function InfoHint({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="group relative inline-flex align-middle">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="flex h-4 w-4 items-center justify-center rounded-full border border-line text-[10px] leading-none text-muted transition-colors hover:border-ink hover:text-ink"
+      >
+        i
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute left-1/2 top-6 z-20 w-56 -translate-x-1/2 rounded-xl border border-line bg-white p-3 text-left text-xs font-normal leading-snug text-[#6B6661] shadow-lg transition-opacity group-hover:opacity-100 ${
+          open ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        {children}
+      </span>
+    </span>
+  );
+}
