@@ -13,7 +13,14 @@ import {
   QuoteBreakdown,
   type QuoteRequest,
 } from "@delicate/contracts";
-import { quotes, waybillCounters, type DbExecutor } from "@delicate/db";
+import {
+  accounts,
+  bookings,
+  quotes,
+  shipments,
+  waybillCounters,
+  type DbExecutor,
+} from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { SettingsService } from "../../infra/settings.service.js";
 import { GEO_PROVIDER, type GeoProvider } from "../../infra/geo/geo.provider.js";
@@ -203,13 +210,40 @@ export class QuoteService {
         expiresAt: new Date(this.clock.now().getTime() + QUOTE_TTL_MS),
       })
       .returning();
-    return toQuote(row!);
+    return toQuote(row!, await this.paymentReferenceFor(row!));
   }
 
   async get(id: string, accountId: string, tx?: DbExecutor): Promise<Quote> {
     const row = await (tx ?? this.dbs.db).query.quotes.findFirst({ where: eq(quotes.id, id) });
     if (!row || row.accountId !== accountId) throw AppError.notFound("quote");
-    return toQuote(row);
+    return toQuote(row, await this.paymentReferenceFor(row, tx));
+  }
+
+  /**
+   * What to write on an EFT for this quote: the waybill(s) once booking gave it one, since
+   * that is what finance actually reconciles against; the account's own code before that, so
+   * there is still something to write down. Nothing for a quote with no account at all --
+   * the public estimator never saves one.
+   */
+  private async paymentReferenceFor(
+    row: typeof quotes.$inferSelect,
+    tx?: DbExecutor,
+  ): Promise<string | null> {
+    const db = tx ?? this.dbs.db;
+    if (!row.accountId) return null;
+    if (row.status === "booked") {
+      const waybills = await db
+        .select({ waybill: shipments.waybill })
+        .from(shipments)
+        .innerJoin(bookings, eq(bookings.id, shipments.bookingId))
+        .where(eq(bookings.quoteId, row.id));
+      if (waybills.length) return waybills.map((w) => w.waybill).join(", ");
+    }
+    const account = await db.query.accounts.findFirst({
+      where: eq(accounts.id, row.accountId),
+      columns: { code: true },
+    });
+    return account?.code ?? null;
   }
 
   /**
@@ -346,7 +380,10 @@ function billableFrom(legsKm: number[], dropCount: number): BillableDistance {
   return { overheadKm, dropKm };
 }
 
-export function toQuote(r: typeof quotes.$inferSelect): Quote {
+export function toQuote(
+  r: typeof quotes.$inferSelect,
+  paymentReference: string | null = null,
+): Quote {
   return {
     id: r.id,
     accountId: r.accountId,
@@ -361,5 +398,6 @@ export function toQuote(r: typeof quotes.$inferSelect): Quote {
     breakdown: toCustomerBreakdown(r.breakdown as Parameters<typeof toCustomerBreakdown>[0]),
     expiresAt: r.expiresAt.toISOString(),
     createdAt: r.createdAt.toISOString(),
+    paymentReference,
   };
 }

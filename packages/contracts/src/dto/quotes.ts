@@ -114,6 +114,12 @@ export const Quote = z.object({
   breakdown: CustomerQuoteBreakdown,
   expiresAt: z.string().datetime(),
   createdAt: z.string().datetime(),
+  /**
+   * What to write on an EFT so finance can match it: the account's own code before there is
+   * a shipment to point at, the waybill(s) once booking turned this quote into one. Null only
+   * when the quote has no account to carry a code -- the public estimator's anonymous quotes.
+   */
+  paymentReference: z.string().nullable().default(null),
 });
 export type Quote = z.infer<typeof Quote>;
 

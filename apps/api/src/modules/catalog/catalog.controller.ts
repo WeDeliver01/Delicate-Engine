@@ -32,13 +32,25 @@ export class PublicCatalogController {
   /**
    * Who the carrier is, for the letterheads on quotes and waybills. Public because it is the
    * same information already printed on every document we hand out, and the bank details are
-   * stripped: those belong on an invoice we issue, not on an open endpoint.
+   * stripped: those belong on a document the customer can pay against, not a general lookup.
    */
   @Public()
   @Get("company")
   async company() {
     const { bank: _bank, ...profile } = await this.settings.get("company.tax_profile");
     return profile;
+  }
+
+  /**
+   * The full profile, bank account included, for the one public document that is meant to be
+   * paid against: a downloadable estimate, before the customer has ever signed in. Separate
+   * from `company()` above so that endpoint's stripped shape is never put at risk by a change
+   * made here.
+   */
+  @Public()
+  @Get("quote-letterhead")
+  quoteLetterhead() {
+    return this.settings.get("company.tax_profile");
   }
 
   @Public()
@@ -67,7 +79,20 @@ export class PublicCatalogController {
 @Controller("v1/account/quotes")
 @RequireAccount()
 export class QuotesController {
-  constructor(private readonly quotesSvc: QuoteService) {}
+  constructor(
+    private readonly quotesSvc: QuoteService,
+    private readonly settings: SettingsService,
+  ) {}
+
+  /**
+   * The carrier's full profile, bank details included — for a quote document the customer
+   * downloads and may pay against. Signed-in only: the public `company` endpoint strips the
+   * bank precisely because it has no sign-in to gate who sees it.
+   */
+  @Get("company")
+  company() {
+    return this.settings.get("company.tax_profile");
+  }
 
   @Post()
   create(@ActiveAccountId() accountId: string, @Body(QuoteRequest) body: QuoteRequest) {

@@ -23,10 +23,11 @@ export default function QuoteDocumentPage({ params }: { params: Promise<{ id: st
     queryFn: () => api<Quote>(`/v1/account/quotes/${id}`),
   });
 
-  // The carrier identity lives in settings and the marketing site already reads it publicly.
+  // The account-scoped endpoint, not the public one: a quote the customer may pay against
+  // carries our bank details, and the public endpoint strips those for exactly that reason.
   const company = useQuery({
-    queryKey: ["company"],
-    queryFn: () => api<CompanyTaxProfile>("/v1/public/company", { account: null }),
+    queryKey: ["account", "company"],
+    queryFn: () => api<CompanyTaxProfile>("/v1/account/quotes/company"),
   });
 
   if (quote.isLoading) return <p className="lede">Loading…</p>;
@@ -44,7 +45,7 @@ export default function QuoteDocumentPage({ params }: { params: Promise<{ id: st
         </Link>
         <div className="flex gap-2">
           <button onClick={() => window.print()} className="btn btn-secondary btn-sm">
-            Print or save as PDF
+            Download as PDF
           </button>
           {!expired && (
             <Link href={`/portal/book?quote=${q.id}`} className="btn btn-primary btn-sm">
@@ -103,6 +104,23 @@ export default function QuoteDocumentPage({ params }: { params: Promise<{ id: st
               {q.request.drops.length} {q.request.drops.length === 1 ? "delivery" : "deliveries"}
             </p>
           </div>
+          {company.data?.bank.accountNumber && (
+            <div className="rounded-xl border border-line p-3 sm:col-span-2 print:rounded-none">
+              <p className="label-mini">Banking details</p>
+              <p className="mt-1 text-[#6B6661]">
+                {company.data.bank.bankName} · {company.data.bank.accountName}
+              </p>
+              <p className="figure text-[#6B6661]">
+                {company.data.bank.accountNumber} · branch {company.data.bank.branchCode}
+              </p>
+              {q.paymentReference && (
+                <p className="mt-1 text-[11px] text-muted">
+                  Use <span className="figure">{q.paymentReference}</span> as your payment
+                  reference.
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-5">

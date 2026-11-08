@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import type { Address, CatalogResponse, EstimateResponse } from "@delicate/contracts";
 import { api, ApiRequestError } from "@/lib/api";
 import { AddressInput } from "@/components/booking/address-input";
 import { Breakdown } from "@/components/booking/breakdown";
+import { PENDING_ESTIMATE_KEY, type PendingEstimate } from "./pending-estimate";
 
 export function Estimator() {
+  const router = useRouter();
   const catalog = useQuery({
     queryKey: ["catalog"],
     queryFn: () => api<CatalogResponse>("/v1/public/catalog", { account: null }),
@@ -175,9 +178,24 @@ export function Estimator() {
       {result && (
         <div className="rounded-xl bg-[#FAFAF9] p-5">
           <Breakdown b={result.breakdown} />
+          <button
+            type="button"
+            onClick={() =>
+              downloadEstimate(router, result, {
+                serviceLevel,
+                collection,
+                drops,
+                packageType,
+                catalog: catalog.data,
+              })
+            }
+            className="mt-5 block w-full rounded-2xl border border-[#0A0A0A] py-3 text-center text-[14px] font-medium text-[#0A0A0A] hover:bg-[#0A0A0A] hover:text-white transition-colors"
+          >
+            Download as PDF
+          </button>
           <Link
             href="/login?next=/portal/book"
-            className="mt-5 block rounded-2xl bg-[#E84A8A] py-3 text-center text-[14px] font-medium text-white hover:bg-[#0A0A0A] transition-colors"
+            className="mt-3 block rounded-2xl bg-[#E84A8A] py-3 text-center text-[14px] font-medium text-white hover:bg-[#0A0A0A] transition-colors"
           >
             Book this delivery
           </Link>
@@ -188,4 +206,34 @@ export function Estimator() {
       )}
     </form>
   );
+}
+
+/** Stashes the estimate for the print view and navigates there — see `pending-estimate.tsx`. */
+function downloadEstimate(
+  router: ReturnType<typeof useRouter>,
+  result: EstimateResponse,
+  input: {
+    serviceLevel: string;
+    collection: Address | null;
+    drops: (Address | null)[];
+    packageType: string;
+    catalog: CatalogResponse | undefined;
+  },
+) {
+  if (!input.collection || !input.drops.every(Boolean)) return;
+  const pending: PendingEstimate = {
+    serviceLevelCode: input.serviceLevel,
+    serviceLevelName:
+      input.catalog?.serviceLevels.find((s) => s.code === input.serviceLevel)?.name ??
+      input.serviceLevel,
+    collection: input.collection,
+    drops: input.drops.filter((d): d is Address => d !== null),
+    packageTypeName:
+      input.catalog?.packageTypes.find((p) => p.code === input.packageType)?.name ??
+      input.packageType,
+    breakdown: result.breakdown,
+    createdAt: new Date().toISOString(),
+  };
+  sessionStorage.setItem(PENDING_ESTIMATE_KEY, JSON.stringify(pending));
+  router.push("/quote/download");
 }
