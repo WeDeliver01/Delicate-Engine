@@ -495,7 +495,17 @@ export function priceQuote(input: PricingInput): QuoteBreakdown {
   if (!input.rateCard.exemptFromCostFloor && subtotalCents < floor) {
     lines.push({
       code: "cost_floor_adjustment",
-      label: "Cost floor adjustment",
+      /*
+        "Distance adjustment", not "Cost floor adjustment", because a customer reads this.
+
+        A cost floor is a margin concept and belongs in our books, not on somebody's quote --
+        it says nothing they can act on and invites the obvious question about what our costs
+        are. What they can understand is the reason it is there: this trip is long enough
+        that the standard rate does not cover driving it. The machine code is unchanged, so
+        anything keyed on `cost_floor_adjustment` still works and internal reporting still
+        calls it what it is.
+      */
+      label: "Distance adjustment",
       amountCents: floor - subtotalCents,
     });
     subtotalCents = floor;
