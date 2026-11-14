@@ -154,7 +154,17 @@ export class TripService {
             eq(tripStops.shipmentId, s.id),
           ),
         });
-        if (already) continue;
+        if (already) {
+          // A drop that was skipped (the attempt failed) and is now being sent out again on
+          // the same trip: reopen the stop rather than leave the trip believing it is closed.
+          if (already.status === "skipped") {
+            await tx
+              .update(tripStops)
+              .set({ status: "pending", completedAt: null, arrivedAt: null })
+              .where(eq(tripStops.id, already.id));
+          }
+          continue;
+        }
 
         // One shipment, one trip: take it off whichever other trip holds it first.
         await this.detach(tx, s.id, `moved to ${trip.reference}`);
@@ -630,7 +640,10 @@ export class TripService {
       if (!stop) throw AppError.notFound("trip stop");
       const trip = await this.lockTrip(tx, stop.tripId);
       if (trip.driverId !== driver.id) throw AppError.forbidden("this stop is not yours");
-      if (trip.status !== "started")
+      // Arriving at the first stop is how most days begin. A released trip the driver has not
+      // pressed Start on is started here, by the fact of them being at the stop.
+      await this.startIfReleased(tx, trip);
+      if (trip.status !== "started" && trip.status !== "released")
         throw AppError.conflict("trip_not_started", `trip is ${trip.status}`);
       if (stop.status === "arrived")
         return (await this.hydrateStops(tx, stop.tripId, [stopId]))[0]!;
@@ -718,11 +731,14 @@ export class TripService {
   async closeStopsForShipment(shipmentId: string, outcome: "done" | "skipped"): Promise<void> {
     await this.dbs.transaction(async (tx) => {
       const rows = await tx
-        .select()
+        .select({ stop: tripStops, trip: trips })
         .from(tripStops)
+        .innerJoin(trips, eq(trips.id, tripStops.tripId))
         .where(and(eq(tripStops.kind, "drop"), eq(tripStops.shipmentId, shipmentId)));
-      for (const stop of rows) {
+      for (const { stop, trip } of rows) {
         if (stop.status === "done" || stop.status === "skipped") continue;
+        // The driver worked a stop on a trip they never pressed Start on: the work is the start.
+        if (outcome === "done") await this.startIfReleased(tx, trip);
         await tx
           .update(tripStops)
           .set({ status: outcome, completedAt: new Date() })
@@ -742,12 +758,137 @@ export class TripService {
       for (const { stop, trip } of rows) {
         if (trip.driverId !== driverId) continue;
         if (stop.status === "done" || stop.status === "skipped") continue;
+        await this.startIfReleased(tx, trip);
         await tx
           .update(tripStops)
           .set({ status: "done", completedAt: new Date() })
           .where(eq(tripStops.id, stop.id));
       }
     });
+  }
+
+  /**
+   * Put an assigned shipment on its driver's day without anyone building a trip by hand.
+   *
+   * Driven by `shipment.assigned`. The day is the shipment's slot date when that is still
+   * ahead, otherwise today: an overdue parcel is driven today, not on the day it was meant for.
+   * If the driver has no trip for that day one is created and released at once — the assignment
+   * is already dispatch's instruction to deliver, and a trip is only the container the board and
+   * the live map read. A trip a dispatcher is still drafting (`planned`) takes the stop and
+   * stays a draft; a trip already completed is reopened, because a stop added after the last
+   * drop is a day that is not over.
+   *
+   * Returns the trip the shipment is on, or null when it was already on one of this driver's
+   * live trips — whatever day the dispatcher chose for it stands.
+   */
+  async placeOnDay(shipmentId: string, driverId: string): Promise<string | null> {
+    const s = await this.dbs.db.query.shipments.findFirst({ where: eq(shipments.id, shipmentId) });
+    if (!s || !PLACEABLE.includes(s.status as (typeof PLACEABLE)[number])) return null;
+
+    const held = await this.dbs.db
+      .select({ tripId: tripStops.tripId, status: tripStops.status })
+      .from(tripStops)
+      .innerJoin(trips, eq(trips.id, tripStops.tripId))
+      .where(
+        and(
+          eq(tripStops.kind, "drop"),
+          eq(tripStops.shipmentId, shipmentId),
+          eq(trips.driverId, driverId),
+          inArray(trips.status, ["planned", "released", "started"]),
+        ),
+      );
+    // Open on one of their trips already. A skipped stop (a failed attempt going out again) is
+    // not "held": it falls through to `addStops`, which reopens it.
+    if (held.some((h) => h.status === "pending" || h.status === "arrived")) return null;
+    const retrying = held.find((h) => h.status === "skipped")?.tripId ?? null;
+
+    const today = await this.fleet.localDate();
+    const date = s.slotDate && s.slotDate > today ? s.slotDate : today;
+
+    let tripId = retrying;
+    let created = false;
+    if (!tripId) {
+      const existing = await this.dbs.db.query.trips.findFirst({
+        where: and(
+          eq(trips.driverId, driverId),
+          eq(trips.date, date),
+          sql`${trips.status} <> 'abandoned'`,
+        ),
+      });
+      if (existing) {
+        tripId = existing.id;
+        if (existing.status === "completed") await this.reopen(existing.id);
+      } else {
+        try {
+          tripId = (await this.create({ driverId, date, vehicleId: null })).id;
+          created = true;
+        } catch (err) {
+          // Two assignments for the same driver racing on first contact: the loser takes the
+          // winner's trip, which `create` names in the conflict it throws.
+          const conflict = err as AppError & { details?: { tripId?: string } };
+          if (conflict?.code !== "trip_exists" || !conflict.details?.tripId) throw err;
+          tripId = conflict.details.tripId;
+        }
+      }
+    }
+
+    await this.addStops(tripId, { shipmentIds: [shipmentId], resequence: true });
+    if (created) await this.release(tripId);
+    return tripId;
+  }
+
+  /** The assignment ended: take the shipment off whatever live trip of that driver's held it. */
+  async removeShipment(shipmentId: string, reason: string): Promise<void> {
+    await this.dbs.transaction((tx) => this.detach(tx, shipmentId, reason));
+  }
+
+  /** A completed trip given another stop is a day that is not over after all. */
+  private async reopen(tripId: string): Promise<void> {
+    await this.dbs.transaction(async (tx) => {
+      const trip = await this.lockTrip(tx, tripId);
+      if (trip.status !== "completed") return;
+      await tx
+        .update(trips)
+        .set({ status: "started", completedAt: null })
+        .where(eq(trips.id, tripId));
+      await this.audit.record(tx, {
+        action: "trip.reopen",
+        entityType: "trip",
+        entityId: tripId,
+        before: { status: "completed" },
+        after: { status: "started", reason: "a stop was added after completion" },
+      });
+    });
+  }
+
+  /**
+   * Start a released trip because the driver is plainly working it.
+   *
+   * The Start button remains, but a driver who arrives at a stop, collects, or delivers has
+   * started whether or not they pressed it, and a board that shows them as "ready" while they
+   * are three drops in is wrong. Same event as the button, same key, so pressing it afterwards
+   * is a no-op rather than a second start.
+   */
+  private async startIfReleased(tx: DbExecutor, trip: typeof trips.$inferSelect): Promise<void> {
+    if (trip.status !== "released") return;
+    const shift = await this.fleet.shiftFor(trip.driverId, trip.date, tx);
+    await tx
+      .update(trips)
+      .set({ status: "started", startedAt: new Date(), shiftId: shift?.id ?? null })
+      .where(and(eq(trips.id, trip.id), eq(trips.status, "released")));
+    trip.status = "started";
+    await this.outbox.emit(
+      tx,
+      "trip.started",
+      {
+        tripId: trip.id,
+        reference: trip.reference,
+        driverId: trip.driverId,
+        shiftId: shift?.id ?? null,
+        date: trip.date,
+      },
+      { dedupeKey: `trip:${trip.id}:started` },
+    );
   }
 
   // ── reads ───────────────────────────────────────────────────────────────────

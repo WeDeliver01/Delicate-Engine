@@ -146,6 +146,18 @@ export class AdminShipmentsController {
     return this.tracking.forShipment(p.id, null);
   }
 
+  /** The full history, notes included: these are written for the office, and this is it. */
+  @Get("shipments/:id/timeline")
+  timeline(@Params(IdParam) p: { id: string }) {
+    return this.tracking.timeline(p.id, null);
+  }
+
+  /** Everything a customer has asked to change on one parcel, decided or not. */
+  @Get("shipments/:id/changes")
+  changesFor(@Params(IdParam) p: { id: string }) {
+    return this.changes.list({ shipmentId: p.id });
+  }
+
   @Get("shipment-counts")
   counts(@Query(ShipmentFilterQuery) q: ShipmentFilterQuery) {
     return this.query.statusCounts(null, q);

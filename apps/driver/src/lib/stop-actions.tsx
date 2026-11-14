@@ -1,9 +1,67 @@
 import { useState } from "react";
 import { Alert, Linking, Platform, Pressable, Text, View } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import type { DriverNotifyResult, DriverStop, EtaChoice } from "@delicate/contracts";
 import { api, ApiRequestError } from "./api";
 import { mailtoUrl, navigationUrl, mapsWebUrl, smsUrl, telUrl } from "./handoff";
+import { currentPosition } from "./location";
+import { submit } from "./outbox";
+import { attemptId } from "./queue";
 import { Button, C, Card, s } from "./ui";
+
+/**
+ * "I'm here."
+ *
+ * Arrival is its own fact, separate from collecting or delivering: it is what the dispatcher's
+ * ETA is measured against, and on a drop it is what tells the recipient the van is outside.
+ * Only offered when the stop sits on a trip the engine knows about, which — now that every
+ * assignment lands on one — is nearly always.
+ */
+export function ArriveButton({ stop }: { stop: DriverStop }) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  if (!stop.tripStopId || stop.done) return null;
+  if (stop.tripStopStatus === "arrived") {
+    return (
+      <Card>
+        <Text style={s.body}>You are marked as here. Dispatch and the recipient can see it.</Text>
+      </Card>
+    );
+  }
+  if (stop.tripStopStatus !== "pending") return null;
+
+  async function arrive() {
+    setBusy(true);
+    try {
+      await submit({
+        id: attemptId(Date.now()),
+        kind: "arrive",
+        shipmentId: stop.shipmentId,
+        bookingId: stop.bookingId,
+        path: "/v1/driver/trip/arrive",
+        body: { stopId: stop.tripStopId, location: await currentPosition() },
+        label: `Arrived at ${stop.address.suburb ?? stop.address.formatted}`,
+      });
+      await qc.invalidateQueries({ queryKey: ["day"] });
+    } catch (err) {
+      Alert.alert(
+        "Not recorded",
+        err instanceof ApiRequestError ? err.message : "Could not reach the engine.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button
+      label={stop.kind === "drop" ? "I've arrived — tell the recipient" : "I've arrived"}
+      variant="secondary"
+      onPress={() => void arrive()}
+      busy={busy}
+    />
+  );
+}
 
 /** Open navigation, falling back to the browser where no maps app answers the scheme. */
 export async function navigateTo(stop: DriverStop): Promise<void> {

@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import {
   SHIPMENT_TRANSITIONS,
   type DeliverRequest,
@@ -15,9 +15,11 @@ import {
 } from "@delicate/contracts";
 import {
   dayProgress,
+  isUpcoming,
   optimiseRoute,
   statusesThatCanBecome,
   stopIsDone,
+  DRIVER_VISIBLE_STATUSES,
   IN_DRIVER_HANDS,
   SHIPMENT_STATUS_LABELS,
   DRIVER_SETTABLE_STATUSES,
@@ -74,10 +76,23 @@ export class DispatchService {
     private readonly plans: TripPlanRegistry,
   ) {}
 
-  /** Today's work for a driver: one collection stop per booking, then one drop per shipment. */
+  /**
+   * The driver's work: one collection stop per booking, then one drop per shipment.
+   *
+   * Two lists come back. `stops` is today — due today, overdue, or on demand — and is what the
+   * progress counts and the route ordering describe. `upcoming` is everything assigned for a
+   * later date within the next month, so a booking for Friday is visible on Monday without
+   * sitting in Monday's list looking like the next place to drive to.
+   *
+   * Which statuses belong here is `DRIVER_VISIBLE_STATUSES`, not a list written out in this
+   * query. The list that was written out here stopped at `in_transit`, so a parcel disappeared
+   * from the driver's screen at the exact moment they marked it out for delivery — the one
+   * status that is supposed to start the recipient's live map took the job off the driver's.
+   */
   async day(driver: Driver): Promise<DriverDay> {
     const date = await this.fleet.localDate();
     const shift = await this.fleet.shiftFor(driver.id, date);
+    const horizon = addDays(date, UPCOMING_DAYS);
     const rows = await this.dbs.db
       .select({ s: shipments, b: bookings })
       .from(assignments)
@@ -87,14 +102,20 @@ export class DispatchService {
         and(
           eq(assignments.driverId, driver.id),
           eq(assignments.active, true),
-          // `delivered` is here so finished work stays on the day. Without it the list emptied
-          // as the driver worked and the screen fell back to "no stops yet", which reads as
-          // "nothing assigned" to someone who has just delivered all morning. `cancelled` is
-          // not here: a withdrawn shipment is not work the driver should still see.
-          inArray(shipments.status, ["assigned", "collected", "in_transit", "failed", "delivered"]),
+          inArray(shipments.status, [...DRIVER_VISIBLE_STATUSES]),
+          // Overdue work stays (a date in the past is late, not gone); far-future work waits.
+          or(isNull(shipments.slotDate), lte(shipments.slotDate, horizon)),
         ),
       )
       .orderBy(asc(bookings.slotDate), asc(bookings.createdAt), asc(shipments.sequence));
+
+    // The trip a dispatcher released (or the engine placed) for today, through the registry
+    // rather than the operations tables: operations owns trips, dispatch only reads the plan.
+    // Its stops are what the app reports arrivals against.
+    const plan = await this.plans.forDriver(driver.id, date);
+    const tripStopBy = new Map(
+      (plan?.stops ?? []).map((st) => [stopKey(st), { id: st.id, status: st.status }] as const),
+    );
 
     const byBooking = new Map<
       string,
@@ -165,6 +186,7 @@ export class DispatchService {
         waybill: s.waybill,
         status: s.status,
       }));
+      const collectionStop = tripStopBy.get(`collect:${b.id}`);
       stops.push({
         kind: "collection",
         bookingId: b.id,
@@ -173,6 +195,8 @@ export class DispatchService {
         waybill: null,
         status: null,
         done: false, // replaced below, once the stop is built and can be judged
+        tripStopId: collectionStop?.id ?? null,
+        tripStopStatus: collectionStop?.status ?? null,
         address: collection.address,
         contact: collection.contact,
         instructions: collection.instructions,
@@ -195,6 +219,7 @@ export class DispatchService {
         ),
       });
       for (const s of ships) {
+        const dropStop = tripStopBy.get(`drop:${s.id}`);
         stops.push({
           kind: "drop",
           bookingId: b.id,
@@ -203,6 +228,8 @@ export class DispatchService {
           waybill: s.waybill,
           status: s.status,
           done: false, // replaced below
+          tripStopId: dropStop?.id ?? null,
+          tripStopStatus: dropStop?.status ?? null,
           address: s.deliveryAddress as DriverStop["address"],
           contact: s.recipient as DriverStop["contact"],
           instructions: s.instructions,
@@ -220,12 +247,16 @@ export class DispatchService {
     // made, which has nothing to do with geography, and we order them ourselves.
     for (const stop of stops) stop.done = stopIsDone(stop);
 
+    // Later days are held back under their own heading, in the order they were booked. They
+    // are not sequenced: there is no route to drive yet, and nothing about them is today's.
+    const today = stops.filter((x) => !isUpcoming(x, date));
+    const upcoming = stops.filter((x) => isUpcoming(x, date) && !x.done);
+
     // Only the outstanding stops are sequenced. Ordering the finished ones too would measure a
     // journey that is already driven and quietly inflate `savedKm` — the figure is supposed to
     // describe the run still ahead. Worked stops are appended after, which is also the order a
     // driver wants to read: what is left first, what is behind them underneath.
-    const [todo, worked] = [stops.filter((x) => !x.done), stops.filter((x) => x.done)];
-    const plan = await this.plans.forDriver(driver.id, date);
+    const [todo, worked] = [today.filter((x) => !x.done), today.filter((x) => x.done)];
     const ordered = plan ? orderByPlan(todo, plan) : await this.orderStops(todo);
     const all = [...ordered.stops, ...worked];
 
@@ -235,6 +266,8 @@ export class DispatchService {
         ? { id: shift.id, status: shift.status, startedAt: shift.startedAt?.toISOString() ?? null }
         : null,
       stops: all,
+      upcoming,
+      trip: plan ? { id: plan.id, reference: plan.reference, status: plan.status } : null,
       route: ordered.route,
       progress: dayProgress(all),
     };
@@ -303,8 +336,25 @@ export class DispatchService {
           ),
         )
         .for("update", { of: shipments });
-      if (rows.length === 0)
+      if (rows.length === 0) {
+        // Nothing waiting — but was it collected already? A driver whose first tap landed and
+        // whose phone never heard the answer taps again. They should get the same parcels back,
+        // not a refusal that reads as though the collection never happened.
+        const already = await tx
+          .select({ s: shipments })
+          .from(assignments)
+          .innerJoin(shipments, eq(shipments.id, assignments.shipmentId))
+          .where(
+            and(
+              eq(assignments.driverId, driver.id),
+              eq(assignments.active, true),
+              eq(shipments.bookingId, bookingId),
+              inArray(shipments.status, [...IN_DRIVER_HANDS, "delivered", "failed", "on_hold"]),
+            ),
+          );
+        if (already.length > 0) return already.map((r) => toShipment(r.s));
         throw AppError.conflict("nothing_to_collect", "no assigned shipments for this booking");
+      }
       const ids: string[] = [];
       for (const { s } of rows) {
         await this.transition(tx, s, "collected", note ?? "Collected", { location });
@@ -325,7 +375,10 @@ export class DispatchService {
     input: DeliverRequest,
   ): Promise<{ shipment: Shipment; pod: ProofOfDelivery }> {
     const shift = await this.rosteredShift(driver);
-    if (!input.signatureDataUrl && !input.photoDataUrl) {
+    // Every photograph, the first one first, with an exact repeat dropped: an app that retried
+    // and resent the same frame under both fields should not store it twice.
+    const photoUrls = [...new Set([input.photoDataUrl, ...input.photoDataUrls].filter(isString))];
+    if (!input.signatureDataUrl && photoUrls.length === 0) {
       throw AppError.validation([
         {
           path: ["photoDataUrl"],
@@ -334,13 +387,30 @@ export class DispatchService {
       ]);
     }
     return this.dbs.transaction(async (tx) => {
+      // Already delivered by this driver: the phone is retrying a request that landed. Answer
+      // with the proof on file rather than refusing the transition, so a driver in a basement
+      // on one bar of signal can press the button again without being told the delivery they
+      // just made is impossible.
+      const [current] = await tx
+        .select()
+        .from(shipments)
+        .where(eq(shipments.id, input.shipmentId))
+        .for("update");
+      if (current?.status === "delivered") {
+        const existing = await tx.query.proofsOfDelivery.findFirst({
+          where: eq(proofsOfDelivery.shipmentId, current.id),
+        });
+        if (existing?.driverId === driver.id)
+          return { shipment: toShipment(current), pod: toPod(existing) };
+      }
+
       const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [...IN_DRIVER_HANDS]);
       const signatureFileId = input.signatureDataUrl
         ? await this.fleet.storeDataUrl(tx, "pod_signature", input.signatureDataUrl)
         : null;
-      const photoFileId = input.photoDataUrl
-        ? await this.fleet.storeDataUrl(tx, "pod_photo", input.photoDataUrl)
-        : null;
+      const photoFileIds: string[] = [];
+      for (const url of photoUrls)
+        photoFileIds.push(await this.fleet.storeDataUrl(tx, "pod_photo", url));
       const [pod] = await tx
         .insert(proofsOfDelivery)
         .values({
@@ -348,7 +418,8 @@ export class DispatchService {
           driverId: driver.id,
           receivedBy: input.receivedBy,
           signatureFileId,
-          photoFileId,
+          photoFileId: photoFileIds[0] ?? null,
+          photoFileIds,
           location: input.location,
           note: input.note,
         })
@@ -392,6 +463,17 @@ export class DispatchService {
   async fail(driver: Driver, input: FailRequest): Promise<Shipment> {
     const shift = await this.rosteredShift(driver);
     return this.dbs.transaction(async (tx) => {
+      // Already recorded as failed, by this driver: a retry of a request that landed.
+      const [current] = await tx
+        .select()
+        .from(shipments)
+        .where(eq(shipments.id, input.shipmentId))
+        .for("update");
+      if (current?.status === "failed") {
+        const a = await this.assignment.activeAssignment(current.id, tx);
+        if (a?.driverId === driver.id) return toShipment(current);
+      }
+
       const { s, a } = await this.ownedShipment(tx, driver, input.shipmentId, [...IN_DRIVER_HANDS]);
       const photoFileId = input.photoDataUrl
         ? await this.fleet.storeDataUrl(tx, "fail_photo", input.photoDataUrl)
@@ -485,7 +567,11 @@ export class DispatchService {
     const row = await this.dbs.db.query.proofsOfDelivery.findFirst({
       where: eq(proofsOfDelivery.shipmentId, shipmentId),
     });
-    return { signatureFileId: row?.signatureFileId ?? null, photoFileId: row?.photoFileId ?? null };
+    return {
+      signatureFileId: row?.signatureFileId ?? null,
+      photoFileId: row?.photoFileId ?? null,
+      photoFileIds: podPhotoIds(row ?? null),
+    };
   }
 
   /**
@@ -512,6 +598,17 @@ export class DispatchService {
     }
     const shift = await this.rosteredShift(driver);
     return this.dbs.transaction(async (tx) => {
+      // Already there: the phone retried a request that landed. Same answer, no second event.
+      const [current] = await tx
+        .select()
+        .from(shipments)
+        .where(eq(shipments.id, input.shipmentId))
+        .for("update");
+      if (current?.status === input.status) {
+        const a = await this.assignment.activeAssignment(current.id, tx);
+        if (a?.driverId === driver.id) return toShipment(current);
+      }
+
       const { s } = await this.ownedShipment(
         tx,
         driver,
@@ -669,15 +766,39 @@ function orderByPlan(
 }
 
 export function toPod(r: typeof proofsOfDelivery.$inferSelect): ProofOfDelivery {
+  const photos = podPhotoIds(r);
   return {
     shipmentId: r.shipmentId,
     receivedBy: r.receivedBy,
     hasSignature: !!r.signatureFileId,
-    hasPhoto: !!r.photoFileId,
+    hasPhoto: photos.length > 0,
+    photoCount: photos.length,
     location: r.location as ProofOfDelivery["location"],
     note: r.note,
     capturedAt: r.capturedAt.toISOString(),
   };
+}
+
+/** Every photo on a proof: the list when there is one, else the single id older rows carry. */
+function podPhotoIds(r: typeof proofsOfDelivery.$inferSelect | null): string[] {
+  if (!r) return [];
+  const list = Array.isArray(r.photoFileIds) ? (r.photoFileIds as unknown[]) : null;
+  if (list && list.length > 0) return list.filter(isString);
+  return r.photoFileId ? [r.photoFileId] : [];
+}
+
+function isString(x: unknown): x is string {
+  return typeof x === "string" && x.length > 0;
+}
+
+/** How far ahead the driver's screen looks. A month covers every booking anyone places early. */
+const UPCOMING_DAYS = 30;
+
+/** `YYYY-MM-DD` plus a number of days, in the same form. Dates only, no clock, no zone. */
+function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 /** The change kinds in words a driver reads at a glance, standing next to their van. */

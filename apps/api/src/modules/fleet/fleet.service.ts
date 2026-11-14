@@ -1,13 +1,15 @@
 import { Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import type {
   ClockShiftRequest,
   Driver,
+  DriverDevice,
   DriverPosition,
   FuelLog,
   FuelLogRequest,
   LatLng,
   LocationPing,
+  RegisterDeviceRequest,
   Shift,
   OdometerReadingRequest,
   UpsertDriverRequest,
@@ -15,6 +17,7 @@ import type {
   Vehicle,
 } from "@delicate/contracts";
 import {
+  driverDevices,
   driverLocationHistory,
   driverPositions,
   drivers,
@@ -221,20 +224,38 @@ export class FleetService {
    * who clocks off after the morning run and back on for the afternoon has one shift with a gap
    * in it rather than a start time that walks forward.
    *
-   * Returns null when dispatch has not rostered them for today. Opening a shift nobody
-   * scheduled would put a driver on the board that dispatch never put there, and the app says
-   * so rather than pretending the press worked.
+   * A driver nobody rostered can still clock on, and doing so rosters them. This used to answer
+   * null — the reasoning being that a shift dispatch never scheduled put a driver on the board
+   * behind dispatch's back. In practice the engine was already handing that driver work: the
+   * main driver is auto-assigned every booking whether or not a roster row exists, and a driver
+   * holding assigned parcels who could not clock on was a driver whose van never appeared on
+   * the live map and whose recipients never saw it coming. Going online is the driver's own
+   * fact, the way it is in every ride-hailing app, and it is audited as theirs.
    */
-  async openShift(driver: Driver, input: ClockShiftRequest): Promise<Shift | null> {
+  async openShift(driver: Driver, input: ClockShiftRequest): Promise<Shift> {
     const date = await this.localDate();
     return this.dbs.transaction(async (tx) => {
-      const [row] = await tx
+      let [row] = await tx
         .select()
         .from(shifts)
         .where(and(eq(shifts.driverId, driver.id), eq(shifts.date, date)))
         .for("update");
-      if (!row) return null;
-      if (row.status === "open") return toShift(row);
+      if (!row) {
+        [row] = await tx
+          .insert(shifts)
+          .values({ driverId: driver.id, date, vehicleId: driver.vehicleId })
+          // Two clock-on presses racing on first contact: the second finds the first's row.
+          .onConflictDoUpdate({ target: [shifts.driverId, shifts.date], set: { date } })
+          .returning();
+        await this.audit.record(tx, {
+          action: "shift.self_roster",
+          entityType: "shift",
+          entityId: row!.id,
+          after: { driverId: driver.id, date, by: "driver" },
+        });
+      }
+      if (row!.status === "open") return toShift(row!);
+      row = row!;
 
       const reopened = row.startedAt != null;
       const [updated] = await tx
@@ -267,6 +288,78 @@ export class FleetService {
       );
       return toShift(updated!);
     });
+  }
+
+  // ── devices (push) ──────────────────────────────────────────────────────────
+
+  /**
+   * Remember the phone this driver is carrying.
+   *
+   * Keyed on the token: a phone that changes hands moves to its new driver, and the same phone
+   * registering again on every launch only refreshes `lastSeenAt`. Re-registering also clears a
+   * disabled flag, because a token Expo once called dead that is now being presented by a live
+   * app is plainly alive again.
+   */
+  async registerDevice(driver: Driver, input: RegisterDeviceRequest): Promise<DriverDevice> {
+    const [row] = await this.dbs.db
+      .insert(driverDevices)
+      .values({
+        driverId: driver.id,
+        expoPushToken: input.expoPushToken,
+        platform: input.platform,
+        appVersion: input.appVersion,
+      })
+      .onConflictDoUpdate({
+        target: driverDevices.expoPushToken,
+        set: {
+          driverId: driver.id,
+          platform: input.platform,
+          appVersion: input.appVersion,
+          lastSeenAt: this.clock.now(),
+          disabledAt: null,
+          disabledReason: null,
+          updatedAt: this.clock.now(),
+        },
+      })
+      .returning();
+    return toDevice(row!);
+  }
+
+  /** The driver signed out on this phone: stop sending it their jobs. */
+  async forgetDevice(driver: Driver, expoPushToken: string): Promise<void> {
+    await this.dbs.db
+      .delete(driverDevices)
+      .where(
+        and(eq(driverDevices.driverId, driver.id), eq(driverDevices.expoPushToken, expoPushToken)),
+      );
+  }
+
+  /** Live tokens for a driver, oldest first. */
+  async deviceTokens(driverId: string): Promise<string[]> {
+    const rows = await this.dbs.db
+      .select({ token: driverDevices.expoPushToken })
+      .from(driverDevices)
+      .where(and(eq(driverDevices.driverId, driverId), isNull(driverDevices.disabledAt)))
+      .orderBy(asc(driverDevices.createdAt));
+    return rows.map((r) => r.token);
+  }
+
+  /** Expo said this token no longer reaches anything. Kept, switched off, dated. */
+  async disableDevice(expoPushToken: string, reason: string): Promise<void> {
+    await this.dbs.db
+      .update(driverDevices)
+      .set({ disabledAt: this.clock.now(), disabledReason: reason, updatedAt: this.clock.now() })
+      .where(eq(driverDevices.expoPushToken, expoPushToken));
+  }
+
+  /** How many phones a driver can be reached on right now. For the fleet desk. */
+  async deviceCounts(): Promise<Map<string, number>> {
+    const rows = await this.dbs.db
+      .select({ driverId: driverDevices.driverId, count: sql<number>`count(*)::int` })
+      .from(driverDevices)
+      .where(isNull(driverDevices.disabledAt))
+      .groupBy(driverDevices.driverId);
+    return new Map(rows.map((r) => [r.driverId, r.count]));
   }
 
   /**
@@ -617,6 +710,16 @@ export function toShift(r: typeof shifts.$inferSelect): Shift {
     endOdometerKm: r.endOdometerKm == null ? null : Number(r.endOdometerKm),
     startFuelPct: r.startFuelPct,
     endFuelPct: r.endFuelPct,
+  };
+}
+export function toDevice(r: typeof driverDevices.$inferSelect): DriverDevice {
+  return {
+    id: r.id,
+    driverId: r.driverId,
+    platform: r.platform,
+    appVersion: r.appVersion,
+    lastSeenAt: r.lastSeenAt.toISOString(),
+    disabledAt: r.disabledAt?.toISOString() ?? null,
   };
 }
 export function toFuelLog(r: typeof fuelLogs.$inferSelect): FuelLog {

@@ -142,6 +142,20 @@ export const DRIVER_SETTABLE_STATUSES: readonly ShipmentStatus[] = [
   "on_hold",
 ];
 
+/**
+ * The statuses a shipment can be in and still belong on the driver's screen.
+ *
+ * Everything an active assignment can carry, bar the two that take the parcel away from the
+ * driver for good. Written as a list derived from the terminal set rather than by hand, because
+ * the hand-written copy in the day query stopped at `in_transit`: the moment a driver marked a
+ * parcel out for delivery it vanished from their list, and the one status that starts live
+ * tracking was the one that made the job disappear. `delivered` stays so a finished day reads
+ * as finished; `booked` is excluded because an assigned shipment is never `booked`.
+ */
+export const DRIVER_VISIBLE_STATUSES: readonly ShipmentStatus[] = ShipmentStatus.options.filter(
+  (s) => s !== "booked" && s !== "cancelled" && s !== "returned_to_sender",
+);
+
 export const CreateBookingRequest = z.object({
   quoteId: Uuid,
   /** Required when the quote's service level needs a slot (Standard). */

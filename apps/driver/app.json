@@ -57,12 +57,22 @@
         {
           "cameraPermission": "The camera captures proof of delivery photos and fuel receipts."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#E84A8A",
+          "defaultChannel": "jobs"
+        }
       ]
     ],
     "extra": {
       "apiUrl": "http://localhost:8080",
       "supabaseUrl": "",
-      "supabaseAnonKey": ""
+      "supabaseAnonKey": "",
+      "eas": {
+        "projectId": ""
+      }
     }
   }
 }

@@ -51,6 +51,7 @@ const TRUNCATE = [
   "proofs_of_delivery",
   "assignments",
   "fuel_logs",
+  "driver_devices",
   "driver_location_history",
   "driver_positions",
   "shifts",

@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { shipmentEvents as shipmentEventsTable, users, walletEntries } from "@delicate/db";
+import {
+  driverDevices as driverDevicesTable,
+  shipmentEvents as shipmentEventsTable,
+  users,
+  walletEntries,
+} from "@delicate/db";
 import type {
   Booking,
   CatalogResponse,
@@ -458,14 +463,18 @@ describe("fleet, dispatch & settlement", () => {
     // Object.is comparison -- a sign distinction that means nothing for a cents amount.
     expect(await ledger.balance("VAT_OUTPUT", "company", null)).toBeCloseTo(-b.breakdown.vatCents);
 
-    // replaying delivery cannot double-settle
+    // Replaying the delivery cannot double-settle. It used to be refused with a 409; now the
+    // phone's retry is answered with the proof already on file — same result, no second journal.
     const again = await h
       .http()
       .post("/v1/driver/deliver")
       .set(asDriver())
       .send({ shipmentId: b.shipments[1]!.id, receivedBy: "John", signatureDataUrl: PNG });
-    expect(again.status).toBe(409);
+    expect(again.status).toBe(201);
+    expect(again.body.shipment.status).toBe("delivered");
+    expect(again.body.pod.receivedBy).toBe("John");
     expect(await ledger.balance("REVENUE", "company", null)).toBe(-b.breakdown.subtotalCents);
+    expect((await ledger.trialBalance()).totalCents).toBe(0);
 
     // The day is finished, and the driver is told so rather than being shown an empty list.
     const done = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
@@ -678,12 +687,204 @@ describe("fleet, dispatch & settlement", () => {
     expect(started.body.startOdometerKm).toBe(90_000); // kept, not overwritten by the press
   });
 
-  it("will not start a shift for a driver nobody rostered, and says so with an empty answer", async () => {
-    // The app turns this into a sentence telling the driver to ask dispatch. Inventing a shift
-    // would put a driver on the board that dispatch never put there.
+  it("lets a driver nobody rostered go online, and rosters them by doing so", async () => {
+    // This used to answer null and tell the driver to ask dispatch. But the engine was already
+    // handing that driver work — the main driver is auto-assigned every booking whether or not a
+    // roster row exists — and a driver who could not clock on was a driver whose van never
+    // appeared on the live map. Going online is the driver's own fact, as in any ride-hailing
+    // app, and the row it creates is audited as theirs.
     const res = await h.http().post("/v1/driver/shift/start").set(asDriver()).send({});
     expect(res.status).toBe(201);
-    expect(res.text).toBe("");
+    expect(res.body.status).toBe("open");
+    expect(res.body.date).toBe(TODAY);
+    expect(res.body.startedAt).toBeTruthy();
+
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(day.shift?.status).toBe("open");
+
+    // The board knows: the position they report is on shift.
+    await h
+      .http()
+      .post("/v1/driver/location")
+      .set(asDriver())
+      .send({ pings: [{ location: MENLYN, recordedAt: new Date().toISOString() }] })
+      .expect(202);
+    const positions = await h.http().get("/v1/admin/fleet/positions").set(asDispatcher());
+    expect(positions.body[0]).toMatchObject({ driverId: driver.id, onShift: true });
+  });
+
+  it("keeps a parcel on the driver's screen when it is out for delivery or on hold", async () => {
+    // The day query used to list its statuses by hand and stopped at `in_transit`, so a parcel
+    // vanished from the driver's list at the exact moment they marked it out for delivery — the
+    // one status that starts the recipient's live map took the job off the driver's.
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY });
+    const b = await book("on_demand");
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    await h
+      .http()
+      .post("/v1/driver/collect")
+      .set(asDriver())
+      .send({ bookingId: b.id, location: MENLYN })
+      .expect(201);
+
+    const shipmentId = b.shipments[0]!.id;
+    for (const status of ["out_for_delivery", "on_hold", "out_for_delivery"] as const) {
+      await h
+        .http()
+        .post("/v1/driver/status")
+        .set(asDriver())
+        .send({ shipmentId, status, note: status === "on_hold" ? "Gate locked" : null })
+        .expect(201);
+      const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+      const drop = day.stops.find((s) => s.shipmentId === shipmentId);
+      expect(drop, `drop visible while ${status}`).toBeDefined();
+      expect(drop!.status).toBe(status);
+      expect(drop!.done).toBe(false);
+      expect(day.progress.all.outstanding).toBe(1);
+    }
+
+    // Setting the status it already has is a retry, not a refusal.
+    const again = await h
+      .http()
+      .post("/v1/driver/status")
+      .set(asDriver())
+      .send({ shipmentId, status: "out_for_delivery" });
+    expect(again.status).toBe(201);
+    expect(again.body.status).toBe("out_for_delivery");
+  });
+
+  it("holds later days under 'upcoming' and keeps overdue work on today", async () => {
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: SLOT.date });
+    const future = await book("standard"); // slot is tomorrow
+    const now = await book("on_demand"); // today
+    await h.dispatcher.tick();
+    // The standard booking needs a shift on its date to auto-assign; the on-demand one needs one
+    // today. Assign that one by hand so both are this driver's.
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${now.shipments[0]!.id}/assign`)
+      .set(asDispatcher())
+      .send({ driverId: driver.id })
+      .expect(201);
+
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    const todays = day.stops.map((s) => s.waybill).filter(Boolean);
+    const later = day.upcoming.map((s) => s.waybill).filter(Boolean);
+    expect(todays).toContain(now.shipments[0]!.waybill);
+    expect(todays).not.toContain(future.shipments[0]!.waybill);
+    expect(later).toContain(future.shipments[0]!.waybill);
+    // Tomorrow's collection is tomorrow's too; today's progress counts only today's stops.
+    expect(day.upcoming.filter((s) => s.kind === "collection")).toHaveLength(1);
+    expect(day.progress.all.total).toBe(2);
+
+    // Roll the clock past the slot: the same work is now overdue, and overdue is today's.
+    h.app.get(Clock).now = () => new Date("2026-09-25T07:00:00Z");
+    try {
+      const later2 = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+      expect(later2.upcoming).toHaveLength(0);
+      expect(later2.stops.map((s) => s.waybill)).toContain(future.shipments[0]!.waybill);
+    } finally {
+      h.app.get(Clock).now = () => new Date("2026-09-23T07:00:00Z");
+    }
+  });
+
+  it("answers a retried delivery with the proof it already holds, and keeps every photo", async () => {
+    await h
+      .http()
+      .post("/v1/admin/fleet/shifts")
+      .set(asDispatcher())
+      .send({ driverId: driver.id, date: TODAY });
+    const b = await book("on_demand");
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    await h
+      .http()
+      .post("/v1/driver/collect")
+      .set(asDriver())
+      .send({ bookingId: b.id, location: MENLYN })
+      .expect(201);
+    // Collected twice: the phone retried. The same parcels come back, not a refusal.
+    const twice = await h
+      .http()
+      .post("/v1/driver/collect")
+      .set(asDriver())
+      .send({ bookingId: b.id, location: MENLYN });
+    expect(twice.status).toBe(201);
+    expect(twice.body).toHaveLength(1);
+    expect(twice.body[0].status).toBe("collected");
+
+    const shipmentId = b.shipments[0]!.id;
+    const body = {
+      shipmentId,
+      receivedBy: "Jane",
+      photoDataUrl: PNG,
+      photoDataUrls: [
+        PNG,
+        PNG.replace(
+          "AAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+          "AAAAC0lEQVR42mNk+P8fAAIBAQBhUK4GAAAAAElFTkSuQmCC",
+        ),
+      ],
+      location: CENTURION,
+      attemptId: "phone-attempt-1",
+    };
+    const first = await h.http().post("/v1/driver/deliver").set(asDriver()).send(body);
+    expect(first.status).toBe(201);
+    expect(first.body.shipment.status).toBe("delivered");
+    // Two distinct photos, the exact repeat of the first dropped.
+    expect(first.body.pod.photoCount).toBe(2);
+    expect(first.body.pod.hasPhoto).toBe(true);
+
+    const second = await h.http().post("/v1/driver/deliver").set(asDriver()).send(body);
+    expect(second.status).toBe(201);
+    expect(second.body.pod.capturedAt).toBe(first.body.pod.capturedAt);
+    expect(
+      await h.db.db.$count(shipmentEventsTable, eq(shipmentEventsTable.status, "delivered")),
+    ).toBe(1);
+
+    const files = (
+      await h
+        .http()
+        .get(`/v1/admin/dispatch/shipments/${shipmentId}/settlement`)
+        .set(asDispatcher())
+    ).body.files;
+    expect(files.photoFileIds).toHaveLength(2);
+    expect(files.photoFileId).toBe(files.photoFileIds[0]);
+  });
+
+  it("remembers the driver's phone and lets sign-out forget it", async () => {
+    const token = "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]";
+    const reg = await h
+      .http()
+      .post("/v1/driver/device")
+      .set(asDriver())
+      .send({ expoPushToken: token, platform: "android", appVersion: "0.1.0" });
+    expect(reg.status).toBe(201);
+    expect(reg.body).toMatchObject({ driverId: driver.id, platform: "android", disabledAt: null });
+
+    // Registered again on the next launch: the same row, refreshed, not a second one.
+    const again = await h
+      .http()
+      .post("/v1/driver/device")
+      .set(asDriver())
+      .send({ expoPushToken: token, platform: "android", appVersion: "0.1.1" });
+    expect(again.body.id).toBe(reg.body.id);
+    expect(again.body.appVersion).toBe("0.1.1");
+
+    await h
+      .http()
+      .delete("/v1/driver/device")
+      .set(asDriver())
+      .send({ expoPushToken: token })
+      .expect(204);
+    expect(await h.db.db.$count(driverDevicesTable)).toBe(0);
   });
 
   it("a failed attempt settles (chargeable by rule), the drop can be reassigned, and files are served to staff", async () => {

@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Post, Res, UseGuards } from "@nestjs/common";
+import { Controller, Delete, Get, HttpCode, Post, Res, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import { z } from "zod";
@@ -12,6 +12,7 @@ import {
   FuelLogRequest,
   LocationPing,
   OdometerReadingRequest,
+  RegisterDeviceRequest,
   Uuid,
   type Driver,
 } from "@delicate/contracts";
@@ -49,6 +50,30 @@ export class DriverController {
   @Get("day")
   day(@CurrentDriver() d: Driver) {
     return this.dispatch.day(d);
+  }
+
+  /**
+   * The phone this driver carries, so a new job can wake it.
+   *
+   * Posted on every launch and sign-in; the engine keeps one row per token and refreshes it.
+   * Deleting it is what sign-out does, so a phone handed to someone else stops buzzing about
+   * the previous driver's work.
+   */
+  @Post("device")
+  registerDevice(
+    @CurrentDriver() d: Driver,
+    @Body(RegisterDeviceRequest) body: RegisterDeviceRequest,
+  ) {
+    return this.fleet.registerDevice(d, body);
+  }
+
+  @Delete("device")
+  @HttpCode(204)
+  async forgetDevice(
+    @CurrentDriver() d: Driver,
+    @Body(z.object({ expoPushToken: z.string().min(10).max(200) })) body: { expoPushToken: string },
+  ) {
+    await this.fleet.forgetDevice(d, body.expoPushToken);
   }
 
   /**

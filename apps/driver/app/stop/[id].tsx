@@ -1,5 +1,15 @@
 import { useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DriverDay } from "@delicate/contracts";
@@ -7,7 +17,9 @@ import { SHIPMENT_STATUS_LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "../../src/lib/api";
 import { currentPosition } from "../../src/lib/location";
 import { CameraCapture } from "../../src/lib/capture";
-import { StopActions } from "../../src/lib/stop-actions";
+import { submit, useOutbox } from "../../src/lib/outbox";
+import { attemptId, pendingFor } from "../../src/lib/queue";
+import { ArriveButton, StopActions } from "../../src/lib/stop-actions";
 import { StatusControl } from "../../src/lib/status-control";
 import { Badge, Button, C, Card, ErrorNote, Loading, s } from "../../src/lib/ui";
 
@@ -19,63 +31,106 @@ const REASONS = [
   { key: "other", label: "Other" },
 ] as const;
 
-/** Deliver or fail one drop. Proof of delivery is required before the engine will settle. */
+/** The most photographs one delivery takes. The parcel, the door, the slip — three is plenty. */
+const MAX_PHOTOS = 3;
+
+/**
+ * Deliver or fail one drop.
+ *
+ * Proof of delivery is a name and at least one photograph; the engine will not settle without
+ * it. The submit goes through the outbox, so a delivery marked where there is no signal is
+ * kept on the phone and sent when there is — the driver is told that is what happened, rather
+ * than shown an error for a parcel that is already in the recipient's hands.
+ */
 export default function StopScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
+  const outbox = useOutbox();
   const day = useQuery({ queryKey: ["day"], queryFn: () => api<DriverDay>("/v1/driver/day") });
-  const stop = useMemo(() => day.data?.stops.find((x) => x.shipmentId === id), [day.data, id]);
+  const stop = useMemo(
+    () =>
+      [...(day.data?.stops ?? []), ...(day.data?.upcoming ?? [])].find((x) => x.shipmentId === id),
+    [day.data, id],
+  );
+  const sending = pendingFor(outbox, { shipmentId: id });
 
   const [receivedBy, setReceivedBy] = useState("");
   const [note, setNote] = useState("");
-  const [photo, setPhoto] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<string[]>([]);
   const [camera, setCamera] = useState(false);
   const [failing, setFailing] = useState(false);
   const [reason, setReason] = useState<(typeof REASONS)[number]["key"]>("recipient_unavailable");
   const [error, setError] = useState<string | null>(null);
   const onError = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : String(e));
 
+  const afterSubmit = async (landed: boolean, what: string) => {
+    await qc.invalidateQueries();
+    if (!landed) {
+      Alert.alert(
+        "Saved on your phone",
+        `There is no signal here. ${what} is recorded and will be sent the moment you are back in range.`,
+      );
+    }
+    router.back();
+  };
+
   const deliver = useMutation({
-    mutationFn: async () =>
-      api("/v1/driver/deliver", {
-        method: "POST",
-        json: {
+    mutationFn: async () => {
+      const attempt = attemptId(Date.now());
+      return submit({
+        id: attempt,
+        kind: "deliver",
+        shipmentId: id,
+        bookingId: stop?.bookingId ?? null,
+        path: "/v1/driver/deliver",
+        body: {
           shipmentId: id,
           receivedBy: receivedBy.trim(),
-          photoDataUrl: photo,
+          photoDataUrl: photos[0] ?? null,
+          photoDataUrls: photos.slice(1),
           note: note.trim() || null,
           location: await currentPosition(),
+          attemptId: attempt,
         },
-      }),
-    onSuccess: async () => {
-      await qc.invalidateQueries();
-      router.back();
+        label: `Delivered ${stop?.waybill ?? ""} to ${receivedBy.trim()}`,
+      });
     },
+    onSuccess: (res) => afterSubmit(res.landed, "The delivery"),
     onError,
   });
 
   const fail = useMutation({
     mutationFn: async () =>
-      api("/v1/driver/fail", {
-        method: "POST",
-        json: {
+      submit({
+        id: attemptId(Date.now()),
+        kind: "fail",
+        shipmentId: id,
+        bookingId: stop?.bookingId ?? null,
+        path: "/v1/driver/fail",
+        body: {
           shipmentId: id,
           reason,
           note: note.trim() || null,
-          photoDataUrl: photo,
+          photoDataUrl: photos[0] ?? null,
           location: await currentPosition(),
         },
+        label: `Failed attempt on ${stop?.waybill ?? ""}`,
       }),
-    onSuccess: async () => {
-      await qc.invalidateQueries();
-      router.back();
-    },
+    onSuccess: (res) => afterSubmit(res.landed, "The attempt"),
     onError,
   });
 
   if (day.isLoading) return <Loading />;
   if (!stop) return <ErrorNote message="This stop is no longer on your list." />;
+
+  const upcoming = !!stop.slotDate && !!day.data && stop.slotDate > day.data.date;
+  const canWork =
+    !stop.done &&
+    !sending &&
+    (stop.status === "collected" ||
+      stop.status === "in_transit" ||
+      stop.status === "out_for_delivery");
 
   return (
     <KeyboardAvoidingView
@@ -102,8 +157,18 @@ export default function StopScreen() {
         <Card>
           <View style={s.row}>
             <Badge
-              label={stop.status ? SHIPMENT_STATUS_LABELS[stop.status] : "Drop"}
-              tone={stop.status === "out_for_delivery" ? "warn" : "neutral"}
+              label={
+                sending ? "Sending…" : stop.status ? SHIPMENT_STATUS_LABELS[stop.status] : "Drop"
+              }
+              tone={
+                sending
+                  ? "neutral"
+                  : stop.status === "out_for_delivery"
+                    ? "warn"
+                    : stop.status === "delivered"
+                      ? "good"
+                      : "neutral"
+              }
             />
             <Text style={[s.mono, { fontSize: 12 }]}>{stop.waybill}</Text>
           </View>
@@ -118,14 +183,39 @@ export default function StopScreen() {
           <Text style={[s.body, { marginTop: 8, color: C.muted }]}>
             {stop.parcels.map((p) => `${p.quantity} x ${p.description ?? "parcel"}`).join(", ")}
           </Text>
+          {upcoming && (
+            <Text style={[s.body, { marginTop: 8, color: C.muted }]}>
+              Booked for {stop.slotDate}
+              {stop.slotWindowKey ? ` · ${stop.slotWindowKey.replace(/_/g, " ")}` : ""}
+            </Text>
+          )}
         </Card>
 
         <StopActions stop={stop} target="recipient" />
-        <StatusControl stop={stop} />
+        <ArriveButton stop={stop} />
+        {!sending && <StatusControl stop={stop} />}
 
-        {!failing ? (
+        {sending ? (
+          <Card>
+            <Text style={s.h2}>Waiting for signal</Text>
+            <Text style={[s.body, { marginTop: 6 }]}>
+              {sending.label} is saved on your phone and will be sent as soon as you are back in
+              range. Nothing more to do here.
+            </Text>
+          </Card>
+        ) : stop.status === "assigned" ? (
+          <Card>
+            <Text style={s.body}>
+              Collect this parcel first. The delivery screen opens once it is in the van.
+            </Text>
+          </Card>
+        ) : !canWork ? null : !failing ? (
           <Card>
             <Text style={s.h2}>Proof of delivery</Text>
+            <Text style={[s.body, { marginTop: 4, color: C.muted }]}>
+              Who took it, and a photo of the parcel where you left it. Add a second photo of the
+              door or the slip if it helps.
+            </Text>
             <View style={{ gap: 10, marginTop: 10 }}>
               <TextInput
                 value={receivedBy}
@@ -134,10 +224,10 @@ export default function StopScreen() {
                 placeholderTextColor={C.muted}
                 style={s.input}
               />
-              <Button
-                label={photo ? "Photo captured - retake" : "Take a photo"}
-                variant="secondary"
-                onPress={() => setCamera(true)}
+              <PhotoStrip
+                photos={photos}
+                onAdd={() => setCamera(true)}
+                onRemove={(i) => setPhotos((p) => p.filter((_, j) => j !== i))}
               />
               <TextInput
                 value={note}
@@ -151,7 +241,7 @@ export default function StopScreen() {
                 label="Mark delivered"
                 onPress={() => deliver.mutate()}
                 busy={deliver.isPending}
-                disabled={!receivedBy.trim() || !photo}
+                disabled={!receivedBy.trim() || photos.length === 0}
               />
               <Button
                 label="Could not deliver"
@@ -182,10 +272,11 @@ export default function StopScreen() {
                 placeholderTextColor={C.muted}
                 style={s.input}
               />
-              <Button
-                label={photo ? "Photo captured" : "Add a photo (optional)"}
-                variant="secondary"
-                onPress={() => setCamera(true)}
+              <PhotoStrip
+                photos={photos}
+                onAdd={() => setCamera(true)}
+                onRemove={(i) => setPhotos((p) => p.filter((_, j) => j !== i))}
+                optional
               />
               {error && <ErrorNote message={error} />}
               <Button
@@ -202,10 +293,59 @@ export default function StopScreen() {
 
       <CameraCapture
         visible={camera}
-        title="Capture the parcel at the door"
+        title={photos.length === 0 ? "Capture the parcel at the door" : "One more, if it helps"}
         onClose={() => setCamera(false)}
-        onCaptured={setPhoto}
+        onCaptured={(url) => setPhotos((p) => (p.length < MAX_PHOTOS ? [...p, url] : p))}
       />
     </KeyboardAvoidingView>
+  );
+}
+
+/** The photos taken so far, each removable, and a button for the next one. */
+function PhotoStrip({
+  photos,
+  onAdd,
+  onRemove,
+  optional = false,
+}: {
+  photos: string[];
+  onAdd: () => void;
+  onRemove: (index: number) => void;
+  optional?: boolean;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      {photos.length > 0 && (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {photos.map((url, i) => (
+            <Pressable
+              key={i}
+              onPress={() =>
+                Alert.alert("Remove this photo?", undefined, [
+                  { text: "Keep", style: "cancel" },
+                  { text: "Remove", style: "destructive", onPress: () => onRemove(i) },
+                ])
+              }
+              style={{ flex: 1, aspectRatio: 1, borderRadius: 12, overflow: "hidden" }}
+            >
+              <Image source={{ uri: url }} style={{ width: "100%", height: "100%" }} />
+            </Pressable>
+          ))}
+        </View>
+      )}
+      {photos.length < MAX_PHOTOS && (
+        <Button
+          label={
+            photos.length === 0
+              ? optional
+                ? "Add a photo (optional)"
+                : "Take a photo"
+              : `Add another photo (${photos.length}/${MAX_PHOTOS})`
+          }
+          variant="secondary"
+          onPress={onAdd}
+        />
+      )}
+    </View>
   );
 }

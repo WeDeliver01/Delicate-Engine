@@ -80,6 +80,12 @@ export const proofsOfDelivery = pgTable("proofs_of_delivery", {
   receivedBy: text("received_by").notNull(),
   signatureFileId: uuid("signature_file_id").references(() => files.id, { onDelete: "set null" }),
   photoFileId: uuid("photo_file_id").references(() => files.id, { onDelete: "set null" }),
+  /**
+   * Every photograph taken, first included, as file ids. `photoFileId` stays as the first for
+   * everything that already reads one picture; this is for the second and third — the door as
+   * well as the parcel, the slip as well as the signature.
+   */
+  photoFileIds: jsonb("photo_file_ids"),
   location: jsonb("location"),
   note: text("note"),
   capturedAt: timestamp("captured_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),

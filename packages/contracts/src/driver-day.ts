@@ -9,7 +9,19 @@
 import type { DriverStop } from "./dto/dispatch.js";
 
 /** A drop the driver cannot act on again: delivered, or failed and now dispatch's problem. */
-const FINISHED_DROP = new Set(["delivered", "failed", "cancelled"]);
+const FINISHED_DROP = new Set(["delivered", "failed", "cancelled", "returned_to_sender"]);
+
+/**
+ * Does this stop belong to a later day than the one the driver is working?
+ *
+ * Dated by the slot, so an on-demand job (no slot date) is always today's, and an overdue one
+ * — booked for yesterday and still not done — is today's too: it is late, not future. Only a
+ * stop whose date is still ahead is held back, under its own heading, where it cannot be
+ * mistaken for the next place to drive to.
+ */
+export function isUpcoming(stop: Pick<DriverStop, "slotDate">, today: string): boolean {
+  return stop.slotDate != null && stop.slotDate > today;
+}
 
 /**
  * Has this stop been worked?

@@ -50,6 +50,7 @@ export function ShipmentTable({
   rows,
   loading,
   hrefBase,
+  bookingHrefBase = "/portal/bookings",
   showAccount,
   emptyMessage = "Nothing matches these filters.",
   canAssign = false,
@@ -57,6 +58,8 @@ export function ShipmentTable({
   rows: ShipmentRow[];
   loading?: boolean;
   hrefBase: string;
+  /** Where the booking reference under the waybill goes; the console has its own page. */
+  bookingHrefBase?: string;
   showAccount?: boolean;
   emptyMessage?: string;
   /** Staff who may move a parcel to another driver get a picker instead of a name. */
@@ -113,7 +116,7 @@ export function ShipmentTable({
                 </Link>
                 {s.bookingReference && (
                   <Link
-                    href={`/portal/bookings/${s.bookingId}`}
+                    href={`${bookingHrefBase}/${s.bookingId}`}
                     className="mt-0.5 block truncate text-xs text-muted hover:text-ink hover:underline"
                     title="The order this delivery belongs to"
                   >

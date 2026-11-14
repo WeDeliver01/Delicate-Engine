@@ -124,6 +124,7 @@ export default function AdminShipmentsPage() {
         rows={rows}
         loading={list.isLoading}
         hrefBase="/admin/shipments"
+        bookingHrefBase="/admin/bookings"
         showAccount
         canAssign={canAssign}
         emptyMessage="Nothing matches. Widen the period or clear a filter."

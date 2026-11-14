@@ -147,6 +147,40 @@ export const fuelLogs = pgTable(
   (t) => [index("fuel_logs_driver_idx").on(t.driverId, t.createdAt)],
 );
 
+export const devicePlatformEnum = pgEnum("device_platform", ["ios", "android", "unknown"]);
+
+/**
+ * The phones a driver's app is installed on, by Expo push token.
+ *
+ * One row per install, because a driver may carry two phones or replace one mid-month, and a
+ * push to a dead token must not stop the live one hearing about a new job. A token Expo reports
+ * as no longer registered is switched off (`disabledAt`) rather than deleted, so the record of
+ * what the engine tried to reach survives the attempt.
+ */
+export const driverDevices = pgTable(
+  "driver_devices",
+  {
+    id: id(),
+    driverId: uuid("driver_id")
+      .notNull()
+      .references(() => drivers.id, { onDelete: "cascade" }),
+    expoPushToken: text("expo_push_token").notNull(),
+    platform: devicePlatformEnum("platform").notNull().default("unknown"),
+    appVersion: text("app_version"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+    disabledReason: text("disabled_reason"),
+    ...timestamps(),
+  },
+  (t) => [
+    // A token names one install; if another driver signs in on the same phone it moves.
+    uniqueIndex("driver_devices_token_uq").on(t.expoPushToken),
+    index("driver_devices_driver_idx").on(t.driverId),
+  ],
+);
+
 /** Small binary evidence (POD photos, signatures, receipts). ≤ 2 MB each, enforced in code. */
 export const files = pgTable("files", {
   id: id(),

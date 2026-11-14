@@ -91,7 +91,7 @@ export default function ChangeQueuePage() {
                 <div>
                   <span className="chip chip-info">{CHANGE_REQUEST_KIND_LABELS[c.kind]}</span>
                   <Link
-                    href={`/admin/shipments?search=${c.waybill ?? ""}`}
+                    href={`/admin/shipments/${c.shipmentId}`}
                     className="ml-2 font-mono text-sm hover:underline"
                   >
                     {c.waybill}

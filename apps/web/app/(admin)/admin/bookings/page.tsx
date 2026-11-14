@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Booking, BookingStatus } from "@delicate/contracts";
@@ -60,13 +61,36 @@ export default function AdminBookings() {
         <tbody className="divide-y divide-[#F0EDE9]">
           {list.data?.items.map((b) => (
             <tr key={b.id}>
-              <td className="px-5 py-2 font-mono">{b.reference}</td>
+              <td className="px-5 py-2 font-mono">
+                <Link href={`/admin/bookings/${b.id}`} className="hover:underline">
+                  {b.reference}
+                </Link>
+                {b.customerReference && (
+                  <span className="block truncate font-sans text-xs text-muted">
+                    {b.customerReference}
+                  </span>
+                )}
+              </td>
               <td className="px-5 py-2">{dateTime(b.createdAt)}</td>
               <td className="px-5 py-2">{b.serviceLevelCode.replace("_", " ")}</td>
               <td className="px-5 py-2">
                 {b.slotDate ? `${b.slotDate} · ${b.slotWindowKey}` : "—"}
               </td>
-              <td className="px-5 py-2">{b.shipments.map((s) => s.waybill).join(", ") || "—"}</td>
+              <td className="px-5 py-2">
+                {b.shipments.length === 0
+                  ? "—"
+                  : b.shipments.map((s, i) => (
+                      <span key={s.id}>
+                        {i > 0 && ", "}
+                        <Link
+                          href={`/admin/shipments/${s.id}`}
+                          className="font-mono hover:underline"
+                        >
+                          {s.waybill}
+                        </Link>
+                      </span>
+                    ))}
+              </td>
               <td className="px-5 py-2 font-mono">{rands(b.totalCents)}</td>
               <td className="px-5 py-2">
                 <StatusBadge status={b.status} />

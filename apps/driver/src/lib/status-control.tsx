@@ -8,8 +8,10 @@ import {
   type DriverStop,
   type ShipmentStatus,
 } from "@delicate/contracts";
-import { api, ApiRequestError } from "./api";
+import { ApiRequestError } from "./api";
 import { currentPosition } from "./location";
+import { submit } from "./outbox";
+import { attemptId } from "./queue";
 import { Button, C, Card, s } from "./ui";
 
 /**
@@ -37,18 +39,31 @@ export function StatusControl({ stop }: { stop: DriverStop }) {
   async function set(status: ShipmentStatus, withNote?: string) {
     setBusy(true);
     try {
-      await api("/v1/driver/status", {
-        method: "POST",
-        json: {
+      // Through the outbox: a status set where there is no signal is kept and sent later, and
+      // the engine answers a repeat of a status it already has with the same shipment.
+      const res = await submit({
+        id: attemptId(Date.now()),
+        kind: "status",
+        shipmentId: stop.shipmentId,
+        bookingId: stop.bookingId,
+        path: "/v1/driver/status",
+        body: {
           shipmentId: stop.shipmentId,
           status,
           note: withNote?.trim() || null,
           location: await currentPosition(),
         },
+        label: `${SHIPMENT_STATUS_LABELS[status]} · ${stop.waybill ?? ""}`.trim(),
       });
       setHolding(false);
       setNote("");
       await qc.invalidateQueries();
+      if (!res.landed) {
+        Alert.alert(
+          "Saved on your phone",
+          "No signal here. The status is recorded and will be sent when you are back in range.",
+        );
+      }
     } catch (err) {
       Alert.alert(
         "Not changed",

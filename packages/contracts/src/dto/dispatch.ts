@@ -69,6 +69,16 @@ export const DriverStop = z.object({
    * Stamped by the engine via `stopIsDone` so both sides use one definition.
    */
   done: z.boolean().default(false),
+  /**
+   * The stop on the driver's trip that this is, when a trip holds it.
+   *
+   * Carried so the app can say "I am here" against the right row: arrival is what ETA accuracy
+   * is measured on and what tells the recipient the van is outside. Null when nothing has
+   * placed the shipment on a trip yet, which the app treats as "nothing to arrive at" rather
+   * than as an error.
+   */
+  tripStopId: Uuid.nullable().default(null),
+  tripStopStatus: z.enum(["pending", "arrived", "done", "skipped"]).nullable().default(null),
 });
 export type DriverStop = z.infer<typeof DriverStop>;
 
@@ -94,7 +104,25 @@ export const DriverDay = z.object({
       startedAt: z.string().datetime().nullable(),
     })
     .nullable(),
+  /** Today's work: due today, overdue from an earlier day, or on demand. */
   stops: z.array(DriverStop),
+  /**
+   * Work assigned to this driver for a later date, soonest first.
+   *
+   * Kept apart from `stops` so that a booking for Friday does not sit in Monday's list looking
+   * like something to drive to now, and does not count against Monday's progress. It is still
+   * shown — a driver likes to know what the week holds — but under its own heading.
+   */
+  upcoming: z.array(DriverStop).default([]),
+  /** The released trip this day is read from, when a dispatcher built or the engine placed one. */
+  trip: z
+    .object({
+      id: Uuid,
+      reference: z.string(),
+      status: z.enum(["planned", "released", "started", "completed", "abandoned"]),
+    })
+    .nullable()
+    .default(null),
   /** What the ordering saved, when there were enough placed stops to order. */
   route: z
     .object({ totalKm: z.number(), originalKm: z.number(), savedKm: z.number() })
@@ -138,9 +166,23 @@ export const DeliverRequest = z.object({
   /** Signature and/or photo as data URLs (≤ 2 MB each). At least one is required. */
   signatureDataUrl: z.string().max(3_000_000).nullable().default(null),
   photoDataUrl: z.string().max(3_000_000).nullable().default(null),
+  /**
+   * Further photographs, when one is not enough: the parcel at the door and the door itself,
+   * the signed slip, the damage that was pointed out. Up to four in all, counting
+   * `photoDataUrl`, which stays as the first so an older app keeps working.
+   */
+  photoDataUrls: z.array(z.string().max(3_000_000)).max(4).default([]),
   note: z.string().max(300).nullable().default(null),
   /** Actual km driven for this drop as measured by the app, when available. */
   actualKm: z.number().nonnegative().nullable().default(null),
+  /**
+   * The app's own id for this attempt, kept across retries.
+   *
+   * A delivery posted from a basement with one bar of signal may land twice or may seem to
+   * fail after it landed. The engine answers a repeat with the proof it already holds rather
+   * than refusing it as an impossible transition, so the app can retry without fear.
+   */
+  attemptId: z.string().max(64).nullable().default(null),
 });
 export type DeliverRequest = z.infer<typeof DeliverRequest>;
 
@@ -158,11 +200,38 @@ export const ProofOfDelivery = z.object({
   receivedBy: z.string(),
   hasSignature: z.boolean(),
   hasPhoto: z.boolean(),
+  /** How many photographs were taken; `hasPhoto` is this being at least one. */
+  photoCount: z.number().int().nonnegative().default(0),
   location: LatLng.nullable(),
   note: z.string().nullable(),
   capturedAt: z.string().datetime(),
 });
 export type ProofOfDelivery = z.infer<typeof ProofOfDelivery>;
+
+/**
+ * The phone a driver is carrying, so the engine can tap them on the shoulder.
+ *
+ * An Expo push token names one install of the app on one device. A driver may have two phones
+ * or a replacement, so a driver has devices rather than a device; a token that Expo reports as
+ * no longer registered is switched off rather than deleted, so the record of what was tried
+ * survives.
+ */
+export const RegisterDeviceRequest = z.object({
+  expoPushToken: z.string().min(10).max(200),
+  platform: z.enum(["ios", "android", "unknown"]).default("unknown"),
+  appVersion: z.string().max(40).nullable().default(null),
+});
+export type RegisterDeviceRequest = z.infer<typeof RegisterDeviceRequest>;
+
+export const DriverDevice = z.object({
+  id: Uuid,
+  driverId: Uuid,
+  platform: z.enum(["ios", "android", "unknown"]),
+  appVersion: z.string().nullable(),
+  lastSeenAt: z.string().datetime(),
+  disabledAt: z.string().datetime().nullable(),
+});
+export type DriverDevice = z.infer<typeof DriverDevice>;
 
 /** Money per shipment once delivered. Internal (admin) view. */
 export const Settlement = z.object({

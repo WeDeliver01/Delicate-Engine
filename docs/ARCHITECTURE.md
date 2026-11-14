@@ -355,6 +355,23 @@ mostly navigation and reuse of things the console can already mostly do, not a n
 surface, and is better scoped once Phase 8 shows what "worth a dedicated tool" looks like here.
 It is not included in this phase.
 
+### Phase 9 — the driver workflow, over the finish line (delivered 2026-11-14)
+
+Added from Ashley's brief of 2026-11-13: a booked and scheduled delivery did not show on the
+driver's app in a usable way, and the Command Center was not yet a place to run the day from.
+Full record, including the two decisions it reverses: [DRIVER-WORKFLOW.md](DRIVER-WORKFLOW.md).
+
+| Item                                                                                                                                   | State                                                                       |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Driver's day shows every live status (`out_for_delivery`, `on_hold` were dropping off it) and holds later days under "Coming up"       | Built                                                                       |
+| A driver can go online without a roster row; tracking follows the work, with a foreground watcher beside background location           | Built                                                                       |
+| Every assignment lands on the driver's trip by itself (created and released if none), so the board and live map see auto-assigned work | Built                                                                       |
+| Trips start on the driver's first action; cancelled or returned shipments close their stops; unassignment detaches them                | Built                                                                       |
+| Idempotent collect / deliver / fail / status, up to four POD photographs, `attemptId` on a delivery                                    | Built                                                                       |
+| `driver_devices` + Expo push on assignment, reassignment, removal, approved change, cancellation                                       | Built                                                                       |
+| App: outbox with retry and a visible "Sending…" state, arrival button, multi-photo POD, push registration, 20 s refresh                | Built                                                                       |
+| POD photo gallery in the console (`PodPhotos` component)                                                                               | Component built; placed on the shipment page in the parallel session's work |
+
 ---
 
 ## 7. Open items to confirm

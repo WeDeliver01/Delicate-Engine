@@ -30,7 +30,6 @@ import {
   proofsOfDelivery,
   shipmentChangeRequests,
   shipments,
-  users,
 } from "@delicate/db";
 import { DbService } from "../../infra/db.module.js";
 import { Clock } from "../../infra/clock.js";
@@ -256,11 +255,13 @@ export class ShipmentQueryService {
             .select({
               shipmentId: assignments.shipmentId,
               driverId: drivers.id,
-              driverName: users.fullName,
+              // From the driver record, which always has a name, not the linked user row,
+              // which has one only once that person has signed in: a driver who had never
+              // opened the app showed as a blank in the list for every parcel they carried.
+              driverName: drivers.fullName,
             })
             .from(assignments)
             .innerJoin(drivers, eq(drivers.id, assignments.driverId))
-            .leftJoin(users, eq(users.id, drivers.userId))
             .where(and(inArray(assignments.shipmentId, ids), eq(assignments.active, true)))
         : [],
       ids.length
@@ -291,6 +292,9 @@ export class ShipmentQueryService {
       ...toShipment(r),
       bookingReference: r.bookingReference,
       customerReference: r.customerReference,
+      collectionAddress: r.collectionAddress,
+      accountName: r.accountName,
+      accountCode: r.accountCode,
       driver: driverBy.get(r.id)
         ? { id: driverBy.get(r.id)!.driverId, name: driverBy.get(r.id)!.driverName }
         : null,

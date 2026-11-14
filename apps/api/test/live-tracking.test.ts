@@ -279,6 +279,52 @@ describe("recipient live tracking", () => {
     expect(JSON.stringify(res.body)).not.toContain("phoned the shop");
   });
 
+  it("shows the office the same history with the notes left in", async () => {
+    const { booking } = await sendItOut();
+    const shipmentId = booking.shipments[0]!.id;
+    await h
+      .http()
+      .post("/v1/driver/status")
+      .set(asDriver())
+      .send({ shipmentId, status: "on_hold", note: "nobody home, phoned the shop" })
+      .expect(201);
+
+    const res = await h.http().get(`/v1/admin/shipments/${shipmentId}/timeline`).set(asStaff());
+    expect(res.status).toBe(200);
+    const items = res.body.items as { status: string; note: string | null }[];
+    expect(items.map((i) => i.status)).toEqual(
+      expect.arrayContaining(["booked", "collected", "out_for_delivery", "on_hold"]),
+    );
+    expect(items.find((i) => i.status === "on_hold")!.note).toBe("nobody home, phoned the shop");
+
+    const changes = await h.http().get(`/v1/admin/shipments/${shipmentId}/changes`).set(asStaff());
+    expect(changes.status).toBe(200);
+    expect(changes.body.items).toEqual([]);
+  });
+
+  it("carries the account and the collection address on the console's search rows", async () => {
+    const { booking } = await sendItOut();
+    const res = await h
+      .http()
+      .get(`/v1/admin/shipment-search?search=${booking.shipments[0]!.waybill}`)
+      .set(asStaff());
+    expect(res.status).toBe(200);
+    const [row] = res.body.items as {
+      id: string;
+      accountName: string;
+      accountCode: string;
+      collectionAddress: { formatted: string } | null;
+      driver: { name: string | null } | null;
+    }[];
+    expect(row).toMatchObject({
+      id: booking.shipments[0]!.id,
+      accountName: "Honey Bee",
+      collectionAddress: { formatted: "Honey Bee, Menlyn" },
+      driver: { name: "Kagiso Molefe" },
+    });
+    expect(row!.accountCode).toBeTruthy();
+  });
+
   it("keeps answering after delivery, with who signed and no driver note", async () => {
     const { booking, token } = await sendItOut();
     await h

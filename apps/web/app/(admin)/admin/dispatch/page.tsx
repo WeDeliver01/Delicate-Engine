@@ -449,10 +449,7 @@ function CardDialog({
         <StatusControl card={card} onError={onError} onDone={onDone} />
 
         <div className="mt-5 flex justify-end gap-2">
-          <Link
-            href={`/admin/shipments?search=${card.waybill}`}
-            className="btn btn-secondary btn-sm"
-          >
+          <Link href={`/admin/shipments/${card.shipmentId}`} className="btn btn-secondary btn-sm">
             Open shipment
           </Link>
           {card.tripId && (

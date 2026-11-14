@@ -713,4 +713,106 @@ describe("trips", () => {
       .set(asDispatcher());
     expect(other.body).toHaveLength(0);
   });
+
+  it("puts an assigned shipment on the driver's day by itself, released and ready", async () => {
+    // Nobody built a trip. The engine assigned the work, so the engine makes the container the
+    // board and the live map read from, and releases it: the assignment was already dispatch's
+    // instruction to deliver.
+    const b = await book(2);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/assign`)
+      .set(asDispatcher())
+      .send({ driverId: driver.id })
+      .expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+
+    const trips = (await h.http().get(`/v1/admin/dispatch/trips?date=${TODAY}`).set(asDispatcher()))
+      .body as Trip[];
+    expect(trips).toHaveLength(1);
+    expect(trips[0]!.status).toBe("released");
+    expect(trips[0]!.driverId).toBe(driver.id);
+    const s = await sheet(trips[0]!.id);
+    expect(s.stops.map((x) => x.kind).sort()).toEqual(["collection", "drop"]);
+
+    // The second drop of the same booking joins the same trip rather than making another.
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[1]!.id}/assign`)
+      .set(asDispatcher())
+      .send({ driverId: driver.id })
+      .expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    expect((await sheet(trips[0]!.id)).stops).toHaveLength(3);
+    expect(
+      (await h.http().get(`/v1/admin/dispatch/trips?date=${TODAY}`).set(asDispatcher())).body,
+    ).toHaveLength(1);
+
+    // The driver's day carries the trip and the stop ids to arrive against.
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(day.trip?.id).toBe(trips[0]!.id);
+    expect(day.stops.every((x) => x.tripStopId !== null)).toBe(true);
+    expect(day.stops.every((x) => x.tripStopStatus === "pending")).toBe(true);
+
+    // Delivered as the dispatcher is told, not because a Start button was pressed. Arriving at
+    // the first stop starts the trip; the board sees "working", not "ready".
+    const collection = day.stops.find((x) => x.kind === "collection")!;
+    const arrived = await h
+      .http()
+      .post("/v1/driver/trip/arrive")
+      .set(asDriver())
+      .send({ stopId: collection.tripStopId, location: MENLYN });
+    expect(arrived.status).toBe(201);
+    expect(arrived.body.status).toBe("arrived");
+    expect((await sheet(trips[0]!.id)).status).toBe("started");
+  });
+
+  it("leaves a shipment where the dispatcher put it, and takes it off the trip when unassigned", async () => {
+    // A dispatcher placed tomorrow's parcel on today's trip, on purpose. The assignment event
+    // that follows must not move it to a trip on its slot date behind their back.
+    const b = await book(1);
+    const trip = await newTrip();
+    await addStops(trip.id, [b.shipments[0]!.id]).expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    const trips = (await h.http().get("/v1/admin/dispatch/trips").set(asDispatcher()))
+      .body as Trip[];
+    expect(trips).toHaveLength(1);
+    expect((await sheet(trip.id)).stops).toHaveLength(2);
+
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/unassign`)
+      .set(asDispatcher())
+      .send({ reason: "customer rang to hold it" })
+      .expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    // The drop and the collection it needed are both gone from the driver's day.
+    expect((await sheet(trip.id)).stops).toHaveLength(0);
+  });
+
+  it("closes a stop as skipped when the shipment is cancelled under it", async () => {
+    const b = await book(1);
+    await h
+      .http()
+      .post(`/v1/admin/dispatch/shipments/${b.shipments[0]!.id}/assign`)
+      .set(asDispatcher())
+      .send({ driverId: driver.id })
+      .expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    const [trip] = (await h.http().get("/v1/admin/dispatch/trips").set(asDispatcher()))
+      .body as Trip[];
+
+    await h
+      .http()
+      .post(`/v1/account/bookings/${b.id}/cancel`)
+      .set(asOwner())
+      .send({ reason: "no longer needed" })
+      .expect(201);
+    expect(await h.dispatcher.tick()).toBeGreaterThan(0);
+    const s = await sheet(trip!.id);
+    expect(s.stops.find((x) => x.kind === "drop")?.status).toBe("skipped");
+    // And it is off the driver's screen: a withdrawn parcel is not work.
+    const day = (await h.http().get("/v1/driver/day").set(asDriver())).body as DriverDay;
+    expect(day.stops.find((x) => x.shipmentId === b.shipments[0]!.id)).toBeUndefined();
+  });
 });

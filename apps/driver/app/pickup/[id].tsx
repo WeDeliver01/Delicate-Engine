@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { Alert, ScrollView, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DriverDay } from "@delicate/contracts";
 import { SHIPMENT_STATUS_LABELS } from "@delicate/contracts";
 import { api, ApiRequestError } from "../../src/lib/api";
 import { currentPosition } from "../../src/lib/location";
-import { StopActions } from "../../src/lib/stop-actions";
+import { submit, useOutbox } from "../../src/lib/outbox";
+import { attemptId, pendingFor } from "../../src/lib/queue";
+import { ArriveButton, StopActions } from "../../src/lib/stop-actions";
 import { Badge, Button, C, Card, ErrorNote, Loading, s } from "../../src/lib/ui";
 
 /**
@@ -24,21 +26,37 @@ export default function PickupScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const outbox = useOutbox();
 
   const day = useQuery({ queryKey: ["day"], queryFn: () => api<DriverDay>("/v1/driver/day") });
   const stop = useMemo(
-    () => day.data?.stops.find((x) => x.kind === "collection" && x.bookingId === id),
+    () =>
+      [...(day.data?.stops ?? []), ...(day.data?.upcoming ?? [])].find(
+        (x) => x.kind === "collection" && x.bookingId === id,
+      ),
     [day.data, id],
   );
+  const sending = pendingFor(outbox, { bookingId: id });
 
   const collect = useMutation({
     mutationFn: async () =>
-      api("/v1/driver/collect", {
-        method: "POST",
-        json: { bookingId: id, location: await currentPosition() },
+      submit({
+        id: attemptId(Date.now()),
+        kind: "collect",
+        shipmentId: null,
+        bookingId: id,
+        path: "/v1/driver/collect",
+        body: { bookingId: id, location: await currentPosition() },
+        label: `Collected ${stop?.bookingReference ?? ""}`.trim(),
       }),
-    onSuccess: async () => {
+    onSuccess: async (res) => {
       await qc.invalidateQueries();
+      if (!res.landed) {
+        Alert.alert(
+          "Saved on your phone",
+          "There is no signal here. The collection is recorded and will be sent the moment you are back in range.",
+        );
+      }
       router.back();
     },
     onError: (e: unknown) =>
@@ -64,7 +82,10 @@ export default function PickupScreen() {
 
       <Card>
         <View style={s.row}>
-          <Badge label="Collect" tone={stop.done ? "good" : "warn"} />
+          <Badge
+            label={sending ? "Sending…" : "Collect"}
+            tone={sending ? "neutral" : stop.done ? "good" : "warn"}
+          />
           <Text style={[s.mono, { fontSize: 12 }]}>{stop.bookingReference}</Text>
         </View>
         <Text style={[s.h2, { marginTop: 8 }]}>{stop.contact?.name ?? "Collection"}</Text>
@@ -74,6 +95,12 @@ export default function PickupScreen() {
         )}
         {stop.instructions && (
           <Text style={[s.body, { marginTop: 8, fontStyle: "italic" }]}>{stop.instructions}</Text>
+        )}
+        {stop.slotDate && day.data && stop.slotDate > day.data.date && (
+          <Text style={[s.body, { marginTop: 8, color: C.muted }]}>
+            Booked for {stop.slotDate}
+            {stop.slotWindowKey ? ` · ${stop.slotWindowKey.replace(/_/g, " ")}` : ""}
+          </Text>
         )}
       </Card>
 
@@ -95,10 +122,18 @@ export default function PickupScreen() {
       </Card>
 
       <StopActions stop={stop} target="collection" />
+      <ArriveButton stop={stop} />
 
       {error && <ErrorNote message={error} />}
 
-      {waiting.length > 0 ? (
+      {sending ? (
+        <Card>
+          <Text style={s.body}>
+            Collection recorded on your phone and waiting for signal. The drops are on your day
+            list.
+          </Text>
+        </Card>
+      ) : waiting.length > 0 ? (
         <Button
           label={`Collected all ${waiting.length}`}
           onPress={() => collect.mutate()}

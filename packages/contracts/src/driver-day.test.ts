@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DriverStop, ShipmentStatus } from "./index.js";
-import { dayProgress, stopIsDone } from "./driver-day.js";
+import { dayProgress, isUpcoming, stopIsDone } from "./driver-day.js";
 
 const address = {
   formatted: "12 Oak St, Centurion",
@@ -98,5 +98,21 @@ describe("dayProgress", () => {
     const p = dayProgress([]);
     expect(p.allDone).toBe(false);
     expect(p.all).toEqual({ total: 0, done: 0, outstanding: 0 });
+  });
+});
+
+describe("isUpcoming", () => {
+  const TODAY = "2026-10-08";
+  it("holds back a stop dated after today", () => {
+    expect(isUpcoming({ slotDate: "2026-10-09" }, TODAY)).toBe(true);
+    expect(isUpcoming({ slotDate: "2026-11-01" }, TODAY)).toBe(true);
+  });
+  it("keeps today's and overdue stops on the day", () => {
+    expect(isUpcoming({ slotDate: TODAY }, TODAY)).toBe(false);
+    // Late is not future: a parcel booked for yesterday is still the next thing to drive to.
+    expect(isUpcoming({ slotDate: "2026-10-07" }, TODAY)).toBe(false);
+  });
+  it("treats on-demand work, which has no date, as today's", () => {
+    expect(isUpcoming({ slotDate: null }, TODAY)).toBe(false);
   });
 });
